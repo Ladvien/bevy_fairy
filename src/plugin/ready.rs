@@ -34,6 +34,7 @@ pub(crate) fn handle_status(
     ticks: Res<FrameTicks>,
     commands: Res<DebugCommands>,
     playback: Option<Res<ScenePlayback>>,
+    input: Option<Res<crate::plugin::input::PendingInput>>,
     #[cfg(feature = "plugin-screenshot")] target: Option<Res<crate::plugin::screenshot::DebugCaptureTarget>>,
     #[cfg(feature = "plugin-screenshot")] windows: Query<(), With<bevy::window::PrimaryWindow>>,
 ) -> BrpResult {
@@ -57,6 +58,15 @@ pub(crate) fn handle_status(
             !windows.is_empty(),
         ),
         "replay": replay,
+        // **Queued versus applied.** `bevy_debugger/input` answers `success: true` on a well-formed
+        // command, which says nothing about whether the key ever reached the game: a host whose
+        // injections are never folded looks identical from the client. `applied` climbs by one per
+        // message actually written, so a caller can tell a dropped injection from an unread key.
+        "input": input.as_deref().map(|input| json!({
+            "applied": input.applied,
+            "applied_this_frame": input.applied_this_frame,
+            "queued": input.queued(),
+        })),
     }))
 }
 
