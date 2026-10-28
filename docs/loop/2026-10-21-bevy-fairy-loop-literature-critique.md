@@ -1,7 +1,7 @@
 # bevy_debugger_mcp loop: literature critique
 
 **Date:** 2026-10-21
-**Purpose:** The evidence behind `.omp/commands/bevy-debugger-loop.md`.
+**Purpose:** The evidence behind `.omp/commands/build-loop.md` (named `bevy-debugger-loop.md` until 2026-10-28).
 **Method:**
 - 16 concepts specific to this loop were checked against the home-still corpus by three parallel searches (clusters H, I and J below).
 - Concepts shared with the bevy_emerge loop reuse that critique (`2026-10-21-bevy-emerge-loop-literature-critique.md`): agent loop design, verification layering, reviewer bias, context degradation, test gaming, and frame-sequence capture.

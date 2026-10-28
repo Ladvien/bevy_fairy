@@ -579,6 +579,38 @@ The measured numbers are in `known_red` in `docs/loop/metrics.json`, and the rat
 those. Trust `known_red` over the seed text when the two disagree, and record the difference in the
 iteration report.
 
+## Clean up when you are done
+
+Worktrees and build directories outside the clone are not free: a `target/` for this crate is tens of GB, big's
+`/tmp` is RAM, and on 2026-10-27 earlier passes had left 37 GB of baseline builds and 5 GB of scratch behind.
+**After you ship and before you write the pass's last log line, whether or not you shipped,** remove what *you*
+made this pass, and list what earlier passes left.
+
+1. **A baseline is a pair that can be found.** Make it with `git worktree add --detach <path> <sha>` (never a
+   branch name: a worktree with a branch checked out stops anything else checking that branch out) and build it
+   into `<path>-target`. Then `git worktree list`, plus the `*-target` directory beside each worktree, is the
+   whole inventory.
+2. **Remove yours.** `git worktree remove <path>` (plain, never `--force`) and `rm -rf <path>-target`, then your
+   scratch under `/tmp` (captures, frames, venvs, gate logs, `rustdoctest*`). Remove only what you created this
+   pass, and name each path in the log. If git refuses because the worktree has a change in it, name the file
+   in the log and leave it.
+3. **Leftovers from earlier passes are listed, never deleted.** A killed pass cannot clean up after itself, but
+   an agent does not delete what it did not create, so list them once and let a person approve the removal:
+
+   ```sh
+   git worktree list --porcelain | awk '/^worktree /{sub(/^worktree /,""); print}' | tail -n +2   # all but the clone
+   du -sh <wt> <wt>-target                       # the size of each one that is not yours
+   git -C <wt> status --short                    # empty: nothing is lost by removing it
+   find <wt> <wt>-target -mmin -120 -print -quit # empty: untouched for two hours, so no live build is using it
+   ```
+
+   Log each with its path, size, and whether it is clean, already on `origin/main` and idle (the likeliest to be
+   stale). Say so, and still leave it.
+4. **Never remove** the clone itself, its own `target/` (the build cache the next pass starts from), anything you
+   did not create this pass, or anything a process is using.
+5. Write one log line: what you removed and the space it freed (`df -h .` before and after), and the leftovers
+   you listed.
+
 ## Before you stop: checklist
 
 - [ ] No tool returns fabricated, defaulted, stale-unflagged, or ignored-argument output. Anything that can't be honest refuses or is removed.
@@ -591,4 +623,5 @@ iteration report.
 - [ ] Metrics updated. Every increase has a reason.
 - [ ] The iteration's commits are pushed to `origin/main`. A release is published and verified, or nothing that goes into the package changed and the report says so. Nothing was yanked, republished, force-pushed, or published dirty.
 - [ ] README, CHANGELOG, CLAUDE.md and the docs under `docs/` describe what this iteration shipped.
-- [ ] Installed server matches. No processes left running. Nothing outside the repo was deleted.
+- [ ] Installed server matches. No processes left running. Nothing outside the repo was deleted except what you created this pass (see "Clean up when you are done").
+- [ ] Worktrees and build directories you made are removed, and the leftovers earlier passes left are listed in the log, not deleted.
