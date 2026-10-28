@@ -303,6 +303,16 @@ For borderline calls, get a second independent judgment from a fresh-context sub
 
 **Budget.** If there are more must-fix bugs than you can fix well (roughly five or more, or your context is getting heavy), fix the most misleading ones, log the rest, skip Phase 2, and say so in the report.
 
+## Issues from the projects that use this crate
+
+Before you choose, list the open issues: `gh issue list --repo Ladvien/bevy_fairy --state open --limit 100 --json number,title,labels --jq '.[] | "#\(.number) [\(.labels | map(.name) | join(","))] \(.title)"'`. A bug issue is a bug and goes to Phase 1. **An issue labelled `consumer` is the pass's item next, ahead of the candidates below.** A project built on this crate needs it and is waiting: `consumer:bevy_emerge` is the owner's editor. It resumes when the issue is closed as completed and it moves its git pin to a `main` commit containing the fix.
+
+- **Build the general form**, never something named for one project. Prove it here with a check that fails before and passes after, against the issue's acceptance.
+- **Pushing to `main` is the delivery.** Requesters pin a git revision, so a consumer fix never waits for Phase 6's release.
+- **Close it with `Fixes #N`** in the commit that meets its acceptance, and never as not planned without the owner's word.
+- **Blocked:** one that needs a decision gets a `gh issue comment` saying exactly what, and the pass goes on.
+- **Read `git log` first:** while this loop is stopped, the requester's loop may fix an issue here at the source.
+
 ## Phase 2: Choose the one change
 
 List 2–3 candidates, using the priority order in "Context". For each, write one line:
