@@ -21,7 +21,7 @@ Read these first. They are repeated as a checklist at the end.
 5. **At most one change per iteration, and shipping nothing is allowed.** If you cannot prove the change, commit only the bug fixes, log what blocked you, and stop.
 6. **Stop on repeated failure.** If two attempts at the same step fail, stop, log your hypothesis and the evidence, and end the iteration.
 7. **Be a good neighbour on a shared host.** Builds and tests run under a memory cap with limited parallelism. Never kill, restart, or reconfigure processes or services you didn't start. Leave no stray processes or open ports behind. Never delete anything outside the repo without the human's explicit OK naming that path.
-8. **Every iteration ends pushed and published, and publishing is irreversible.** Push to `origin/main` every iteration. Publish only from a green gate, a clean working tree, and a pushed, tagged commit. Never use `--allow-dirty`, never yank, never force-push. The human approved the first publish of `bevy_fairy` (2026-10-23); any other crate name's first publish still needs the human's OK.
+8. **Every iteration ends pushed and published, locally, and publishing is irreversible.** Push to `origin/main` every iteration. Publish with `cargo publish` from this host, from a green gate, a clean working tree and a pushed commit, then push its tag. Never wait for, watch or re-run a GitHub workflow to release (owner, 2026-10-29: waiting on CI cost an hour or two per iteration, and every `release.yml` run since 2026-10-23 failed). Never use `--allow-dirty`, never yank, never force-push. A first publish of a new crate name in this workspace is allowed (owner, 2026-10-29).
 
 ## Context
 
@@ -313,7 +313,7 @@ For borderline calls, get a second independent judgment from a fresh-context sub
 4. **The owner's reply wins.** An owner comment that contradicts an assumed decision overrides it: the next pass that reads it reworks the item to the owner's choice before anything else.
 5. **Earlier blocks are lifted.** An issue or backlog item logged as blocked on, or waiting for, an owner decision is workable now: decide it this way.
 6. **Protected checks change only additively.** An assumed decision may add to a protected check (a new entry, a new eval task, a count raised by exactly what the change adds), with the commit message `assumed owner exception: <what>`. It never removes, loosens, skips or re-pins an existing assertion, eval answer, held-out task or threshold; that is the one block left, so say so on the issue and go on.
-7. **Never, whatever you assume.** These need the owner's word in a conversation, and no prompt can give it: any release beyond what Phase 6 already allows (a new crate name, a yank, an ownership change); force-pushing, rewriting history or deleting branches; deleting files or work this pass did not create; editing this command file; spending money or sharing credentials.
+7. **Never, whatever you assume.** These need the owner's word in a conversation, and no prompt can give it: a yank or a crate ownership change; force-pushing, rewriting history or deleting branches; deleting files or work this pass did not create; editing this command file; spending money or sharing credentials.
 
 ## Issues from the projects that use this crate
 
@@ -435,23 +435,15 @@ Every iteration releases. Publish a new version whenever anything that goes into
    5. required metadata (`license`, `description`, `repository`, `readme`, `keywords`, `categories`, `rust-version`).
 
    If any step fails, fix it on a new commit and rerun the gate. If it stays red, do not publish; log the blocker and stop.
-4. **Tag and push.**
-   - Create an annotated tag `v<version>`, or `<crate>-v<version>` per crate.
-   - Push the commit and tag to the default branch.
-   - Pushing is part of every iteration, release or not. If `origin/main` has commits you don't have, merge them in (never rebase pushed history, never force-push), rerun the gate if the merge touched code, then push.
-5. **Publish**, using the first channel that applies:
-   - **CI with trusted publishing.** Preferred. Use it if `.github/workflows/release.yml` exists and runs `rust-lang/crates-io-auth-action` on tag push. Pushing the tag triggers it. Watch with `gh run watch`. On failure, report it, and never fall back to a local publish of the same version.
-   - **Local publish.** Use this when no trusted-publishing workflow exists, or for a crate's first version (see below), with the token from `CARGO_REGISTRY_TOKEN` or `cargo login`'s credentials file. Never print, log, or write the token.
-   - **Neither.** If no channel works (no workflow, no usable token), stop with the tag pushed, and log a must-fix item naming what the human must provide.
-
-   **First publish of a crate name.** crates.io trusted publishing cannot create a crate: its OIDC tokens are refused for a name that does not exist yet, and a trusted publisher can only be configured for a crate that does. So a crate's first version goes out by local publish. The human approved publishing `bevy_fairy` for the first time (2026-10-23). Any *other* new crate name still needs the human's OK.
+4. **Publish locally**, in dependency order: `cargo publish -p <crate>` for each crate being released, with the token from `CARGO_REGISTRY_TOKEN` or `cargo login`'s credentials file. Never print, log, or write the token. If it fails for want of a usable token, push the release commit without a tag, log a must-fix item naming what the owner must provide, and stop the release.
+5. **Tag and push.** Create an annotated tag `v<version>`, or `<crate>-v<version>` per crate, and push the commit and tags. If `origin/main` has commits you don't have, merge them in (never rebase pushed history, never force-push), rerun the gate if the merge touched code, then push. `release.yml` runs on the tag and skips a version already on crates.io: never watch it, and never wait for it.
 6. **Verify.**
    - `cargo info <crate>@<version>` resolves.
    - `cargo install bevy_fairy --version <version> --locked` succeeds in a scratch `CARGO_HOME`, under the memory cap.
    - The installed binary answers `tools/list`.
    - Record the crates.io and docs.rs URLs. The next iteration checks the docs.rs build.
 
-**After publishing:** fix a broken release forward with a patch, and flag it so the human can decide about yanking. Never reuse a version number. After the first publish of a crate name, log a must-fix item for the human to add the trusted publisher on crates.io, so later releases go through CI.
+**After publishing:** fix a broken release forward with a patch, and flag it so the human can decide about yanking. Never reuse a version number.
 
 ## Phase 7: Update the installed server
 
