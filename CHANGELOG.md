@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 — 2026-10-29
+
+### Added
+
+- **`bevy_fairy/ui_text` (issue #8).** A built-in read-only command, behind the new `plugin-ui-text`
+  feature, that answers "what text can the player read?" as a query instead of a screenshot. Each
+  node of the `bevy_ui` tree that carries `Text` (spans joined) comes back with its `rect`
+  (`[x, y, w, h]`, physical pixels of its render target, the space of `screenshot`'s `region`),
+  `visible`, the `Name`s of up to three named ancestors and, for a hidden node, `hidden_because`:
+  `empty_text`, `inherited_visibility_false`, `zero_size` (an expired `Display::None` slot that kept
+  its string), `text_alpha_zero`, `clipped_by_ancestor_overflow` or `outside_render_target`.
+  Hidden nodes are omitted unless `include_hidden`; `contains`, `region` and `limit` filter, and the
+  limit applies after sorting top to bottom. Two nodes with one sentence are two rows. Called with
+  `run`, so the tool count is unchanged. `Text2d` is out of scope.
+
 ## 0.3.0 — 2026-10-29
 
 Breaking for a host that calls `apply_pending_input` or `handle_input` as plain functions: both
