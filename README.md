@@ -279,6 +279,7 @@ reports ready. Scenes record commands, not raw input.
 | `bevy_fairy/scene` | `plugin` | Show or clear the recorded commands |
 | `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed (a built-in command) |
 | `bevy_fairy/quit` | `plugin` | Ask the game to exit |
+| `bevy_fairy/ui_text` | `plugin-ui-text` | The `bevy_ui` text the player can read, with each node's rect (a built-in command, called with `run`) |
 | `bevy_fairy/screenshot`, `bevy_fairy/capture` | `plugin-screenshot` | Capture a frame and fetch it as PNG |
 | `bevy_fairy/guide`, `bevy_fairy/guide+watch` | `plugin-guide` | Post a guide script; stream its progress |
 
@@ -292,6 +293,7 @@ Bevy's own methods (`world.query`, `world.get_resources`, `registry.schema`, ...
 | `plugin` | Your game | The plugin; four direct dependencies |
 | `plugin-screenshot` | Your game, with capture | `plugin` + Bevy's renderer |
 | `plugin-guide` | Your game, with the guide overlay | `plugin` + Bevy UI and picking |
+| `plugin-ui-text` | Your game, if an agent should read its HUD text | `plugin` + Bevy UI |
 
 A game should depend on `bevy_fairy` with `default-features = false`, or it compiles the server too.
 
