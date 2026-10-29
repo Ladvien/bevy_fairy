@@ -18,6 +18,8 @@
 //!   startup, one step per frame.
 //! - **Time and quit.** `bevy_fairy/time` pauses the virtual clock or changes its
 //!   speed. `bevy_fairy/quit` exits cleanly.
+//! - **UI text.** With `plugin-ui-text`, `bevy_fairy/ui_text` lists the `bevy_ui` text the
+//!   player can read, each node with its on-screen rect and, when hidden, why.
 //! - **Input.** `bevy_fairy/input` injects keys, clicks, drags and text as the
 //!   window would receive them.
 //!
@@ -73,6 +75,8 @@ mod time;
 
 #[cfg(feature = "plugin-guide")]
 mod guide;
+#[cfg(feature = "plugin-ui-text")]
+mod ui_text;
 #[cfg(feature = "plugin-screenshot")]
 mod screenshot;
 
@@ -155,6 +159,8 @@ impl Plugin for DebuggerPlugin {
         app.init_resource::<Captures>();
 
         time::register(app);
+        #[cfg(feature = "plugin-ui-text")]
+        ui_text::register(app);
 
         if let Ok(path) = std::env::var(scene::SCENE_ENV) {
             scene::start_playback(app, &path);
