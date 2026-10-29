@@ -158,6 +158,10 @@ UPDATE_TOOL_REFERENCE=1 cargo test --test tool_list
 The plugin's examples need their own features: `plugin-screenshot` for the capture example,
 `plugin-guide` for the guided-steps example, plain `plugin` for the rest.
 
+## `bevy_fairy/ui_text` answers "what can the player read", and says why a node is not
+
+A `Text` node's `InheritedVisibility` stays true after its slot is set to `Display::None` (the game keeps the old string), so visibility alone reports stale strings as on screen. `src/plugin/ui_text.rs` checks, in order: empty text, `InheritedVisibility`, a zero `ComputedNode.size`, text alpha, an ancestor's `CalculatedClip`, overlap with the render target; a hidden node names the first check it failed. `rect` is physical pixels of the node's target (the space of `screenshot`'s `region`), cut to the target when visible. It is a built-in *command*, reached with `run`, not a tool. `tests/plugin_ui_text.rs` runs a real laid-out `bevy_ui` tree. Not measured: the issue's "reply at most a fifth of a raw `world.query`" — the fixture game has no HUD.
+
 ## The fixture game is the ground truth
 
 `examples/fixture_game.rs` is a headless Bevy app whose state is known from its own `pub const`s:
