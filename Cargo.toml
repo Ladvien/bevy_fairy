@@ -277,6 +277,10 @@ harness = false
 # The plugin's own tests need the plugin. `required-features` keeps them from being built when
 # the plugin is off, rather than failing to compile.
 [[test]]
+name = "plugin_clock"
+required-features = ["plugin"]
+
+[[test]]
 name = "plugin_commands"
 required-features = ["plugin"]
 
