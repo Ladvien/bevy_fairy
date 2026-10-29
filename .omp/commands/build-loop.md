@@ -313,9 +313,11 @@ Before you choose, list the open issues: `gh issue list --repo Ladvien/bevy_fair
 - **Blocked:** one that needs a decision gets a `gh issue comment` saying exactly what, and the pass goes on.
 - **Read `git log` first:** while this loop is stopped, the requester's loop may fix an issue here at the source.
 
+**Every other open enhancement issue comes next, ahead of Phase 2's own candidates** (the owner's rule, 2026-10-29): a filed request was asked for; a candidate this pass invents was not. The order of work is: bugs (Phase 1, bug issues included), then `consumer` issues, then every other open enhancement issue, oldest first. Its acceptance is the failing check Phase 2 requires of a capability. Only when each issue is done, blocked or a release issue does Phase 2 choose a change of your own. A blocked one gets its `gh issue comment` and is skipped; name the issues you skipped, and why, in the report, so the next pass sees the list was worked through.
+
 ## Phase 2: Choose the one change
 
-List 2–3 candidates, using the priority order in "Context". For each, write one line:
+**You are here only when no bug and no open issue can be worked this pass** (see "Issues from the projects that use this crate"); otherwise that issue is the change. List 2–3 candidates, using the priority order in "Context". For each, write one line:
 - the problem, from a calling agent's point of view;
 - the evidence for it (an eval failure, a transcript pattern, a backlog item, or the audit);
 - the expected effect on evals or metrics;
