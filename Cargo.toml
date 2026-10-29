@@ -194,6 +194,10 @@ plugin = [
 # it off.
 plugin-screenshot = ["plugin", "bevy/bevy_render", "bevy/png", "dep:image", "bevy/bevy_picking"]
 
+# `bevy_fairy/ui_text`: the bevy_ui text the player can read, with rects. Needs `bevy_ui` and
+# nothing else; a headless host with no UI leaves it off.
+plugin-ui-text = ["plugin", "bevy/ui_api"]
+
 # `bevy_fairy/guide`: the agent-to-human overlay and the guided steps. It spawns a UI node, so
 # a host that keeps its UI behind its own surfaces turns this off. `bevy_picking` is only for
 # `Pickable::IGNORE`, so the overlay never eats a host's clicks.
@@ -283,6 +287,10 @@ required-features = ["plugin-guide"]
 [[test]]
 name = "plugin_input_edges"
 required-features = ["plugin"]
+
+[[test]]
+name = "plugin_ui_text"
+required-features = ["plugin-ui-text"]
 
 [[test]]
 name = "plugin_pointer"
