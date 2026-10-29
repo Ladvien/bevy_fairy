@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_fairy"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "ahash",
  "async-trait",
