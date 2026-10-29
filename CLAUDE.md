@@ -162,6 +162,10 @@ The plugin's examples need their own features: `plugin-screenshot` for the captu
 
 A `Text` node's `InheritedVisibility` stays true after its slot is set to `Display::None` (the game keeps the old string), so visibility alone reports stale strings as on screen. `src/plugin/ui_text.rs` checks, in order: empty text, `InheritedVisibility`, a zero `ComputedNode.size`, text alpha, an ancestor's `CalculatedClip`, overlap with the render target; a hidden node names the first check it failed. `rect` is physical pixels of the node's target (the space of `screenshot`'s `region`), cut to the target when visible. It is a built-in *command*, reached with `run`, not a tool. `tests/plugin_ui_text.rs` runs a real laid-out `bevy_ui` tree. Not measured: the issue's "reply at most a fifth of a raw `world.query`" — the fixture game has no HUD.
 
+## `bevy_fairy/time` is a request, not a write
+
+The command writes `ClockRequest`; `time.rs` re-applies it in `First`, `.before(TimeSystems)`, every frame, because a host (Sanctuary) that writes `Time<Virtual>` in `Update` overwrote the old one-shot write within a frame. `DebuggerPlugin::host_owns_clock()` removes that system; the host reads `ClockRequest`. `held` is measured by a system `.after(TimeSystems)` and compared with the *current* request, so it is `null` until a frame has run under it. `tests/plugin_clock.rs` pins this with hostile host systems. Issue #10.
+
 ## The fixture game is the ground truth
 
 `examples/fixture_game.rs` is a headless Bevy app whose state is known from its own `pub const`s:
