@@ -342,7 +342,7 @@ Pick the top candidate. Log the others in the backlog.
 2. **A capability agents debugging a Bevy game need and this crate lacks**, found by research: home-still first (`distill_search`; for a paper the corpus lacks, `paper_search`, `paper_download`, `scribe_convert`, then `distill_index`) on agent tool design, game debugging and MCP practice, then the eval transcripts.
 3. **Depth**: the tool with the worst eval or ground-truth record, improved.
 
-Each is a "Capability" change: write its failing eval task or ground-truth test first. A pass that ships nothing names the concrete blocker that stopped all three; "nothing new to do" is not a blocker.
+Each is a "Capability" change: write its failing eval task or ground-truth test first. A pass that ships nothing names the concrete blocker that stopped all three; "nothing new to do" is not a blocker. **"No failing eval yet" is not a blocker either: writing it is this pass's work.** "Speculative" means the failing check is missing, so write it, then build to it. A log-only iteration is a failed pass, not an outcome, and a pass never copies an earlier iteration's reasons for shipping nothing.
 
 Valid kinds of change:
 - **Delete or consolidate.** Remove unreachable modules, duplicate BRP clients, overlapping or broken tools, dead flags (for example, a `--tcp` that accepts and drops connections), or dead dependencies. Go module by module, one coherent deletion per iteration, so each one passes the gate on its own.
