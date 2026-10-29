@@ -86,6 +86,7 @@ pub use input::{
     InputCommand, InputKind, PendingInput,
 };
 pub use ready::DebugReady;
+pub use time::ClockRequest;
 pub use scene::{SceneLog, ScenePlayback, SceneStep};
 
 #[cfg(feature = "plugin-guide")]
@@ -119,6 +120,7 @@ pub(crate) fn brp_error(code: i16, message: impl Into<String>) -> BrpError {
 #[derive(Default)]
 pub struct DebuggerPlugin {
     host_signals_ready: bool,
+    host_owns_clock: bool,
 }
 
 impl DebuggerPlugin {
@@ -127,6 +129,17 @@ impl DebuggerPlugin {
     /// command answers "not ready yet".
     pub fn host_signals_ready(mut self) -> Self {
         self.host_signals_ready = true;
+        self
+    }
+}
+
+impl DebuggerPlugin {
+    /// Stops the plugin from writing `Time<Virtual>`. `bevy_fairy/time` then only records a
+    /// [`ClockRequest`]; the host reads it, ORs `pause` into its own hold and multiplies `speed` into
+    /// its own factor. Without this, the plugin re-applies the request every frame, before
+    /// bevy_time's clock system, so it wins against a host that writes the clock later in the frame.
+    pub fn host_owns_clock(mut self) -> Self {
+        self.host_owns_clock = true;
         self
     }
 }
@@ -158,7 +171,7 @@ impl Plugin for DebuggerPlugin {
         #[cfg(feature = "plugin-screenshot")]
         app.init_resource::<Captures>();
 
-        time::register(app);
+        time::register(app, self.host_owns_clock);
         #[cfg(feature = "plugin-ui-text")]
         ui_text::register(app);
 
