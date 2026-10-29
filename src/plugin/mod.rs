@@ -67,6 +67,7 @@ mod commands;
 mod input;
 mod quit;
 mod ready;
+mod pointer;
 mod scene;
 mod time;
 
@@ -170,11 +171,21 @@ impl Plugin for DebuggerPlugin {
             .add_message::<bevy::input::keyboard::KeyboardInput>()
             .add_message::<bevy::input::mouse::MouseButtonInput>()
             .add_message::<bevy::input::mouse::MouseWheel>()
+            // What `bevy_picking` reads instead of the three above; see `pointer`.
+            .add_message::<bevy::window::WindowEvent>()
+            .add_message::<bevy::window::CursorMoved>()
             .init_resource::<input::DebugCursor>()
             .add_systems(
                 PreUpdate,
                 input::apply_pending_input.before(bevy::input::InputSystems),
             );
+        // The image route writes `PointerInput` directly, which picking consumes in `ProcessInput`;
+        // ahead of it, so a click lands the frame it is applied rather than the one after.
+        #[cfg(feature = "plugin-screenshot")]
+        app.configure_sets(
+            PreUpdate,
+            bevy::picking::PickingSystems::ProcessInput.after(input::apply_pending_input),
+        );
     }
 
     fn finish(&self, app: &mut App) {
