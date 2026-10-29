@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **An injected `Cursor` and `Mouse` now reach `bevy_picking` (issue #9).** They used to write only
+  `MouseButtonInput` and the `DebugCursor` resource, which picking never reads, so an agent could
+  aim and click and no `bevy_ui` button or `On<PointerClick>` observer noticed. `bevy_fairy/input`
+  now also writes the `WindowEvent` messages a real mouse produces (plus `CursorMoved`); hover,
+  click and drag land. A host with a `DebugCaptureTarget` is driven through a picking pointer
+  located on that image instead, and `x`/`y` are then pixels of the image. A `Mouse` call with no
+  cursor position set replies with a `note` saying where the click will land.
+
+### Changed
+
+- `plugin-screenshot` now also turns on `bevy/bevy_picking`, which the image route needs.
+
 ## 0.2.3 — 2026-10-23
 
 A documentation release: the README now shows the server working. The library and the server
