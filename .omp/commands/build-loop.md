@@ -69,7 +69,7 @@ Then stop.
 
 ## Phase 0: Orient (keep it brief)
 
-1. **Check the host.** Check free memory and whether other heavy jobs are running (`free -g`, `uptime`, `ps -eo pid,rss,cmd --sort=-rss | head`). Run every cargo command in this iteration under a capped scope, for example `systemd-run --user --scope -p MemoryMax=10G cargo test -j 3`. If the host is under pressure, lower `-j`. If it is clearly overloaded, wait or stop and report.
+1. **Check the host.** Check free memory and whether other heavy jobs are running (`free -g`, `uptime`, `ps -eo pid,rss,cmd --sort=-rss | head`). Run every cargo command in this iteration under a capped scope with no swap, exactly `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 cargo <command> -j 3`, and never a larger cap or `-j`: a scope sits outside this loop's own service cap, and big runs four loops and the model servers. Measured 2026-10-29: a `-p MemoryMax=14G cargo test -j 6` scope pushed 8.7 GB into swap and took big to 27 of 31 GB. If the host is under pressure, lower `-j`. If a link is killed under the cap, rerun it with `-j 1`; never raise the cap. If the host is clearly overloaded, wait or stop and report.
 2. **Read the repo.** Read `AGENTS.md` and `CLAUDE.md`. Treat their factual claims about behaviour as hypotheses to verify, not truth; this CLAUDE.md has been wrong before. Read `docs/loop/backlog.json`, the last 5 `LOG.md` entries, `docs/loop/metrics.json`, and `git log --oneline -20`. If the state files are missing, create them, and seed the backlog from "Seed backlog" at the end.
 3. **Run the baseline:**
    - build with default features and with each optional feature;
