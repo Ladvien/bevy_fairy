@@ -73,6 +73,8 @@ mod time;
 
 #[cfg(feature = "plugin-guide")]
 mod guide;
+#[cfg(feature = "plugin-ui-text")]
+mod ui_text;
 #[cfg(feature = "plugin-screenshot")]
 mod screenshot;
 
@@ -155,6 +157,8 @@ impl Plugin for DebuggerPlugin {
         app.init_resource::<Captures>();
 
         time::register(app);
+        #[cfg(feature = "plugin-ui-text")]
+        ui_text::register(app);
 
         if let Ok(path) = std::env::var(scene::SCENE_ENV) {
             scene::start_playback(app, &path);
