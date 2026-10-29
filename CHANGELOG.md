@@ -4,6 +4,17 @@
 
 ### Added
 
+- **`bevy_fairy/time` holds against a host that writes the clock (issue #10).** The command now
+  records a public `ClockRequest { pause, speed }` resource instead of writing `Time<Virtual>` once.
+  A system in `First`, ahead of bevy_time's clock system, re-applies it every frame, so a host that
+  `unpause()`s or `set_relative_speed()`s later in the frame no longer undoes the agent's pause or
+  speed; the request survives a game reset until the agent clears it. A host that must combine the
+  request with its own holds and slow motion adds `DebuggerPlugin::host_owns_clock()`: the crate then
+  never writes `Time<Virtual>`, and the host ORs `pause` and multiplies `speed` itself. The reply
+  gains `held` (the clock obeyed on the last frame; `null` with `unavailable` until a frame has run
+  under the request), `host_owned`, `effective_speed` and `requested`. A host that does nothing
+  behaves as before.
+
 - **`bevy_fairy/ui_text` (issue #8).** A built-in read-only command, behind the new `plugin-ui-text`
   feature, that answers "what text can the player read?" as a query instead of a screenshot. Each
   node of the `bevy_ui` tree that carries `Text` (spans joined) comes back with its `rect`
