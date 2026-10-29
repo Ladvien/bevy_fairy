@@ -47,6 +47,8 @@ use bevy::input::ButtonState;
 use bevy::prelude::*;
 use bevy::remote::{error_codes, BrpError, BrpResult};
 use bevy::window::PrimaryWindow;
+
+use super::pointer::PointerRoute;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -350,6 +352,7 @@ pub fn apply_pending_input(
     mut mouse: MessageWriter<MouseButtonInput>,
     mut wheel: MessageWriter<MouseWheel>,
     mut cursor: ResMut<DebugCursor>,
+    mut route: PointerRoute,
 ) {
     // Taken out first: draining in place would hold a borrow of `pending` across the loop below.
     let release_keys = core::mem::take(&mut pending.release_next_keys);
@@ -362,6 +365,7 @@ pub fn apply_pending_input(
         keyboard.write(message);
     }
     for message in release_buttons {
+        route.button(&message, cursor.0.unwrap_or(Vec2::ZERO));
         mouse.write(message);
     }
 
@@ -487,15 +491,20 @@ pub fn apply_pending_input(
             }
             Injected::Mouse(button, action, window) => {
                 buttons_touched.push(button);
+                let window = route.window_or_primary(window);
+                let at = cursor.0.unwrap_or(Vec2::ZERO);
                 let message = |state| MouseButtonInput { button, state, window };
                 match action {
                     InputAction::Press => {
+                        route.button(&message(ButtonState::Pressed), at);
                         mouse.write(message(ButtonState::Pressed));
                     }
                     InputAction::Release => {
+                        route.button(&message(ButtonState::Released), at);
                         mouse.write(message(ButtonState::Released));
                     }
                     InputAction::Tap => {
+                        route.button(&message(ButtonState::Pressed), at);
                         mouse.write(message(ButtonState::Pressed));
                         pending.release_next_buttons.push(message(ButtonState::Released));
                     }
@@ -504,17 +513,22 @@ pub fn apply_pending_input(
             // Scroll is a delta, not a state, so several in one frame simply sum — there is no edge
             // to lose and nothing to defer.
             Injected::Scroll { unit, x, y, window } => {
-                wheel.write(MouseWheel {
+                let message = MouseWheel {
                     unit,
                     x,
                     y,
                     window,
                     // A mouse always reports `Moved`; the variant exists for touch.
                     phase: TouchPhase::Moved,
-                });
+                };
+                route.wheel(&message, cursor.0.unwrap_or(Vec2::ZERO));
+                wheel.write(message);
             }
             Injected::Cursor(at) => {
                 cursor_moved = true;
+                if let Some(to) = at {
+                    route.moved(cursor.0, to);
+                }
                 cursor.0 = at;
             }
         }
@@ -530,7 +544,10 @@ pub fn handle_input(
     In(params): In<Option<Value>>,
     mut pending: ResMut<PendingInput>,
     window: Option<Single<Entity, With<PrimaryWindow>>>,
+    injected_cursor: Option<Res<DebugCursor>>,
 ) -> BrpResult {
+    // Said back to the caller when a press has no injected position behind it; see `Mouse`.
+    let mut note: Option<&str> = None;
     // `serde_json::Error` has no `From` into `BrpError`, so `?` cannot carry it — a malformed payload
     // is reported as INVALID_PARAMS with the parser's own message, which is the part a caller can act on.
     let cmd: InputCommand = match params.as_ref() {
@@ -617,6 +634,16 @@ pub fn handle_input(
                 .ok_or_else(|| invalid_params("Missing 'button' for mouse input".to_string()))?;
             let button: MouseButton = serde_json::from_value(raw.clone())
                 .map_err(|e| invalid_params(format!("unknown mouse button `{raw}`: {e}")))?;
+            // A press lands where picking last saw the pointer, and picking starts at (0, 0). Refusing
+            // would break a host driven by the real cursor, so the reply says it instead.
+            let aimed = injected_cursor.is_some_and(|c| c.0.is_some())
+                || pending.queue.iter().any(|c| matches!(c, Injected::Cursor(Some(_))));
+            if !aimed {
+                note = Some(
+                    "no injected cursor position: the click lands where the pointer last was \
+                     (the origin if it never moved). Send `kind: \"Cursor\"` with `x` and `y` first",
+                );
+            }
             pending.queue.push(Injected::Mouse(button, cmd.action, addressed));
         }
         InputKind::Scroll => {
@@ -675,11 +702,15 @@ pub fn handle_input(
         }
     }
 
-    Ok(json!({
+    let mut reply = json!({
         "success": true,
         // Deliberately not "Input injected": it has been accepted and validated, and lands on the next
         // `PreUpdate`. Claiming it already reached the game is what made the old schedule bug so hard
         // to see — the reply said the key had been delivered while the game never saw it.
         "message": "Input queued; applied on the next frame's PreUpdate",
-    }))
+    });
+    if let Some(note) = note {
+        reply["note"] = json!(note);
+    }
+    Ok(reply)
 }

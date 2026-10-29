@@ -192,7 +192,7 @@ plugin = [
 # `bevy_fairy/screenshot` and `bevy_fairy/capture`: offscreen or window capture, returned over
 # BRP. This is what turns on Bevy's renderer inside the plugin, so a headless host can leave
 # it off.
-plugin-screenshot = ["plugin", "bevy/bevy_render", "bevy/png", "dep:image"]
+plugin-screenshot = ["plugin", "bevy/bevy_render", "bevy/png", "dep:image", "bevy/bevy_picking"]
 
 # `bevy_fairy/guide`: the agent-to-human overlay and the guided steps. It spawns a UI node, so
 # a host that keeps its UI behind its own surfaces turns this off. `bevy_picking` is only for
@@ -283,6 +283,10 @@ required-features = ["plugin-guide"]
 [[test]]
 name = "plugin_input_edges"
 required-features = ["plugin"]
+
+[[test]]
+name = "plugin_pointer"
+required-features = ["plugin-screenshot"]
 
 [[test]]
 name = "plugin_leaf"
