@@ -11,8 +11,8 @@
         "common_no_workaround": false,
         "evidence": "crates/bevy_debugger_bevy/src/input.rs writes DebugCursor only; bevy_picking-0.20.0/src/input.rs:133 tracks the pointer from WindowEvent::CursorMoved"
       },
-      "status": "unconfirmed",
-      "evidence": "Static reading on 2026-10-21. Not yet proven: needs a round-trip test against the fixture (click a bevy_ui button, confirm Interaction changed).",
+      "status": "fixed",
+      "evidence": "confirmed by issue #9 and tests/plugin_pointer.rs (fails with routing removed, passes with it); fixed 2026-10-29 in v0.3.0",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -463,6 +463,22 @@
       "evidence": "",
       "last_failure": "",
       "first_seen": "2026-10-23"
+    },
+    {
+      "id": "B-053",
+      "kind": "bug",
+      "area": "tests",
+      "title": "tests/plugin_guide_steps.rs is gated on `#![cfg(feature = \"guide\")]`, a feature that does not exist (it is `plugin-guide`), so its tests silently compile to zero",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "cargo test --features plugin-guide prints 'running 0 tests' for plugin_guide_steps; rustc warns unexpected cfg value `guide`"
+      },
+      "status": "open",
+      "evidence": "",
+      "last_failure": "protected test file; fixing the cfg is an evaluator change, left for a human pass",
+      "first_seen": "2026-10-29"
     }
   ]
 }

@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-29
+
+Breaking for a host that calls `apply_pending_input` or `handle_input` as plain functions: both
+systems gained a parameter (`PointerRoute`, and an optional `DebugCursor`). A host that only adds
+`DebuggerPlugin` is unaffected.
 
 ### Fixed
 
