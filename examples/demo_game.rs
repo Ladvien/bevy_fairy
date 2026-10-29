@@ -20,6 +20,8 @@
 #[allow(dead_code)]
 #[path = "fixture_game.rs"]
 mod fixture_game;
+#[path = "../tests/helpers/headless.rs"]
+mod headless;
 
 use std::time::Duration;
 
@@ -29,7 +31,6 @@ use bevy::prelude::*;
 use bevy::remote::http::RemoteHttpPlugin;
 use bevy::render::render_resource::TextureFormat;
 use bevy::window::ExitCondition;
-use bevy::winit::WinitPlugin;
 use bevy_fairy::{DebugCaptureTarget, DebugCommandInfo, DebugCommandsAppExt, DebuggerPlugin};
 use fixture_game::{Crate, Mover, Score, Spinner};
 use serde::Deserialize;
@@ -160,15 +161,14 @@ fn main() {
     );
     App::new()
         .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: None,
-                    // No window ever exists, so the default condition would exit on frame one.
-                    exit_condition: ExitCondition::DontExit,
-                    ..default()
-                })
-                // WinitPlugin panics without a display server; ScheduleRunnerPlugin drives frames.
-                .disable::<WinitPlugin>(),
+            // No OS window backend, which panics without a display server; ScheduleRunnerPlugin
+            // drives frames.
+            headless::without_os_window(DefaultPlugins.set(WindowPlugin {
+                primary_window: None,
+                // No window ever exists, so the default condition would exit on frame one.
+                exit_condition: ExitCondition::DontExit,
+                ..default()
+            })),
         )
         .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
             1.0 / fps,
