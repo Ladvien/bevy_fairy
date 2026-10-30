@@ -98,6 +98,14 @@ async fn handle_execute(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) ->
             .map_err(|e| Error::Validation(format!("Failed to parse action: {e}")))?]
     };
 
+    if actions.is_empty() {
+        return Err(Error::Validation(
+            "`execute` needs a non-empty `actions` array, e.g. {\"action\":\"execute\",\"actions\":[...]}; \
+             nothing was run"
+                .to_string(),
+        ));
+    }
+
     info!("Executing {} actions", actions.len());
 
     let state = get_experiment_state();
