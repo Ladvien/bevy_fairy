@@ -1,7 +1,6 @@
 /// Anomaly detection system for automatic game state monitoring
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -98,7 +97,6 @@ pub struct AnomalyPattern {
 #[derive(Debug, Clone)]
 struct DataPoint {
     value: f32,
-    timestamp: Instant,
 }
 
 /// Ring buffer for efficient sliding window operations
@@ -261,7 +259,6 @@ impl PhysicsDetector {
 impl AnomalyDetector for PhysicsDetector {
     fn detect(&mut self, entities: &[EntityData]) -> Result<Vec<Anomaly>> {
         let mut anomalies = Vec::new();
-        let now = Instant::now();
 
         for entity in entities {
             if let Some(velocity_mag) = self.extract_velocity_magnitude(entity) {
@@ -272,7 +269,6 @@ impl AnomalyDetector for PhysicsDetector {
 
                 history.push(DataPoint {
                     value: velocity_mag,
-                    timestamp: now,
                 });
 
                 // Only analyze if we have enough samples
@@ -325,10 +321,8 @@ impl AnomalyDetector for PhysicsDetector {
 
 /// Performance metrics detector
 pub struct PerformanceDetector {
-    frame_times: RingBuffer<DataPoint>,
     entity_counts: RingBuffer<DataPoint>,
     config: AnomalyConfig,
-    last_entity_count: Option<usize>,
 }
 
 impl PerformanceDetector {
@@ -336,10 +330,8 @@ impl PerformanceDetector {
     #[must_use]
     pub fn new(config: AnomalyConfig) -> Self {
         Self {
-            frame_times: RingBuffer::new(config.window_size),
             entity_counts: RingBuffer::new(config.window_size),
             config,
-            last_entity_count: None,
         }
     }
 }
@@ -347,13 +339,11 @@ impl PerformanceDetector {
 impl AnomalyDetector for PerformanceDetector {
     fn detect(&mut self, entities: &[EntityData]) -> Result<Vec<Anomaly>> {
         let mut anomalies = Vec::new();
-        let now = Instant::now();
 
         // Track entity count growth
         let current_count = entities.len();
         self.entity_counts.push(DataPoint {
             value: current_count as f32,
-            timestamp: now,
         });
 
         if self.entity_counts.len() >= self.config.min_samples {
@@ -488,11 +478,11 @@ impl AnomalyDetectionSystem {
     /// Create a new anomaly detection system
     #[must_use]
     pub fn new(config: AnomalyConfig) -> Self {
-        let mut detectors: Vec<Box<dyn AnomalyDetector>> = Vec::new();
-
-        detectors.push(Box::new(PhysicsDetector::new(config.clone())));
-        detectors.push(Box::new(PerformanceDetector::new(config.clone())));
-        detectors.push(Box::new(ConsistencyDetector::new(config.clone())));
+        let detectors: Vec<Box<dyn AnomalyDetector>> = vec![
+            Box::new(PhysicsDetector::new(config.clone())),
+            Box::new(PerformanceDetector::new(config.clone())),
+            Box::new(ConsistencyDetector::new(config.clone())),
+        ];
 
         Self {
             detectors,

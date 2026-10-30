@@ -106,15 +106,15 @@
       "clippy::should_implement_trait": 2,
       "clippy::single_component_path_imports": 1,
       "clippy::useless_vec": 2,
-      "clippy::vec_init_then_push": 2,
-      "dead_code": 16,
+      "clippy::vec_init_then_push": 1,
+      "dead_code": 14,
       "unused_imports": 6,
       "unused_must_use": 1,
       "unused_mut": 1,
       "unused_variables": 16
     },
     "clippy_by_file": {
-      "src/server/anomaly_detector.rs": 11,
+      "src/server/anomaly_detector.rs": 8,
       "src/server/brp_validation.rs": 1,
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,
