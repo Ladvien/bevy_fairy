@@ -7,22 +7,17 @@ use tracing::{debug, info, warn};
 use crate::server::brp_messages::EntityData;
 use crate::server::error::{Error, Result};
 
-/// Types of anomalies that can be detected
+/// Types of anomalies the detectors report. Each is emitted by one detector; see
+/// [`AnomalyDetector::emits`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum AnomalyType {
-    /// Entity velocity exceeds reasonable bounds
+    /// Entity velocity is far outside that entity's own recent speeds
     PhysicsViolation,
-    /// Entity exists but shows signs of being unused/leaked
-    PotentialMemoryLeak,
     /// Entity components have contradictory values
     StateInconsistency,
-    /// Performance metrics indicate degradation
-    PerformanceSpike,
     /// Entity count growing abnormally
     EntityCountSpike,
-    /// Component value changing too rapidly
-    RapidValueChange,
 }
 
 impl AnomalyType {
@@ -30,14 +25,61 @@ impl AnomalyType {
     #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
-            Self::PhysicsViolation => "Entity violating physics constraints",
-            Self::PotentialMemoryLeak => "Entity potentially consuming resources without purpose",
+            Self::PhysicsViolation => "Entity velocity far outside its own recent speeds",
             Self::StateInconsistency => "Entity has contradictory component values",
-            Self::PerformanceSpike => "System performance degradation detected",
             Self::EntityCountSpike => "Abnormal increase in entity count",
-            Self::RapidValueChange => "Component value changing too rapidly",
         }
     }
+}
+
+/// What one detector could read on its last `detect` call. A detector that finds nothing it
+/// reads reports nothing, and an empty anomaly list from it says nothing about the game.
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectorCoverage {
+    pub detector: &'static str,
+    /// What the detector reads, in the game's terms.
+    pub reads: &'static str,
+    /// Readings it took: entities carrying what it reads (the performance detector reads one
+    /// number, the entity count).
+    pub examined: usize,
+    /// Readings it had enough history to judge.
+    pub evaluated: usize,
+    /// `evaluated`, or `not evaluated: <why>`.
+    pub status: String,
+}
+
+/// BRP keys a component by its full type path (`my_game::physics::Velocity`), so a detector that
+/// reads a component by name matches the whole last path segment. Two components with the same
+/// last segment resolve to the one whose path sorts first, so a read never depends on hash order.
+fn component_named<'a>(entity: &'a EntityData, name: &str) -> Option<&'a serde_json::Value> {
+    entity
+        .components
+        .iter()
+        .filter(|(path, _)| path.rsplit("::").next() == Some(name))
+        .min_by_key(|(path, _)| path.as_str())
+        .map(|(_, value)| value)
+}
+
+/// A vector as BRP sends it: `[x, y, z]` for a `Vec3` (`[x, y]` for a `Vec2`), or `{x, y, z}`.
+fn vector_of(value: &serde_json::Value) -> Option<[f32; 3]> {
+    let axis = |v: Option<&serde_json::Value>| v.and_then(serde_json::Value::as_f64).map(|n| n as f32);
+    match value {
+        serde_json::Value::Array(items) if items.len() == 2 || items.len() == 3 => {
+            let z = if items.len() == 3 { axis(items.get(2))? } else { 0.0 };
+            Some([axis(items.first())?, axis(items.get(1))?, z])
+        }
+        serde_json::Value::Object(fields) => {
+            Some([axis(fields.get("x"))?, axis(fields.get("y"))?, axis(fields.get("z")).unwrap_or(0.0)])
+        }
+        _ => None,
+    }
+}
+
+/// How far past its threshold a reading is: 0 at the threshold, 0.5 at twice it, towards 1. It is
+/// only asked about a reading already over the threshold, where `value / threshold` is above 1
+/// and a `.min(1.0)` on it reads 1 for every detection.
+fn severity_past(value: f32, threshold: f32) -> f32 {
+    (1.0 - threshold / value).clamp(0.0, 1.0)
 }
 
 /// Detected anomaly with context
@@ -46,7 +88,10 @@ pub struct Anomaly {
     pub anomaly_type: AnomalyType,
     pub entity_id: Option<u64>,
     pub component: Option<String>,
-    pub severity: f32, // 0.0 to 1.0
+    /// How far past its threshold the reading is, from 0 (at the threshold) towards 1: 0.5 is
+    /// twice the threshold, 0.9 ten times. A rule violation with no magnitude (a state
+    /// inconsistency) carries a fixed 0.9 rating, which is not a measurement.
+    pub severity: f32,
     pub description: String,
     pub detected_at: chrono::DateTime<chrono::Utc>,
     pub metadata: HashMap<String, serde_json::Value>,
@@ -59,12 +104,8 @@ pub struct AnomalyConfig {
     pub window_size: usize,
     /// Z-score threshold for outlier detection
     pub z_score_threshold: f32,
-    /// IQR multiplier for outlier detection
-    pub iqr_multiplier: f32,
     /// Minimum samples required before detection
     pub min_samples: usize,
-    /// Performance degradation threshold (multiplicative factor)
-    pub performance_threshold: f32,
     /// Entity count growth threshold (entities per sample)
     pub entity_growth_threshold: f32,
     /// Known acceptable anomalies to whitelist
@@ -76,9 +117,7 @@ impl Default for AnomalyConfig {
         Self {
             window_size: 100,
             z_score_threshold: 3.0,
-            iqr_multiplier: 1.5,
             min_samples: 10,
-            performance_threshold: 2.0,
             entity_growth_threshold: 10.0,
             whitelist: Vec::new(),
         }
@@ -234,12 +273,22 @@ pub trait AnomalyDetector: Send + Sync {
 
     /// Update detector configuration
     fn configure(&mut self, config: &AnomalyConfig);
+
+    /// The anomaly types this detector can report; `status` lists them, so they cannot drift.
+    fn emits(&self) -> &'static [AnomalyType];
+
+    /// What the detector could read on its last `detect` call (before the first, nothing).
+    fn coverage(&self) -> DetectorCoverage;
 }
 
 /// Physics violation detector
 pub struct PhysicsDetector {
     velocity_history: HashMap<u64, RingBuffer<DataPoint>>,
     config: AnomalyConfig,
+    /// What the last `detect` call could read, for `coverage`.
+    last_examined: usize,
+    last_evaluated: usize,
+    longest_history: usize,
 }
 
 impl PhysicsDetector {
@@ -249,26 +298,24 @@ impl PhysicsDetector {
         Self {
             velocity_history: HashMap::new(),
             config,
+            last_examined: 0,
+            last_evaluated: 0,
+            longest_history: 0,
         }
     }
 
     fn extract_velocity_magnitude(&self, entity: &EntityData) -> Option<f32> {
-        entity
-            .components
-            .get("Velocity")
-            .and_then(|v| v.get("linear"))
-            .and_then(|linear| {
-                let x = linear.get("x")?.as_f64()? as f32;
-                let y = linear.get("y")?.as_f64()? as f32;
-                let z = linear.get("z").and_then(|z| z.as_f64()).unwrap_or(0.0) as f32;
-                Some((x * x + y * y + z * z).sqrt())
-            })
+        let [x, y, z] = vector_of(component_named(entity, "Velocity")?.get("linear")?)?;
+        Some((x * x + y * y + z * z).sqrt())
     }
 }
 
 impl AnomalyDetector for PhysicsDetector {
     fn detect(&mut self, entities: &[EntityData]) -> Result<Vec<Anomaly>> {
         let mut anomalies = Vec::new();
+        self.last_examined = 0;
+        self.last_evaluated = 0;
+        self.longest_history = 0;
 
         for entity in entities {
             if let Some(velocity_mag) = self.extract_velocity_magnitude(entity) {
@@ -280,16 +327,19 @@ impl AnomalyDetector for PhysicsDetector {
                 history.push(DataPoint {
                     value: velocity_mag,
                 });
+                self.last_examined += 1;
+                self.longest_history = self.longest_history.max(history.len());
 
                 // Only analyze if we have enough samples
                 if history.len() >= self.config.min_samples {
+                    self.last_evaluated += 1;
                     let values: Vec<f32> = history.values().map(|dp| dp.value).collect();
                     let mean = Statistics::mean(&values);
                     let std_dev = Statistics::std_dev(&values);
                     let z_score = Statistics::z_score(velocity_mag, mean, std_dev);
 
                     if z_score.abs() > self.config.z_score_threshold {
-                        let severity = (z_score.abs() / self.config.z_score_threshold).min(1.0);
+                        let severity = severity_past(z_score.abs(), self.config.z_score_threshold);
 
                         let metadata = [
                             ("velocity_magnitude", serde_json::json!(velocity_mag)),
@@ -320,6 +370,36 @@ impl AnomalyDetector for PhysicsDetector {
         Ok(anomalies)
     }
 
+    fn emits(&self) -> &'static [AnomalyType] {
+        &[AnomalyType::PhysicsViolation]
+    }
+
+    fn coverage(&self) -> DetectorCoverage {
+        let min = self.config.min_samples;
+        let status = if self.last_examined == 0 {
+            "not evaluated: no entity has a `Velocity` component with a `linear` vector".to_string()
+        } else if self.last_evaluated == 0 {
+            format!(
+                "not evaluated: the longest velocity history holds {} of the {min} samples needed; call detect again",
+                self.longest_history
+            )
+        } else if self.last_evaluated < self.last_examined {
+            format!(
+                "evaluated {} of {} entities; the rest are short of the {min} samples needed",
+                self.last_evaluated, self.last_examined
+            )
+        } else {
+            "evaluated".to_string()
+        };
+        DetectorCoverage {
+            detector: "PhysicsDetector",
+            reads: "the `linear` vector (`[x, y, z]` or `{x, y, z}`) of a component named `Velocity`, compared with that entity's own recent speeds",
+            examined: self.last_examined,
+            evaluated: self.last_evaluated,
+            status,
+        }
+    }
+
     fn name(&self) -> &str {
         "PhysicsDetector"
     }
@@ -348,6 +428,11 @@ impl PerformanceDetector {
             config,
         }
     }
+
+    /// Samples held before growth can be judged: at least 2, since growth is a change between them.
+    fn samples_needed(&self) -> usize {
+        self.config.min_samples.max(2)
+    }
 }
 
 impl AnomalyDetector for PerformanceDetector {
@@ -363,7 +448,7 @@ impl AnomalyDetector for PerformanceDetector {
         // Growth is the change across the buffer divided by the samples that change spans, which
         // is one fewer than the samples held. `window_size` is only how many samples the buffer
         // may hold, so dividing by it read a 20-per-sample leak as 0.2 under a window of 100.
-        if self.entity_counts.len() >= self.config.min_samples.max(2) {
+        if self.entity_counts.len() >= self.samples_needed() {
             let values: Vec<f32> = self.entity_counts.values().map(|dp| dp.value).collect();
             let samples_spanned = values.len();
 
@@ -372,7 +457,7 @@ impl AnomalyDetector for PerformanceDetector {
                 let growth_rate = (last - first) / (samples_spanned - 1) as f32;
 
                 if growth_rate > self.config.entity_growth_threshold {
-                    let severity = (growth_rate / self.config.entity_growth_threshold).min(1.0);
+                    let severity = severity_past(growth_rate, self.config.entity_growth_threshold);
 
                     let metadata = [
                         ("growth_rate", serde_json::json!(growth_rate)),
@@ -402,6 +487,26 @@ impl AnomalyDetector for PerformanceDetector {
         Ok(anomalies)
     }
 
+    fn emits(&self) -> &'static [AnomalyType] {
+        &[AnomalyType::EntityCountSpike]
+    }
+
+    fn coverage(&self) -> DetectorCoverage {
+        let (held, needed) = (self.entity_counts.len(), self.samples_needed());
+        let evaluated = usize::from(held >= needed);
+        DetectorCoverage {
+            detector: "PerformanceDetector",
+            reads: "the number of entities the query returned, compared across `detect` calls",
+            examined: usize::from(held > 0),
+            evaluated,
+            status: if evaluated == 1 {
+                "evaluated".to_string()
+            } else {
+                format!("not evaluated: holds {held} of the {needed} samples it needs; call detect again")
+            },
+        }
+    }
+
     fn name(&self) -> &str {
         "PerformanceDetector"
     }
@@ -415,66 +520,80 @@ impl AnomalyDetector for PerformanceDetector {
 /// State consistency detector
 pub struct ConsistencyDetector {
     config: AnomalyConfig,
+    /// Entities that carried what the detector reads on its last `detect` call.
+    last_examined: usize,
 }
 
 impl ConsistencyDetector {
     /// Create a new consistency detector
     #[must_use]
     pub fn new(config: AnomalyConfig) -> Self {
-        Self { config }
+        Self { config, last_examined: 0 }
     }
 
-    fn check_health_alive_consistency(&self, entity: &EntityData) -> Option<Anomaly> {
-        let health = entity
-            .components
-            .get("Health")
-            .and_then(|h| h.get("current"))
-            .and_then(|c| c.as_f64())? as f32;
+    /// Health and alive as the entity carries them, when it carries both. An entity with no
+    /// `Alive` component is not marked as anything, so the absence is not read as alive.
+    fn health_and_alive(entity: &EntityData) -> Option<(f32, bool)> {
+        let health = component_named(entity, "Health")?.get("current")?.as_f64()? as f32;
+        let alive = component_named(entity, "Alive")?.as_bool()?;
+        Some((health, alive))
+    }
 
-        let is_alive = entity
-            .components
-            .get("Alive")
-            .and_then(|a| a.as_bool())
-            .unwrap_or(true);
+    fn inconsistency(entity_id: u64, health: f32, alive: bool) -> Anomaly {
+        let metadata = [
+            ("health", serde_json::json!(health)),
+            ("alive", serde_json::json!(alive)),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
 
-        if health <= 0.0 && is_alive {
-            let metadata = [
-                ("health", serde_json::json!(health)),
-                ("alive", serde_json::json!(is_alive)),
-            ]
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-
-            return Some(Anomaly {
-                anomaly_type: AnomalyType::StateInconsistency,
-                entity_id: Some(entity.id),
-                component: Some("Health/Alive".to_string()),
-                severity: 0.9, // High severity for logical inconsistency
-                description: format!(
-                    "Entity {} has health {:.1} but is marked as alive",
-                    entity.id, health
-                ),
-                detected_at: chrono::Utc::now(),
-                metadata,
-            });
+        Anomaly {
+            anomaly_type: AnomalyType::StateInconsistency,
+            entity_id: Some(entity_id),
+            component: Some("Health/Alive".to_string()),
+            severity: 0.9, // A fixed rating for a broken rule, not a measurement.
+            description: format!("Entity {entity_id} has health {health:.1} but is marked as alive"),
+            detected_at: chrono::Utc::now(),
+            metadata,
         }
-
-        None
     }
 }
 
 impl AnomalyDetector for ConsistencyDetector {
     fn detect(&mut self, entities: &[EntityData]) -> Result<Vec<Anomaly>> {
         let mut anomalies = Vec::new();
+        self.last_examined = 0;
 
         for entity in entities {
-            if let Some(anomaly) = self.check_health_alive_consistency(entity) {
-                anomalies.push(anomaly);
+            let Some((health, alive)) = Self::health_and_alive(entity) else {
+                continue;
+            };
+            self.last_examined += 1;
+            if health <= 0.0 && alive {
+                anomalies.push(Self::inconsistency(entity.id, health, alive));
             }
         }
 
         Ok(anomalies)
+    }
+
+    fn emits(&self) -> &'static [AnomalyType] {
+        &[AnomalyType::StateInconsistency]
+    }
+
+    fn coverage(&self) -> DetectorCoverage {
+        DetectorCoverage {
+            detector: "ConsistencyDetector",
+            reads: "`current` of a component named `Health` together with a boolean component named `Alive`; flags health at or below zero on an entity marked alive",
+            examined: self.last_examined,
+            evaluated: self.last_examined,
+            status: if self.last_examined == 0 {
+                "not evaluated: no entity has both a `Health` component with a numeric `current` and a boolean `Alive` component".to_string()
+            } else {
+                "evaluated".to_string()
+            },
+        }
     }
 
     fn name(&self) -> &str {
@@ -523,6 +642,18 @@ impl AnomalyDetectionSystem {
         self.anomaly_sender = Some(anomaly_sender);
 
         (entity_sender, anomaly_receiver)
+    }
+
+    /// What each detector could read on the last `detect_anomalies` call.
+    #[must_use]
+    pub fn coverage(&self) -> Vec<DetectorCoverage> {
+        self.detectors.iter().map(|d| d.coverage()).collect()
+    }
+
+    /// The anomaly types the detectors can report, in detector order.
+    #[must_use]
+    pub fn supported_anomaly_types(&self) -> Vec<AnomalyType> {
+        self.detectors.iter().flat_map(|d| d.emits().iter().cloned()).collect()
     }
 
     /// Process entities through all detectors
@@ -894,5 +1025,110 @@ mod tests {
         system.update_config(AnomalyConfig { window_size: usize::MAX, ..Default::default() });
         system.detect_anomalies(&entities(3)).unwrap();
         assert_eq!(system.config().window_size, usize::MAX);
+    }
+
+    /// B-087: severity was `(value / threshold).min(1.0)`, computed only once `value > threshold`,
+    /// so the ratio was already above 1 and every detection read exactly 1.0. `min_severity`
+    /// could not tell a reading just past its threshold from one a hundred times past it.
+    /// Severity is how far past the threshold a reading is: 0 at it, 0.5 at twice it, towards 1.
+    #[test]
+    fn entity_growth_severity_rises_with_how_far_past_the_threshold_it_is() {
+        let severity_of = |growth: u64| {
+            let mut detector = PerformanceDetector::new(AnomalyConfig {
+                min_samples: 2,
+                window_size: 2,
+                entity_growth_threshold: 10.0,
+                ..Default::default()
+            });
+            detector.detect(&entities(0)).unwrap();
+            detector.detect(&entities(growth)).unwrap()[0].severity
+        };
+        let (just_over, double, far_over) = (severity_of(11), severity_of(20), severity_of(1000));
+        assert!(just_over < double && double < far_over, "{just_over} {double} {far_over}");
+        assert!((double - 0.5).abs() < 1e-6, "twice the threshold is 0.5, got {double}");
+        assert!(far_over < 1.0, "severity stays below 1, got {far_over}");
+    }
+
+    /// The same data judged against a stricter z-score threshold is further past it.
+    #[test]
+    fn physics_severity_rises_with_how_far_past_the_z_score_threshold_it_is() {
+        let moving = |speed: f64| EntityData {
+            id: 1,
+            components: [("Velocity".to_string(), json!({"linear": {"x": speed, "y": 0.0, "z": 0.0}}))]
+                .into_iter()
+                .collect(),
+        };
+        let severity_under = |z_score_threshold: f32| {
+            let mut detector = PhysicsDetector::new(AnomalyConfig {
+                min_samples: 5,
+                window_size: 20,
+                z_score_threshold,
+                ..Default::default()
+            });
+            for _ in 0..9 {
+                detector.detect(&[moving(10.0)]).unwrap();
+            }
+            let found = detector.detect(&[moving(1000.0)]).unwrap();
+            assert_eq!(found.len(), 1, "a spike after a flat history is over a threshold of {z_score_threshold}");
+            found[0].severity
+        };
+        let (strict, lax) = (severity_under(1.0), severity_under(2.0));
+        assert!(lax < strict, "a lax threshold ({lax}) is not as far past as a strict one ({strict})");
+        assert!(strict < 1.0 && lax > 0.0, "{strict} {lax}");
+    }
+
+    /// B-090: `world.query` keys a component by its full type path (`my_game::physics::Velocity`)
+    /// and sends a `Vec3` as `[x, y, z]`. The detectors looked for the literal key `Velocity` and
+    /// an `{x, y, z}` object, which no game sends, so they could not fire against a real one.
+    #[test]
+    fn the_physics_detector_reads_a_velocity_as_brp_sends_it() {
+        let moving = |speed: f64| EntityData {
+            id: 1,
+            components: [("my_game::physics::Velocity".to_string(), json!({"linear": [speed, 0.0, 0.0]}))]
+                .into_iter()
+                .collect(),
+        };
+        let mut detector = PhysicsDetector::new(AnomalyConfig { min_samples: 5, window_size: 20, ..Default::default() });
+        for _ in 0..11 {
+            assert!(detector.detect(&[moving(10.0)]).unwrap().is_empty());
+        }
+        let found = detector.detect(&[moving(1000.0)]).unwrap();
+        assert_eq!(found.len(), 1, "a spike in a BRP-shaped Velocity must be seen: {found:?}");
+        assert_eq!(found[0].anomaly_type, AnomalyType::PhysicsViolation);
+        assert_eq!(found[0].metadata["velocity_magnitude"], json!(1000.0));
+    }
+
+    fn with_health(id: u64, health_key: &str, current: f64, alive: Option<bool>) -> EntityData {
+        let mut components = HashMap::new();
+        components.insert(health_key.to_string(), json!({"current": current, "max": 10.0}));
+        if let Some(alive) = alive {
+            components.insert("my_game::Alive".to_string(), json!(alive));
+        }
+        EntityData { id, components }
+    }
+
+    #[test]
+    fn the_consistency_detector_reads_health_and_alive_as_brp_sends_them() {
+        let mut detector = ConsistencyDetector::new(AnomalyConfig::default());
+        let found = detector.detect(&[with_health(1, "my_game::Health", -3.0, Some(true))]).unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].anomaly_type, AnomalyType::StateInconsistency);
+        assert_eq!(found[0].entity_id, Some(1));
+    }
+
+    /// The description said "is marked as alive" for an entity that has no `Alive` component at
+    /// all: the absence was read as `true`. Nothing is contradicted when nothing is marked.
+    #[test]
+    fn zero_health_with_no_alive_component_is_not_an_inconsistency() {
+        let mut detector = ConsistencyDetector::new(AnomalyConfig::default());
+        assert!(detector.detect(&[with_health(1, "my_game::Health", -10.0, None)]).unwrap().is_empty());
+        assert!(detector.detect(&[with_health(2, "my_game::Health", -10.0, Some(false))]).unwrap().is_empty());
+    }
+
+    /// A component is matched on its whole last path segment: `MaxHealth` is not `Health`.
+    #[test]
+    fn a_component_whose_name_merely_ends_in_health_is_not_health() {
+        let mut detector = ConsistencyDetector::new(AnomalyConfig::default());
+        assert!(detector.detect(&[with_health(1, "my_game::MaxHealth", -10.0, Some(true))]).unwrap().is_empty());
     }
 }

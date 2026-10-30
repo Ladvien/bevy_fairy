@@ -4,7 +4,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::server::anomaly_detector::{Anomaly, AnomalyConfig, AnomalyDetectionSystem};
+use crate::server::anomaly_detector::{
+    Anomaly, AnomalyConfig, AnomalyDetectionSystem, DetectorCoverage,
+};
 use crate::server::brp_client::BrpClient;
 use crate::server::brp_messages::{
     builtin_methods, entity_data_from_query_result, BrpPayload, BrpRequest,
@@ -175,19 +177,41 @@ async fn handle_detect(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
         limited_anomalies.len()
     );
 
-    Ok(json!({
+    let coverage = state_guard.detection_system.coverage();
+    let mut reply = json!({
         "anomalies": limited_anomalies,
         "summary": {
             "total_detected": anomalies.len(),
             "after_filtering": limited_anomalies.len(),
-            "entities_analyzed": entities.len(),
+            "entities_read": entities.len(),
             "min_severity_filter": min_severity,
             "limit_applied": limit,
             "timestamp": chrono::Utc::now().to_rfc3339()
         },
+        "detectors": coverage,
         "severity_breakdown": calculate_severity_breakdown(&anomalies),
         "type_breakdown": calculate_type_breakdown(&anomalies)
-    }))
+    });
+    if let Some(note) = coverage_note(&coverage) {
+        reply["note"] = json!(note);
+    }
+    Ok(reply)
+}
+
+/// Say so when a detector read nothing: an empty `anomalies` list from it is not a clean result.
+/// `entities_read` counts what the query returned, not what any detector could use of it.
+fn coverage_note(coverage: &[DetectorCoverage]) -> Option<String> {
+    let unevaluated: Vec<&str> = coverage.iter().filter(|c| c.evaluated == 0).map(|c| c.detector).collect();
+    if unevaluated.is_empty() {
+        None
+    } else if unevaluated.len() == coverage.len() {
+        Some("No detector could judge anything in this game (see `detectors`), so an empty `anomalies` list says nothing about the game.".to_string())
+    } else {
+        Some(format!(
+            "{} did not evaluate (see `detectors`), so the list says nothing about what they read.",
+            unevaluated.join(", ")
+        ))
+    }
 }
 
 /// Read an optional numeric argument. Absent is `Ok(None)`; present but not a positive finite
@@ -232,14 +256,8 @@ async fn handle_configure(arguments: Value) -> Result<Value> {
         if let Some(n) = positive_arg(&arguments, "z_score_threshold")? {
             config.z_score_threshold = n as f32;
         }
-        if let Some(n) = positive_arg(&arguments, "iqr_multiplier")? {
-            config.iqr_multiplier = n as f32;
-        }
         if let Some(n) = positive_arg(&arguments, "min_samples")? {
             config.min_samples = n as usize;
-        }
-        if let Some(n) = positive_arg(&arguments, "performance_threshold")? {
-            config.performance_threshold = n as f32;
         }
         if let Some(n) = positive_arg(&arguments, "entity_growth_threshold")? {
             config.entity_growth_threshold = n as f32;
@@ -268,9 +286,7 @@ fn config_json(config: &AnomalyConfig) -> Value {
     json!({
         "window_size": config.window_size,
         "z_score_threshold": config.z_score_threshold,
-        "iqr_multiplier": config.iqr_multiplier,
         "min_samples": config.min_samples,
-        "performance_threshold": config.performance_threshold,
         "entity_growth_threshold": config.entity_growth_threshold,
         "whitelist_count": config.whitelist.len()
     })
@@ -278,27 +294,23 @@ fn config_json(config: &AnomalyConfig) -> Value {
 
 /// List the detectors and the anomaly types they can report
 async fn handle_status() -> Result<Value> {
-    let config = get_anomaly_state()
-        .read()
-        .await
-        .detection_system
-        .config()
-        .clone();
+    let state = get_anomaly_state();
+    let state_guard = state.read().await;
+    let system = &state_guard.detection_system;
+    let detectors: Vec<Value> = system
+        .coverage()
+        .iter()
+        .map(|c| json!({"detector": c.detector, "reads": c.reads}))
+        .collect();
+    let supported: Vec<String> = system
+        .supported_anomaly_types()
+        .iter()
+        .map(|t| format!("{t:?}"))
+        .collect();
     Ok(json!({
-        "config": config_json(&config),
-        "detectors": [
-            "PhysicsDetector",
-            "PerformanceDetector",
-            "ConsistencyDetector"
-        ],
-        "supported_anomaly_types": [
-            "PhysicsViolation",
-            "PotentialMemoryLeak",
-            "StateInconsistency",
-            "PerformanceSpike",
-            "EntityCountSpike",
-            "RapidValueChange"
-        ]
+        "config": config_json(system.config()),
+        "detectors": detectors,
+        "supported_anomaly_types": supported
     }))
 }
 
@@ -376,6 +388,57 @@ mod tests {
             assert_eq!(r["error"], "Invalid configuration", "{bad}: {r}");
             assert!(r["message"].as_str().unwrap().contains("window_size"), "{r}");
         }
+    }
+
+    /// B-088: `status` listed six anomaly types, three of which (`PotentialMemoryLeak`,
+    /// `PerformanceSpike`, `RapidValueChange`) no detector has ever emitted. What `status` says the
+    /// tool can report is what the detectors can: drive each one and compare.
+    #[tokio::test]
+    async fn status_lists_the_anomaly_types_the_detectors_emit_and_no_others() {
+        use crate::server::brp_messages::EntityData;
+        use std::collections::BTreeSet;
+
+        let mut system = AnomalyDetectionSystem::new(AnomalyConfig {
+            min_samples: 3,
+            window_size: 20,
+            z_score_threshold: 1.0,
+            entity_growth_threshold: 1.0,
+            ..Default::default()
+        });
+        let mut emitted = BTreeSet::new();
+        for round in 0..8u64 {
+            // Entities grow every round; one moves at a constant speed until the last round, when
+            // it spikes; one has health 0 and is marked alive.
+            let speed = if round == 7 { 1000.0 } else { 10.0 };
+            let mut entities: Vec<EntityData> = (0..round * 5)
+                .map(|id| EntityData { id: 100 + id, components: Default::default() })
+                .collect();
+            entities.push(EntityData {
+                id: 1,
+                components: [("Velocity".to_string(), json!({"linear": {"x": speed, "y": 0.0, "z": 0.0}}))]
+                    .into_iter()
+                    .collect(),
+            });
+            entities.push(EntityData {
+                id: 2,
+                components: [("Health".to_string(), json!({"current": 0.0})), ("Alive".to_string(), json!(true))]
+                    .into_iter()
+                    .collect(),
+            });
+            for anomaly in system.detect_anomalies(&entities).unwrap() {
+                emitted.insert(format!("{:?}", anomaly.anomaly_type));
+            }
+        }
+        assert_eq!(emitted.len(), 3, "the driven data should trigger every detector: {emitted:?}");
+
+        let status = handle_status().await.unwrap();
+        let listed: BTreeSet<String> = status["supported_anomaly_types"]
+            .as_array()
+            .expect("status lists the types")
+            .iter()
+            .map(|t| t.as_str().expect("a type is a string").to_string())
+            .collect();
+        assert_eq!(listed, emitted, "status must list what the detectors can report");
     }
 
     #[tokio::test]
