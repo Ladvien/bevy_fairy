@@ -580,6 +580,38 @@ async fn observe_refuses_a_component_name_the_game_does_not_register() {
     assert!(!failed, "the registered path is accepted: {text}");
 }
 
+/// Bevy's `Mesh3d` has a digit in its registered path (`bevy_mesh::components::Mesh3d`), and the
+/// unregistered-name error tells an agent to use exactly such a path. The parser refused it
+/// ("Unrecognized query pattern"), so every component of `Mesh3d`, `Camera3d` or `avian3d` was
+/// unnameable (issue #14). The fixture registers `Mesh3d` and spawns none, so the true answers are
+/// known: no entity has one, and every entity lacks one.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_names_a_registered_component_whose_path_has_a_digit() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    let rows_of = |text: &str| -> usize {
+        let reply: Value = serde_json::from_str(text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+        reply["result"].as_array().unwrap_or_else(|| panic!("no rows in: {reply}")).len()
+    };
+
+    let mesh3d = "bevy_mesh::components::Mesh3d";
+    let (text, failed) = observe(&tools, &format!("find entities with component {mesh3d}")).await;
+    assert!(!failed, "a registered path with a digit must parse: {text}");
+    assert_eq!(rows_of(&text), 0, "the fixture spawns no mesh: {text}");
+
+    let (all, failed) = observe(&tools, "list all entities").await;
+    assert!(!failed, "{all}");
+    let (without, failed) = observe(&tools, &format!("find entities without component {mesh3d}")).await;
+    assert!(!failed, "{without}");
+    assert_eq!(rows_of(&without), rows_of(&all), "every entity lacks a Mesh3d: {without}");
+
+    // A generic path: `Time<Real>` is one resource, so exactly one entity holds it.
+    let (text, failed) = observe(&tools, "find entities with component bevy_time::time::Time<bevy_time::real::Real>").await;
+    assert!(!failed, "a registered generic path must parse: {text}");
+    assert_eq!(rows_of(&text), 1, "one `Time<Real>` resource: {text}");
+}
+
 /// `find N entities with component Y` parsed N and dropped it, so `find 2 entities` answered all
 /// six of the fixture's crates under an `entity_count` of 6 (B-079). The game's `world.query` has no
 /// limit, so the server cuts the rows, and says how many matched so the cut is visible.
