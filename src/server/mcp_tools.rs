@@ -226,7 +226,7 @@ pub struct ReplayRequest {
     /// `compare_branches`, `delete_branch`, `branch_tree`. Each action reads only the arguments
     /// named for it below.
     pub action: ReplayAction,
-    /// `record`: samples per second.
+    /// `record`: samples per second, above 0 (default 30). Each sample is a BRP round trip, so the rate reached is lower when the game answers slower; `stop` reports the frames and seconds actually recorded.
     #[serde(default)]
     pub sample_rate: Option<f32>,
     /// `record`: the most frames kept in memory.

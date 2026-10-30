@@ -527,6 +527,22 @@
       "evidence": "tests/fixture_ground_truth.rs::observe_resolves_the_short_names_a_semantic_query_is_built_from failed before, passes after; semantic queries rewrite a short name ending exactly one registered path, reported in metadata.resolved_component_names; ambiguous/unknown names still refused. Caller-typed short names still refused (existing test pins it). Velocity/Collider/Health/RigidBody remain unregistered in the fixture so those queries refuse honestly.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-066",
+      "kind": "bug",
+      "area": "replay",
+      "title": "replay record: sample_rate <= 0 panicked the recorder task (status kept saying recording, no frames); rates above 30 were silently recorded at 30 by a fixed 33 ms poll",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/tools/replay.rs record loop slept 33 ms; recording_system.rs:180 Duration::from_secs_f32(1/rate)"
+      },
+      "status": "fixed",
+      "evidence": "replay::tests::record_refuses_a_sample_rate_that_cannot_be_a_period, recorder_polls_at_the_requested_rate_not_a_fixed_33_ms",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
