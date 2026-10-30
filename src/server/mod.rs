@@ -40,7 +40,6 @@ pub mod heartbeat;
 // Communication
 pub mod brp;
 pub mod brp_client;
-pub mod brp_client_v2;
 pub mod brp_command_handler;
 pub mod brp_integration;
 pub mod brp_validation;
@@ -109,7 +108,6 @@ pub mod memory_pools;
 pub mod deadlock_detector;
 pub mod lock_contention_benchmark;
 pub mod benchmark_runner;
-pub mod brp_client_refactored;
 pub mod tools;
 
 // Panic prevention and reliability testing
