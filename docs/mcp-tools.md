@@ -120,38 +120,6 @@ Ask the game to quit cleanly.
 
 No arguments.
 
-## `replay`
-
-Record and replay game state for time-travel debugging. Capture game state at specific points and replay to understand how bugs occur.
-
-| Argument | Type | Required | Description |
-|---|---|---|---|
-| `action` | any | yes | What to do. Recording: `record`, `stop`, `status`, `marker`, `save`, `load`, `stats`. Playback: `play`, `pause`, `seek`, `step`, `set_speed`, `playback_status`. Branches: `create_branch`, `list_branches`, `switch_branch`, `add_modification`, `merge_branch`, `compare_branches`, `delete_branch`, `branch_tree`. Each action reads only the arguments named for it below. |
-| `branch_a` | string | no | `compare_branches`: the first branch. |
-| `branch_b` | string | no | `compare_branches`: the second branch. |
-| `branch_id` | string | no | `switch_branch`, `add_modification`, `merge_branch`, `delete_branch`, `branch_tree`: the branch. |
-| `branch_point_frame` | integer | no | `create_branch`: the frame it forks at. Default 0. |
-| `checksums` | boolean | no | `record`: checksum each frame. |
-| `component_filter` | array | no | `record`: record only these component type paths. |
-| `compression` | boolean | no | `record`: compress the recording. |
-| `description` | string | no | `marker`: a free-text note. `add_modification`: what the modification is for. |
-| `direction` | any | no | `step`: `forward` (the default) or `backward`. |
-| `end_frame` | integer | no | `compare_branches`: the frame the comparison stops before. Default 10. |
-| `entity_modification` | any | no | `add_modification`: set one component of one entity. Give this or `entity_removal`. |
-| `entity_removal` | any | no | `add_modification`: remove one entity. Give this or `entity_modification`. |
-| `event_filter` | array | no | `record`: record only these event types. |
-| `filename` | string | no | `save` and `load`: the file, on this machine. `save` defaults to `recording.bevy`. |
-| `frame` | integer | no | `seek`: the frame number to go to. Give this or `marker`. |
-| `frame_number` | integer | no | `add_modification`: the frame the modification applies at. |
-| `marker` | string | no | `seek`: the marker name to go to. Give this or `frame`. |
-| `max_buffer_size` | integer | no | `record`: the most frames kept in memory. |
-| `name` | string | no | `marker` and `create_branch`: the name. `marker` defaults to `marker`; `create_branch` requires it. |
-| `parent_id` | string | no | `create_branch`: the branch this one forks from. |
-| `sample_rate` | number | no | `record`: samples per second, above 0 (default 30). Each sample is a BRP round trip, so the rate reached is lower when the game answers slower; `stop` reports the frames and seconds actually recorded. |
-| `speed` | number | no | `set_speed`: the playback speed, required (1.0 is real time). |
-| `start_frame` | integer | no | `compare_branches`: the first frame compared. Default 0. |
-| `strategy` | any | no | `merge_branch`: `take_source` (the default), `take_target` or `manual`. |
-
 ## `run`
 
 Run one command the game registered, by name, with its parameters. Waits up to 120 s for the game to be ready. An unknown name is refused with the closest known one. Every command that runs is recorded, so `scene save` can write the run out as a replayable file.
@@ -184,7 +152,7 @@ Capture the game to a PNG file on this machine and return its path, size, the so
 
 ## `status`
 
-Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and replay progress. The reply also carries the URL this server talks to. Call this first.
+Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none). The reply also carries the URL this server talks to. Call this first.
 
 No arguments.
 

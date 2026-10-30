@@ -17,7 +17,7 @@ use tracing::{error, info, debug};
 use schemars::JsonSchema;
 
 use crate::server::brp_client::BrpClient;
-use crate::server::tools::{observe, experiment, guide, hypothesis, anomaly, replay};
+use crate::server::tools::{observe, experiment, guide, hypothesis, anomaly};
 use crate::server::experiment_system::Action;
 use crate::server::brp::{BrpPayload, BrpRequest};
 use base64::Engine;
@@ -213,130 +213,6 @@ pub struct AnomalyRequest {
     /// How many anomalies to report at most.
     #[serde(default)]
     pub limit: Option<u64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ReplayRequest {
-    /// What to do. Recording: `record`, `stop`, `status`, `marker`, `save`, `load`, `stats`.
-    /// Playback: `play`, `pause`, `seek`, `step`, `set_speed`, `playback_status`. Branches:
-    /// `create_branch`, `list_branches`, `switch_branch`, `add_modification`, `merge_branch`,
-    /// `compare_branches`, `delete_branch`, `branch_tree`. Each action reads only the arguments
-    /// named for it below.
-    pub action: ReplayAction,
-    /// `record`: samples per second, above 0 (default 30). Each sample is a BRP round trip, so the rate reached is lower when the game answers slower; `stop` reports the frames and seconds actually recorded.
-    #[serde(default)]
-    pub sample_rate: Option<f32>,
-    /// `record`: the most frames kept in memory.
-    #[serde(default)]
-    pub max_buffer_size: Option<u64>,
-    /// `record`: compress the recording.
-    #[serde(default)]
-    pub compression: Option<bool>,
-    /// `record`: checksum each frame.
-    #[serde(default)]
-    pub checksums: Option<bool>,
-    /// `record`: record only these component type paths.
-    #[serde(default)]
-    pub component_filter: Option<Vec<String>>,
-    /// `record`: record only these event types.
-    #[serde(default)]
-    pub event_filter: Option<Vec<String>>,
-    /// `marker` and `create_branch`: the name. `marker` defaults to `marker`; `create_branch` requires it.
-    #[serde(default)]
-    pub name: Option<String>,
-    /// `marker`: a free-text note.
-    /// `add_modification`: what the modification is for.
-    #[serde(default)]
-    pub description: Option<String>,
-    /// `save` and `load`: the file, on this machine. `save` defaults to `recording.bevy`.
-    #[serde(default)]
-    pub filename: Option<String>,
-    /// `seek`: the frame number to go to. Give this or `marker`.
-    #[serde(default)]
-    pub frame: Option<u64>,
-    /// `seek`: the marker name to go to. Give this or `frame`.
-    #[serde(default)]
-    pub marker: Option<String>,
-    /// `step`: `forward` (the default) or `backward`.
-    #[serde(default)]
-    pub direction: Option<StepDirection>,
-    /// `set_speed`: the playback speed, required (1.0 is real time).
-    #[serde(default)]
-    pub speed: Option<f32>,
-    /// `create_branch`: the branch this one forks from.
-    #[serde(default)]
-    pub parent_id: Option<String>,
-    /// `create_branch`: the frame it forks at. Default 0.
-    #[serde(default)]
-    pub branch_point_frame: Option<u64>,
-    /// `switch_branch`, `add_modification`, `merge_branch`, `delete_branch`, `branch_tree`: the branch.
-    #[serde(default)]
-    pub branch_id: Option<String>,
-    /// `add_modification`: the frame the modification applies at.
-    #[serde(default)]
-    pub frame_number: Option<u64>,
-    /// `add_modification`: set one component of one entity. Give this or `entity_removal`.
-    #[serde(default)]
-    pub entity_modification: Option<EntityModification>,
-    /// `add_modification`: remove one entity. Give this or `entity_modification`.
-    #[serde(default)]
-    pub entity_removal: Option<EntityRemoval>,
-    /// `merge_branch`: `take_source` (the default), `take_target` or `manual`.
-    #[serde(default)]
-    pub strategy: Option<MergeStrategyArg>,
-    /// `compare_branches`: the first branch.
-    #[serde(default)]
-    pub branch_a: Option<String>,
-    /// `compare_branches`: the second branch.
-    #[serde(default)]
-    pub branch_b: Option<String>,
-    /// `compare_branches`: the first frame compared. Default 0.
-    #[serde(default)]
-    pub start_frame: Option<u64>,
-    /// `compare_branches`: the frame the comparison stops before. Default 10.
-    #[serde(default)]
-    pub end_frame: Option<u64>,
-}
-
-/// What `replay` does.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ReplayAction {
-    Record, Stop, Status, Marker, Save, Load, Stats,
-    Play, Pause, Seek, Step, SetSpeed, PlaybackStatus,
-    CreateBranch, ListBranches, SwitchBranch, AddModification, MergeBranch, CompareBranches,
-    DeleteBranch, BranchTree,
-}
-
-/// The direction of a `step`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum StepDirection { Forward, Backward }
-
-/// How `merge_branch` resolves conflicts.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MergeStrategyArg { TakeSource, TakeTarget, Manual }
-
-/// Set one component of one entity.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct EntityModification {
-    /// The entity's id.
-    pub entity_id: u64,
-    /// The component's type path.
-    pub component_name: String,
-    /// The component's new value, as JSON.
-    pub new_value: Value,
-}
-
-/// Remove one entity.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct EntityRemoval {
-    /// The entity's id.
-    pub entity_id: u64,
 }
 
 /// A tool that takes no arguments. It is a named, empty struct for the reason given at the top of this file.
@@ -819,8 +695,8 @@ pub const COLLABORATION_PROTOCOL: &str =
                  `detect_anomaly` looks for anomalies in them. `hypothesis` tests a claim about the game \
                  -- it needs a `description` of the claim and a `success_condition` that decides it, or it \
                  cannot run. `experiment` changes the game (spawn, modify, delete) and needs the `actions` \
-                 to carry out. `replay` records and replays what it holds.\n\n\
-                 `detect_anomaly`, `hypothesis`, `experiment` and `replay` each take an `action` that picks \
+                 to carry out.\n\n\
+                 `detect_anomaly`, `hypothesis` and `experiment` each take an `action` that picks \
                  what to do, and each has its own action names -- read them from the tool's schema. A tool \
                  asked for something it cannot do says so; it does not answer with a default.\n\n\
                  WORKING WITH THE PERSON AT THE KEYBOARD:\n\
@@ -950,30 +826,8 @@ impl BevyDebuggerTools {
         }
     }
 
-    /// Record and replay game state
-    #[tool(description = "Record and replay game state for time-travel debugging. Capture game state at specific points and replay to understand how bugs occur.")]
-    pub async fn replay(&self, Parameters(req): Parameters<ReplayRequest>) -> Result<CallToolResult, McpError> {
-        info!("Replay action: {:?}", req.action);
-        
-        let arguments = match serde_json::to_value(&req) {
-            Ok(Value::Object(mut map)) => {
-                map.retain(|_, value| !value.is_null());
-                Value::Object(map)
-            }
-            Ok(_) | Err(_) => return tool_err("replay arguments could not be encoded"),
-        };
-        
-        match replay::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => handler_result(result),
-            Err(e) => {
-                error!("Replay tool error: {}", e);
-                tool_err(format!("Replay tool error: {}", e))
-            }
-        }
-    }
-
     /// Report whether the game is answering and ready for commands
-    #[tool(description = "Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and replay progress. The reply also carries the URL this server talks to. Call this first.")]
+    #[tool(description = "Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none). The reply also carries the URL this server talks to. Call this first.")]
     pub async fn status(&self, Parameters(_req): Parameters<NoArgs>) -> Result<CallToolResult, McpError> {
         let url = self.game_url().await;
         match self.call_game(STATUS_METHOD, None).await {

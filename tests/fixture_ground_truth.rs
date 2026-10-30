@@ -880,3 +880,150 @@ async fn experiment_delete_does_not_claim_a_rollback_undo_cannot_perform() {
         assert_eq!(history["count"], json!(1), "a refused undo must not drop the entry: {history}");
     }
 }
+
+/// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
+/// way an agent's client reaches it, so a tool the server does not offer is answered as such.
+struct StdioServer {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    replies: std::sync::mpsc::Receiver<Value>,
+    next_id: u64,
+}
+
+impl StdioServer {
+    fn start(port: u16) -> Self {
+        use std::io::BufRead;
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_bevy-fairy"))
+            .arg("--stdio")
+            .env("BEVY_BRP_HOST", "127.0.0.1")
+            .env("BEVY_BRP_PORT", port.to_string())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("start the bevy-fairy binary");
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let (send, replies) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Ok(message) = serde_json::from_str::<Value>(&line) {
+                    if send.send(message).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        let mut server = Self { child, stdin, replies, next_id: 0 };
+        server.request(
+            "initialize",
+            json!({"protocolVersion": "2024-11-05", "capabilities": {},
+                   "clientInfo": {"name": "fixture-ground-truth", "version": "1"}}),
+        );
+        server.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+        server
+    }
+
+    fn send(&mut self, message: Value) {
+        use std::io::Write;
+        writeln!(self.stdin, "{message}").expect("write to the server");
+        self.stdin.flush().expect("flush to the server");
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let reply = self
+                .replies
+                .recv_timeout(left)
+                .unwrap_or_else(|e| panic!("no reply to {method} within 60 s: {e}"));
+            if reply.get("id") == Some(&json!(id)) {
+                return reply;
+            }
+        }
+    }
+
+    /// Call a tool by name. `Err` is what the agent sees when the call is refused, whether as an
+    /// error result or as an RPC error; `Ok` is the tool's JSON answer.
+    fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, String> {
+        let reply = self.request("tools/call", json!({"name": name, "arguments": arguments}));
+        if let Some(error) = reply.get("error") {
+            return Err(error.to_string());
+        }
+        let result = &reply["result"];
+        let text = result["content"]
+            .as_array()
+            .map(|items| items.iter().filter_map(|item| item["text"].as_str()).collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
+        if result["isError"] == json!(true) {
+            Err(text)
+        } else {
+            Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
+        }
+    }
+}
+
+impl Drop for StdioServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// The mover's x, read from the game.
+async fn mover_x(tools: &BevyDebuggerTools) -> f64 {
+    let rows = brp(
+        tools,
+        json!({"method": "world.query", "params": {
+            "data": {"components": ["bevy_transform::components::transform::Transform"]},
+            "filter": {"with": ["fixture_game::Mover"]}
+        }}),
+    )
+    .await;
+    rows[0]["components"]["bevy_transform::components::transform::Transform"]["translation"][0]
+        .as_f64()
+        .unwrap_or_else(|| panic!("the mover's transform has no x: {rows}"))
+}
+
+/// `replay` answered "Playback started" -- and "Stepped forward", "Seeked to frame N" -- while
+/// nothing reached the game: the sync that was to write each recorded frame back was a `TODO`
+/// that returned `Ok`, so the mover carried on from wherever it was. A tool that says it is
+/// playing a recording back must put the game in the recorded states, and one that cannot must
+/// refuse.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_tool_says_it_plays_a_recording_back_without_the_game_seeing_it() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    let mut server = StdioServer::start(port);
+
+    let x_when_recording_began = mover_x(&tools).await;
+    if server.call_tool("replay", json!({"action": "record", "sample_rate": 20.0})).is_err() {
+        return; // Refused: nothing was claimed about the game.
+    }
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+    if server.call_tool("replay", json!({"action": "stop"})).is_err() {
+        return;
+    }
+    let x_when_recording_stopped = mover_x(&tools).await;
+    // Let the mover travel well past every recorded state before asking for them back.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let Ok(claim) = server.call_tool("replay", json!({"action": "play"})) else {
+        return;
+    };
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let x_now = mover_x(&tools).await;
+    // Played back, the mover is somewhere the recording saw it, and moves on at MOVER_SPEED from
+    // there; allow half a second of that travel either side.
+    let slack = f64::from(fixture_game::MOVER_SPEED) * 0.5;
+    assert!(
+        x_now >= x_when_recording_began - slack && x_now <= x_when_recording_stopped + slack,
+        "replay answered {claim}, but the mover is at x = {x_now}: the recording saw it only \
+         between x = {x_when_recording_began} and x = {x_when_recording_stopped}"
+    );
+}
