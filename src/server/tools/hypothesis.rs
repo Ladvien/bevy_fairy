@@ -156,13 +156,19 @@ async fn handle_quick_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>)
 
 /// Handle stress test (many iterations with fuzzing)
 async fn handle_stress_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
-    // Override parameters for stress test
+    // Stress defaults, each applied only where the caller did not choose one.
     let mut args = arguments.clone();
     if let Some(obj) = args.as_object_mut() {
-        obj.insert("iterations".to_string(), json!(1000));
-        obj.insert("variation_type".to_string(), json!("fuzz"));
-        obj.insert("max_mutations".to_string(), json!(5));
-        obj.insert("mutation_probability".to_string(), json!(0.8));
+        for (key, value) in [
+            ("iterations", json!(1000)),
+            ("variation_type", json!("fuzz")),
+            ("max_mutations", json!(5)),
+            ("mutation_probability", json!(0.8)),
+        ] {
+            if obj.get(key).is_none_or(Value::is_null) {
+                obj.insert(key.to_string(), value);
+            }
+        }
     }
 
     handle_test(args, brp_client).await

@@ -9,7 +9,7 @@
  */
 
 use rmcp::{model::*, tool, tool_router, handler::server::{ServerHandler, router::tool::ToolRouter, tool::Parameters}, schemars, Error as McpError};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{sync::Arc, future::Future};
 use tokio::sync::RwLock;
@@ -92,13 +92,26 @@ pub struct ExperimentRequest {
     pub actions: Vec<Action>,
 }
 
+/// How `hypothesis` varies a test between iterations: the strategies the handler runs.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariationType {
+    None,
+    Random,
+    Grid,
+    Boundary,
+    Fuzz,
+}
+
 /// `hypothesis`: state a claim and check it against the game. The handler reads `description` and
 /// `success_condition`; the tool used to send `hypothesis`/`confidence`/`context`, so the handler
 /// fell through to its default and then failed on a `description` the schema never advertised.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HypothesisRequest {
-    /// The operation to run. One of `test`, `quick_test`, `stress_test`, `validate`.
+    /// The operation to run. One of `test`, `quick_test` (10 iterations, 10 s), `stress_test` (fuzz
+    /// variation, 1000 iterations unless `iterations` or `variation_type` say otherwise), `validate`
+    /// (checks the claim parses; runs nothing).
     pub action: String,
     /// What the claim is, in words. `test` and `quick_test` require it.
     #[serde(default)]
@@ -109,24 +122,52 @@ pub struct HypothesisRequest {
     /// The actions to try while testing the claim.
     #[serde(default)]
     pub actions: Vec<Action>,
-    /// How to vary the test between iterations. One of `none`, `random`, `parameter`, `scenario`.
+    /// How to vary the test between iterations. Default `none`. `random` varies within
+    /// `numeric_min`..`numeric_max`, `string_pool` and `bool_probability`; `grid` walks
+    /// `numeric_values`, `string_values` and `bool_values`; `boundary` tries edge values chosen by
+    /// the `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with
+    /// probability `mutation_probability`.
     #[serde(default)]
-    pub variation_type: Option<String>,
-    /// For `random`: the low end of the numeric range to vary over.
+    pub variation_type: Option<VariationType>,
+    /// For `random`: the low end of the numeric range to vary over. Default 0.
     #[serde(default)]
     pub numeric_min: Option<f64>,
-    /// For `random`: the high end of the numeric range to vary over.
+    /// For `random`: the high end of the numeric range to vary over. Default 100.
     #[serde(default)]
     pub numeric_max: Option<f64>,
-    /// For `random`: the strings to vary over.
+    /// For `random`: the strings to vary over. Default none.
     #[serde(default)]
     pub string_pool: Option<Vec<String>>,
-    /// For `parameter`: which parameter to vary.
+    /// For `random`: the probability a varied boolean is true. Default 0.5.
     #[serde(default)]
-    pub parameter_name: Option<String>,
-    /// For `parameter`: the values to vary over.
+    pub bool_probability: Option<f64>,
+    /// For `grid`: the numbers to try. Default 0, 50, 100.
     #[serde(default)]
-    pub parameter_values: Option<Vec<Value>>,
+    pub numeric_values: Option<Vec<f64>>,
+    /// For `grid`: the strings to try. Default `default`.
+    #[serde(default)]
+    pub string_values: Option<Vec<String>>,
+    /// For `grid`: the booleans to try. Default true and false.
+    #[serde(default)]
+    pub bool_values: Option<Vec<bool>>,
+    /// For `boundary`: try zero. Default true.
+    #[serde(default)]
+    pub include_zero: Option<bool>,
+    /// For `boundary`: try negative values. Default true.
+    #[serde(default)]
+    pub include_negative: Option<bool>,
+    /// For `boundary`: try the largest values. Default true.
+    #[serde(default)]
+    pub include_max: Option<bool>,
+    /// For `boundary`: try empty strings and collections. Default true.
+    #[serde(default)]
+    pub include_empty: Option<bool>,
+    /// For `fuzz`: the most mutations applied to one run. Default 3.
+    #[serde(default)]
+    pub max_mutations: Option<u64>,
+    /// For `fuzz`: the probability each mutation applies. Default 0.5.
+    #[serde(default)]
+    pub mutation_probability: Option<f64>,
     /// How many times to run the test.
     #[serde(default)]
     pub iterations: Option<u64>,
@@ -670,8 +711,16 @@ impl BevyDebuggerTools {
             "numeric_min": req.numeric_min,
             "numeric_max": req.numeric_max,
             "string_pool": req.string_pool,
-            "parameter_name": req.parameter_name,
-            "parameter_values": req.parameter_values,
+            "bool_probability": req.bool_probability,
+            "numeric_values": req.numeric_values,
+            "string_values": req.string_values,
+            "bool_values": req.bool_values,
+            "include_zero": req.include_zero,
+            "include_negative": req.include_negative,
+            "include_max": req.include_max,
+            "include_empty": req.include_empty,
+            "max_mutations": req.max_mutations,
+            "mutation_probability": req.mutation_probability,
             "iterations": req.iterations,
             "timeout": req.timeout,
             "seed": req.seed,

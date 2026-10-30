@@ -11,6 +11,11 @@
 
 ### Fixed
 
+- `hypothesis` advertised `variation_type` values `parameter` and `scenario` (and `parameter_name`, `parameter_values`) that the
+  handler refused or never read, and hid the ones it runs. `variation_type` is now an enum of `none`, `random`, `grid`,
+  `boundary`, `fuzz`, each with its own advertised fields; `parameter_name` and `parameter_values` are removed (nothing read
+  them). `stress_test` no longer overwrites a caller's `iterations`, `variation_type`, `max_mutations` or
+  `mutation_probability`. Check: `tests/tool_contract.rs::every_advertised_variation_type_runs`.
 - `observe`, `guide` and `replay` accepted and silently dropped arguments they do not have (`observe` with `limit: 5` ran
   unlimited). They now refuse unknown arguments like every other tool; `tests/tool_list.rs::every_tool_refuses_arguments_it_does_not_advertise`
   checks every tool in `tools/list` advertises `additionalProperties: false`.
@@ -314,7 +319,7 @@ Bevy plugin that was not published at all until now.
   | tool | before | after |
   |---|---|---|
   | `experiment` | `experiment_type`, `params`, `duration` | `action`, `actions` |
-  | `hypothesis` | `hypothesis`, `confidence`, `context` | `action`, `description`, `success_condition`, `actions`, `variation_type`, `numeric_min`, `numeric_max`, `string_pool`, `parameter_name`, `parameter_values`, `iterations`, `timeout`, `seed`, `threshold` |
+  | `hypothesis` | `hypothesis`, `confidence`, `context` | `action`, `description`, `success_condition`, `actions`, `variation_type`, `numeric_min`, `numeric_max`, `string_pool`, `iterations`, `timeout`, `seed`, `threshold` |
   | `detect_anomaly` | `detection_type`, `sensitivity`, `window` | `action`, `window_size`, `z_score_threshold`, `iqr_multiplier`, `min_samples`, `performance_threshold`, `entity_growth_threshold`, `min_severity` |
 
   An agent that learned the old names has to learn the new ones. Nothing that worked stops

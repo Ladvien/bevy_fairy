@@ -225,6 +225,52 @@ async fn hypothesis_runs_the_requested_action() {
     );
 }
 
+/// Every `variation_type` the schema advertises must be one the handler runs, and the fields that
+/// configure it must be advertised. Before the fix the schema offered `parameter` and `scenario`
+/// (the handler refused both as "Unknown variation type", and `parameter_name`/`parameter_values`
+/// were read by nothing) while `grid`, `boundary` and `fuzz` -- the ones the handler runs -- could
+/// not be asked for.
+#[tokio::test]
+async fn every_advertised_variation_type_runs() {
+    let schema = serde_json::to_value(schemars::schema_for!(HypothesisRequest)).expect("schema");
+    let text_of_schema = schema.to_string();
+    let advertised: Vec<String> = schema
+        .pointer("/definitions/VariationType/enum")
+        .or_else(|| schema.pointer("/$defs/VariationType/enum"))
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("variation_type must be an enum in the schema: {text_of_schema}"))
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    for needed in ["none", "random", "grid", "boundary", "fuzz"] {
+        assert!(advertised.iter().any(|a| a == needed), "{needed} missing from {advertised:?}");
+    }
+
+    let game: SharedGame = Arc::new(Mutex::new(FakeGame::default()));
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    connect(&tools).await;
+
+    for kind in &advertised {
+        let result = tools
+            .hypothesis(request::<HypothesisRequest>(json!({
+                "action": "test",
+                "description": "variation probe",
+                "success_condition": {"type": "entity_exists"},
+                "variation_type": kind,
+                "iterations": 1,
+                "timeout": 5,
+            })))
+            .await
+            .expect("hypothesis returns a result");
+        let text = text_of(&result);
+        assert!(
+            !text.contains("Unknown variation type"),
+            "{kind} is advertised but the handler refuses it; text: {text}"
+        );
+    }
+}
+
 /// A tool must refuse an operation it does not have, naming the ones it does. Before the fix the
 /// tool could not even name one, because it never sent an `action` at all.
 #[tokio::test]
