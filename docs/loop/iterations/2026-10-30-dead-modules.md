@@ -1,39 +1,27 @@
-# 2026-10-30 dead-modules: 38 unreachable server modules deleted (B-030, B-013)
+# 2026-10-30 dead-modules: deleted unreachable replay_actor and resource_manager
 
-Focus: none given · Outcome: shipped to main, no release (last tag v0.7.2 was 50 min old; 6 h rule)
+Focus: none · Outcome: shipped (deletion), no release (v0.8.0 published minutes earlier; 6 h rule)
 
 ## Summary
-No bug, `consumer` or enhancement issue was workable (#1, #2 are stale reports, answered). Chose a
-delete/consolidate change: a reachability pass from `src/main.rs` over `src/server/` found 38 of 66 modules
-(legacy `mcp_server`, session manager, profilers, issue detector, performance budget, query builder, visual
-overlays, pools/caches, ...) that no registered tool or the binary can reach. Deleted them and the tests/benches
-that only exercised them. Server 45,890 -> 24,076 lines.
+No open bug or enhancement issue: #1 and #2 were answered by the owner as stale/non-issues; bevy_emerge #97 is complete. Phase 2 priority 2: removed `src/server/replay_actor.rs` (552 lines, referenced by nothing) and `src/server/resource_manager.rs` (869 lines, only reachable through `BrpClient::with_resource_manager`, which no caller invoked), and the dead `resource_manager` field on `BrpClient`.
 
-Candidates: B-052 (box Error, public-signature churn, minor release), B-021 (burst capture, >400 lines),
-this deletion (priority 2, zero tool-surface change). Picked the deletion.
-
-## Proof
-- `cargo check --tests --benches --examples --keep-going`: clean after the deletions.
-- `cargo test` (default features): all green, including `tool_list`, `tool_contract`, `docs_drift`, `instructions`, `fixture_ground_truth`.
-- `scripts/ratchet.sh`: OK against the re-recorded baseline (counts only went down; clippy was 1451).
-- Dev evals via `evals/run.py`: 6/6, 0 invalid calls, mean 6.3 calls (before: 5/6 with racy `spinner_stops`).
-- Tool list unchanged (tool_list test passes without regenerating docs/mcp-tools.md).
-
-## Test and eval diffs (justified)
-Deleted, because they only imported deleted modules: tests/integration_test.rs, memory_optimization_tests.rs,
-session_management_integration_tests.rs, system_profiler_integration_tests.rs, visual_overlay_performance_test.rs;
-benches optimization/performance/regression; never-compiled tests/integration/ and tests/mocks/.
-Edited tests/brp_refactor_integration_tests.rs: removed `test_debug_handler_integration` (it tested the deleted
-`DebugBrpHandler`) plus two touched-file clippy fixes. No assertion was loosened. Held-out suite untouched.
+## Evidence
+- `grep` for `ReplayActor|replay_actor|ResourceManager|with_resource_manager` outside the two files: only `mod.rs` and `brp_client.rs` plumbing.
+- `cargo test --workspace` (capped scope, -j 3): all `test result: ok`, 0 failed.
+- `scripts/ratchet.sh`: OK; `--record` lowered known_red: dead_code 26->22, unused_variables 21->20, inherent_to_string 4->2.
+- Fail-before check: n/a (pure deletion; compile + existing tests prove nothing depended on it). Mutation, evals not run: no tool behaviour changed.
 
 ## Metrics
-Server LOC 45890 -> 24076; public modules 68 -> 28; plugin LOC 3260. No increases. `known_red` re-recorded lower.
+server loc -1421 lines; no deps changed.
+
+## Test and eval diffs
+Tests inside the two deleted modules (8 in resource_manager) went with them; no other test changed.
 
 ## Release and install
-No release (6 h rule). Next release removes public library modules: semver-breaking, so v0.8.0.
+No release: 6 h since v0.8.0 not elapsed; changes ride the next release. Installed server unchanged (no behaviour change).
 
-## Deferred
-B-052 (box Error), B-021 (burst capture), remaining dead items under src/server/tools (replay_v2, observe_optimized).
+## Deferred / open
+Remaining unreachable modules: timeline_branching/playback/recording (used only by `replay` tool), entity_inspector + debug_command_processor (used by tests only), bevy_reflection (observe). Pixel ring buffer. B-042 fmt debt.
 
 ## Next focus
-B-021 burst capture, or B-052 as the 0.8.0 breaking sweep.
+Check `entity_inspector`/`debug_command_processor` reachability from `BrpClient::with_debug_router` and delete if only tests use them.

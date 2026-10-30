@@ -59,11 +59,9 @@ pub mod recording_system;
 pub mod playback_system;
 pub mod timeline_branching;
 pub mod state_diff;
-pub mod replay_actor;
 
 // Analysis and monitoring
 pub mod anomaly_detector;
-pub mod resource_manager;
 
 // Infrastructure
 pub mod tools;

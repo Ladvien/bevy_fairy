@@ -63,7 +63,7 @@
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
-    "recorded_at_sha": "5ea900d",
+    "recorded_at_sha": "239c6e8",
     "features": {
       "server": 0,
       "plugin": 0,
@@ -99,7 +99,7 @@
       "clippy::explicit_counter_loop": 2,
       "clippy::field_reassign_with_default": 24,
       "clippy::get_first": 2,
-      "clippy::inherent_to_string": 4,
+      "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
       "clippy::manual_range_contains": 3,
       "clippy::manual_strip": 2,
@@ -107,15 +107,14 @@
       "clippy::new_without_default": 2,
       "clippy::should_implement_trait": 2,
       "clippy::single_component_path_imports": 1,
-      "clippy::too_many_arguments": 2,
       "clippy::useless_vec": 2,
       "clippy::vec_init_then_push": 2,
-      "dead_code": 26,
+      "dead_code": 22,
       "unused_assignments": 2,
       "unused_imports": 21,
       "unused_must_use": 1,
       "unused_mut": 5,
-      "unused_variables": 21
+      "unused_variables": 20
     },
     "clippy_by_file": {
       "src/server/anomaly_detector.rs": 11,
@@ -128,8 +127,6 @@
       "src/server/playback_system.rs": 2,
       "src/server/query_parser.rs": 2,
       "src/server/recording_system.rs": 2,
-      "src/server/replay_actor.rs": 2,
-      "src/server/resource_manager.rs": 7,
       "src/server/semantic_analyzer.rs": 2,
       "src/server/state_diff.rs": 2,
       "src/server/timeline_branching.rs": 7,
