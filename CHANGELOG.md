@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 - 2026-10-30
+
+### Fixed
+
+- `SystemProfiler::get_system_history` returned each sample's `timestamp` as the *age* of its frame
+  (`start_time.elapsed()`), so timestamps fell as time passed and later samples looked earlier.
+  They are now the frame's wall-clock start in Unix microseconds, the same clock live samples use.
+  The previously ignored `test_profiling_history` now runs and passes. No MCP tool output changes.
+
 ## 0.6.0 - 2026-10-30
 
 ### Removed

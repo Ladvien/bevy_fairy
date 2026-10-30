@@ -15,3 +15,4 @@
 - 2026-10-29 tcp-flag-removal: B-012 fixed, dead `--tcp`/`--server` removed, stdio only; ratchet ok, workspace tests green, evals not run (no tool change) — v0.4.0 — [report](iterations/2026-10-29-tcp-flag-removal.md)
 - 2026-10-29 observability-removal: B-019 fixed, dead `observability` feature + config + env vars + 11 deps deleted, `--all-features` builds; ratchet ok, workspace tests green, evals not run (no tool change) — v0.5.0 — [report](iterations/2026-10-29-observability-removal.md)
 - 2026-10-30 dead-clients: B-011 fixed, cli.rs + duplicate BrpClientV2/refactored deleted; ratchet ok, tests green, evals not run (no tool change) — v0.6.0 — [report](iterations/2026-10-30-dead-clients.md)
+- 2026-10-30 profiler-history: B-018 fixed (history timestamps were frame age, test un-ignored); ratchet ok, tests green, evals not run (no tool change) — v0.6.1 — [report](iterations/2026-10-30-profiler-history.md)

@@ -96,6 +96,9 @@ struct FrameData {
     frame_number: u64,
     /// Frame start time
     start_time: Instant,
+    /// Wall-clock start, microseconds since the Unix epoch; the same clock
+    /// `collect_sample` stamps live samples with.
+    started_at_us: u64,
     /// Total frame duration
     duration: Duration,
     /// System execution times
@@ -432,7 +435,7 @@ impl SystemProfiler {
         for frame in &history.frames {
             if let Some(&duration) = frame.system_times.get(system_name) {
                 samples.push(ProfileSample {
-                    timestamp: frame.start_time.elapsed().as_micros() as u64,
+                    timestamp: frame.started_at_us,
                     duration_us: duration.as_micros() as u64,
                     allocations: frame.system_allocations.get(system_name).copied(),
                 });
@@ -574,6 +577,7 @@ impl FrameHistory {
         let frame = FrameData {
             frame_number: self.current_frame,
             start_time: Instant::now(),
+            started_at_us: chrono::Utc::now().timestamp_micros() as u64,
             duration: Duration::default(),
             system_times: HashMap::new(),
             system_allocations: HashMap::new(),

@@ -220,7 +220,6 @@ async fn test_dependency_graph_update() {
 }
 
 #[tokio::test]
-#[ignore = "Frame history implementation needs refactoring"]
 async fn test_profiling_history() {
     let profiler = create_test_profiler().await;
     
