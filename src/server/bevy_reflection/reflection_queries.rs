@@ -17,14 +17,13 @@
 use ::serde::{Deserialize, Serialize};
 #[cfg(not(feature = "bevy-reflection"))]
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::server::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata, TypeCategory};
-use crate::server::bevy_reflection::type_registry_tools::{TypeRegistryManager, TypeQuery};
+use crate::server::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata};
 use crate::server::brp_messages::{BrpRequest, EntityData, ComponentValue};
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
@@ -34,8 +33,6 @@ use crate::server::error::{Error, Result};
 pub struct ReflectionQueryEngine {
     /// Reflection inspector for component analysis
     reflection_inspector: BevyReflectionInspector,
-    /// Type registry manager for type discovery
-    type_registry: TypeRegistryManager,
     /// Query cache for performance
     query_cache: Arc<RwLock<HashMap<String, CachedQueryResult>>>,
     /// Query statistics
@@ -236,7 +233,6 @@ impl ReflectionQueryEngine {
     pub fn new() -> Self {
         Self {
             reflection_inspector: BevyReflectionInspector::new(),
-            type_registry: TypeRegistryManager::new(),
             query_cache: Arc::new(RwLock::new(HashMap::new())),
             stats: Arc::new(RwLock::new(QueryStats::default())),
         }
@@ -352,9 +348,8 @@ impl ReflectionQueryEngine {
         limits: &QueryLimits,
     ) -> Result<Vec<ReflectedEntityData>> {
         let mut reflected_entities = Vec::new();
-        let mut processed_count = 0;
 
-        for entity in entities {
+        for (processed_count, entity) in entities.into_iter().enumerate() {
             if processed_count >= limits.max_entities {
                 warn!("Query limit reached: max_entities = {}", limits.max_entities);
                 break;
@@ -362,7 +357,6 @@ impl ReflectionQueryEngine {
 
             let reflected_entity = self.enhance_single_entity(entity, params, limits).await?;
             reflected_entities.push(reflected_entity);
-            processed_count += 1;
         }
 
         Ok(reflected_entities)
@@ -449,8 +443,8 @@ impl ReflectionQueryEngine {
         entity: &EntityData,
     ) -> ComponentRelationships {
         let mut dependents = Vec::new();
-        let mut dependencies = Vec::new();
-        let mut conflicts = Vec::new();
+        let dependencies = Vec::new();
+        let conflicts = Vec::new();
 
         // Analyze common Bevy component relationships
         match component_type {
@@ -466,12 +460,7 @@ impl ReflectionQueryEngine {
                     }
                 }
             }
-            "bevy_hierarchy::components::parent::Parent" => {
-                // Parent conflicts with being a root entity in some contexts
-                if entity.components.contains_key("bevy_hierarchy::components::children::Children") {
-                    // Entity can be both parent and child
-                }
-            }
+            "bevy_hierarchy::components::parent::Parent" => {}
             _ => {}
         }
 
@@ -521,7 +510,7 @@ impl ReflectionQueryEngine {
 
     /// Calculate component complexity score
     async fn calculate_component_complexity(&self, component_value: &ComponentValue) -> f64 {
-        let mut complexity = 0.0;
+        let mut complexity;
 
         match component_value {
             Value::Null => complexity = 0.1,
@@ -708,6 +697,7 @@ impl Default for QueryLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_reflection_query_engine_creation() {
