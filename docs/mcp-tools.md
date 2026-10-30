@@ -146,3 +146,15 @@ Capture the game to a PNG file on this machine and return its path and size. The
 Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and replay progress. The reply also carries the URL this server talks to. Call this first.
 
 No arguments.
+
+## `watch`
+
+Sample one BRP method repeatedly and return the series, each sample stamped with the game frame it was read on and the milliseconds since the first sample. Use it for anything that happens over time: a value that stops changing, a position's speed, a counter that drifts. The reply says whether the value changed, how many distinct values were seen, the frame of the first change, and "constant_since_frame" (the frame from which the last value never changed, null when it changed at the last sample). Samples are polled over HTTP at `interval_ms` (20-5000), so changes between samples are not seen; 2-100 samples, 30 s in total at most. Pass `pointer` (JSON pointer into each result) to keep samples small; a pointer that matches nothing is an error. Streaming `+watch` methods are refused.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `interval_ms` | integer | no | Milliseconds between samples, 20 to 5000. Default 100. `samples` x `interval_ms` may not exceed 30000. |
+| `method` | string | yes | The one-shot BRP method to sample, for example `world.query` or `world.get_resources`. Names ending in `+watch` are refused. |
+| `params` | any | no | The method's params, exactly as for `brp`. |
+| `pointer` | string | no | A JSON pointer (RFC 6901) into each result, for example `/0/components/my_game::Health/current`. Without it each sample carries the whole result, so use it for anything larger than a few values. A pointer that matches nothing is an error. |
+| `samples` | integer | no | How many samples to take, 2 to 100. Default 10. |
