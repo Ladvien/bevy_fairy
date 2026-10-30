@@ -16,6 +16,14 @@
 
 ### Fixed
 
+- `observe` kept a 5-minute cache of every query and answered a repeat with the first read's rows under a fresh timestamp, so a
+  moving object looked frozen. The cache is deleted (`QueryCache`, `QueryMetrics`, `QueryResult` and `cache_hit` go with it); metadata now
+  has `read_at`. Check: `tests/fixture_ground_truth.rs::observe_reads_the_live_game_every_time_it_is_asked`.
+- `observe` with a filter that names a component the game does not register (a short name such as the `Name` its own description
+  advertised) returned `[]` and `entity_count: 0`; it is now an error that lists the registered paths ending in that name. The
+  description's examples use full paths. `list components` reported its type count as `entity_count`; it is `component_type_count`.
+  The semantic queries (`find stuck entities`, ...) name short, game-specific components and now refuse until they resolve full paths (B-065).
+  Check: `observe_refuses_a_component_name_the_game_does_not_register`.
 - `screenshot` answered a missing `width` or `height` from the plugin as `0x0`; it is now an error.
 - `replay` advertised `action` (an open string), `checkpoint_id` (read by no handler) and `speed` (always sent as 1.0, so
   `set_speed` without a speed silently set 1x), while its 21 actions read 25 arguments the schema refused: `save` could never be

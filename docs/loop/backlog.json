@@ -479,6 +479,54 @@
       "evidence": "tests/agent_tools.rs::observe_reflection_names_the_entity_that_was_asked_about (failed with entity_id 0 before)",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-063",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe cached each query for 5 minutes and answered a repeat with the first read's rows under a fresh timestamp",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "live: two reads 1.5 s apart returned cache_hit true and identical state"
+      },
+      "status": "fixed",
+      "evidence": "tests/fixture_ground_truth.rs::observe_reads_the_live_game_every_time_it_is_asked (mover x identical before)",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-064",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe filter naming an unregistered component (short name such as the advertised \"Name\", or Transform in semantic queries) returned [] with entity_count 0; list components reported its 323 type names as entity_count",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "live against fixture_game: \"find entities with component Crate\" -> result [] entity_count 0"
+      },
+      "status": "fixed",
+      "evidence": "tests/fixture_ground_truth.rs::observe_refuses_a_component_name_the_game_does_not_register; observe.rs unit tests for count_of",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-065",
+      "kind": "bug",
+      "area": "observe",
+      "title": "semantic queries (find stuck/fast entities, overlapping colliders, memory leaks, physics violations) hard-code short component names (Transform, Velocity, Collider, Health, RigidBody); with B-064 they now refuse instead of silently returning nothing, so they are unusable until they resolve full paths",
+      "must_fix": {
+        "misleads": false,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "live: \"find stuck entities\" -> component not registered: Transform; src/server/semantic_analyzer.rs:208-301"
+      },
+      "status": "open",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
-    BevyDebuggerTools, BrpCallRequest, GuideRequest, NoArgs, ScreenshotRequest, WatchRequest,
+    BevyDebuggerTools, BrpCallRequest, GuideRequest, NoArgs, ObserveRequest, ScreenshotRequest, WatchRequest,
 };
 use fixture_game::{CRATE_WEIGHTS, SCORE_POINTS};
 use rmcp::handler::server::tool::Parameters;
@@ -524,4 +524,58 @@ async fn the_params_examples_in_the_brp_schema_are_accepted_by_the_game() {
         // `brp` asserts the call was not an error.
         brp(&tools, json!({"method": method, "params": params})).await;
     }
+}
+
+/// Call `observe` the way an agent does and return the raw text and the error flag.
+async fn observe(tools: &BevyDebuggerTools, query: &str) -> (String, bool) {
+    let request = ObserveRequest { query: query.to_string(), diff: false, reflection: false };
+    let result = tools.observe(Parameters(request)).await.expect("observe returns a result");
+    (text_of(&result), result.is_error == Some(true))
+}
+
+/// `observe` read the game, not its own memory: the mover is further along +x on the second read
+/// of the very same query. A 5-minute result cache answered the second read with the first
+/// read's rows under a fresh timestamp.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_reads_the_live_game_every_time_it_is_asked() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+
+    let query = "find entities with component bevy_transform::components::transform::Transform, fixture_game::Mover";
+    let x_of = |text: &str| -> f64 {
+        let value: Value = serde_json::from_str(text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+        value["result"][0]["components"]["bevy_transform::components::transform::Transform"]["translation"][0]
+            .as_f64()
+            .unwrap_or_else(|| panic!("no mover x in: {text}"))
+    };
+    let (first, failed) = observe(&tools, query).await;
+    assert!(!failed, "{first}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (second, failed) = observe(&tools, query).await;
+    assert!(!failed, "{second}");
+    assert!(
+        x_of(&second) > x_of(&first),
+        "the mover moves along +x, so a later read must be further along: {} then {}",
+        x_of(&first),
+        x_of(&second)
+    );
+}
+
+/// A query that names a component the game does not register has no answer; `[]` would say
+/// "no such entities" for what is really "no such component". The error names the type and the
+/// registered one it is probably short for.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_refuses_a_component_name_the_game_does_not_register() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+
+    let (text, failed) = observe(&tools, "find entities with component Crate").await;
+    assert!(failed, "an unregistered component must be an error, got: {text}");
+    assert!(text.contains("Crate"), "the error names the bad type: {text}");
+    assert!(text.contains("fixture_game::Crate"), "the error offers the registered path: {text}");
+
+    let (text, failed) = observe(&tools, "find entities with component fixture_game::Crate").await;
+    assert!(!failed, "the registered path is accepted: {text}");
 }

@@ -37,9 +37,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub struct ObserveRequest {
     /// A phrase in one of the shapes the parser accepts; a bare word such as "score" or "crate" is
     /// refused. Shapes, each a complete example: `list all entities`, `list components`,
-    /// `show entity 4294967298`, `find entities with component Name`,
-    /// `find entities without component Name`, `find 5 entities with component Name`,
-    /// `find stuck entities`, `show fast moving objects`. For any other read, such as one
+    /// `show entity 4294967298`, `find entities with component bevy_ecs::name::Name`,
+    /// `find entities without component bevy_ecs::name::Name`, `find 5 entities with component bevy_ecs::name::Name`,
+    /// `find stuck entities`, `show fast moving objects`. Component names are full type paths; a name the game does not register is an error that lists the registered paths ending in it. The metadata carries entity_count (component_type_count for the list-components query) and read_at. For any other read, such as one
     /// resource, use `brp`.
     pub query: String,
     /// Compare this read with the previous `diff: true` read of this server session.
