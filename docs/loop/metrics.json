@@ -1,8 +1,8 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "ring-buffer",
+  "sha": "fa6a556",
   "server": {
-    "loc": 21861,
+    "loc": 19788,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 15,
@@ -35,14 +35,21 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 7.7,
+    "mean_tool_calls_per_solved_task": 5.3,
     "dev_is_error_results_per_run": [
       5,
       7,
       3
     ],
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
-    "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns."
+    "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
+    "last_dev_run": {
+      "sha": "fa6a556",
+      "success": "6/6",
+      "mean_tool_calls": 5.3,
+      "invalid_calls": 1,
+      "note": "one run; previous dev run 37fb141: 6/6, 6.3 calls, 0 invalid. The one invalid call is `show fast moving objects` refused because the fixture registers no Velocity (B-064 behaviour since d373c74; at 37fb141 it answered [] instead)"
+    }
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -59,11 +66,12 @@
     "2026-10-22: the fixture game and its ground-truth tests exist. They are the only behavioural gate until the eval suite exists.",
     "2026-10-23: stress_test left tools/list (14 -> 13 tools); server loc 51212 -> 51187. The eval suite exists: dev and held-out success are measured from here on (see evals).",
     "2026-10-23 (13da68e): server loc 51187 -> 51207 for the +watch refusal and the unreadable-answer branch in call_game.",
-    "2026-10-30: server loc 51207 -> 47558 (find src/server -name '*.rs' | cat | wc -l): cli.rs (426, never compiled), brp_client_v2.rs (383), brp_client_refactored.rs (278) deleted, plus earlier observability removal; clippy ratchet OK, known_red unchanged."
+    "2026-10-30: server loc 51207 -> 47558 (find src/server -name '*.rs' | cat | wc -l): cli.rs (426, never compiled), brp_client_v2.rs (383), brp_client_refactored.rs (278) deleted, plus earlier observability removal; clippy ratchet OK, known_red unchanged.",
+    "2026-10-30 (fa6a556): server loc 19811 -> 19788 (find src/server -name '*.rs' | xargs cat | wc -l) for the observe fixes B-071..B-073: reflection path removed (-~60), show-entity fill-in and query-scoped diff baseline added (+~70). known_red re-recorded: manual_strip 2 -> 0 (observe.rs), vec_init_then_push 1 -> 0 and dead_code 14 -> 12 (anomaly_detector.rs, under-recorded by 42bad35). A `observe_diff...|FAILED` entry the --record run captured while the test was being edited mid-run was removed: the test passes at fa6a556 (fixture_ground_truth 20/20)."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
-    "recorded_at_sha": "1a4db7d",
+    "recorded_at_sha": "fa6a556",
     "features": {
       "server": 0,
       "plugin": 0,
@@ -100,21 +108,19 @@
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
       "clippy::manual_range_contains": 3,
-      "clippy::manual_strip": 2,
       "clippy::needless_borrows_for_generic_args": 8,
       "clippy::new_without_default": 2,
       "clippy::should_implement_trait": 2,
       "clippy::single_component_path_imports": 1,
       "clippy::useless_vec": 2,
-      "clippy::vec_init_then_push": 1,
-      "dead_code": 14,
+      "dead_code": 12,
       "unused_imports": 6,
       "unused_must_use": 1,
       "unused_mut": 1,
       "unused_variables": 16
     },
     "clippy_by_file": {
-      "src/server/anomaly_detector.rs": 8,
+      "src/server/anomaly_detector.rs": 5,
       "src/server/brp_validation.rs": 1,
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,
@@ -125,7 +131,6 @@
       "src/server/state_diff.rs": 2,
       "src/server/timeline_branching.rs": 7,
       "src/server/tools/experiment.rs": 5,
-      "src/server/tools/observe.rs": 2,
       "tests/brp_validation_tests.rs": 9,
       "tests/dependency_audit_test.rs": 4,
       "tests/entity_inspector_integration_tests.rs": 22,

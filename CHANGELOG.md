@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Breaking: `observe` lost its `reflection` argument, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted.
+
+### Removed
+
+- `observe`'s `reflection` argument and the `reflection_data` it added. Its type claims were constants and guesses: every component was reported `is_reflected: false`, `type_category: "Value"` with no `fields`, and each value's `type_info` was inferred from its JSON (the fixture's `f32` weight came back as `f64`, a `Vec3` as `Vec<T>`). The advertised custom inspectors for `Option<T>`, `Vec<T>` and `HashMap` never ran. A call that still sends `reflection` is refused as an unknown field. For a component's fields and their types, call `brp` with `registry.schema`.
+- `server::replay_actor` and `server::resource_manager` (about 1,420 lines), and `BrpClient::with_resource_manager`: nothing the binary runs constructed them.
+
+### Fixed
+
+- `observe` with `diff: true` compared each read with itself and always answered "No changes detected". It now compares with the previous `diff` read of the same query; a read with nothing to compare with (the first one, or the first after the query changed) answers `"diff": {"baseline": true, ...}` instead of leaving `diff` out. Comparing two different queries would have reported what the second one left out as components the game removed. The metadata's constant `"diff_target": "last"` is gone, and `ObserveState::add_snapshot` takes the query and the snapshot.
+- `observe`'s `show entity N` asked the game for no components and answered `{"components": {}}`, so every entity read as one with none. It now asks for every registered component and leaves out the "not present" errors for the ones the entity lacks.
+- `observe`'s description claimed it reads resources (no query shape does; use `brp` with `world.get_resources`), and the server instructions said `observe` takes an `action` (it takes a `query`).
+
 ## 0.8.0 - 2026-10-30
 
 Covers everything since 0.7.2. Breaking (semver-checks: 13 checks) because the unreachable `server::tool_orchestration` and `server::tools::orchestration` public modules were deleted; no MCP tool or parameter was removed except `detect_anomaly`'s `start_monitoring`/`stop_monitoring`.
