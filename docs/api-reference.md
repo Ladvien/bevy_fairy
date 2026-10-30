@@ -207,7 +207,6 @@ screenshot_on_violation = false
 |----------|---------|-------------|
 | `BEVY_BRP_HOST` | `localhost` | Bevy Remote Protocol host |
 | `BEVY_BRP_PORT` | `15702` | Bevy Remote Protocol port |
-| `MCP_PORT` | `3001` | MCP server port (TCP mode) |
 | `RUST_LOG` | `info` | Logging level |
 | `BEVY_FAIRY_TIMEOUT` | `30` | Connection timeout (seconds) |
 | `BEVY_FAIRY_MAX_RETRIES` | `3` | Maximum retry attempts |
