@@ -11,7 +11,7 @@
 //! Run it:
 //!
 //! ```sh
-//! cargo run -p bevy_fairy --example guided_steps_land
+//! cargo run --features plugin-guide --example plugin_guided_steps_land
 //! ```
 //!
 //! There is no window, no socket and no person: the two handlers are ordinary Bevy systems, and a
