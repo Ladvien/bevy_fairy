@@ -11,6 +11,12 @@
 
 ### Fixed
 
+- `replay` advertised `action` (an open string), `checkpoint_id` (read by no handler) and `speed` (always sent as 1.0, so
+  `set_speed` without a speed silently set 1x), while its 21 actions read 25 arguments the schema refused: `save` could never be
+  given a `filename`, `seek` a `frame`, `add_modification` anything. `action` is now an enum, every argument its handlers read is
+  advertised with the actions it belongs to, `direction` and `strategy` are enums, `checkpoint_id` is removed, and `set_speed`
+  without `speed` is an error. `observe` loses `detailed` (nothing read it). Every advertised argument now has a description.
+  Checks: `tests/tool_list.rs::replay_advertises_its_actions_and_every_argument_they_read`, `every_advertised_argument_has_a_description`.
 - `hypothesis` advertised `variation_type` values `parameter` and `scenario` (and `parameter_name`, `parameter_values`) that the
   handler refused or never read, and hid the ones it runs. `variation_type` is now an enum of `none`, `random`, `grid`,
   `boundary`, `fuzz`, each with its own advertised fields; `parameter_name` and `parameter_values` are removed (nothing read

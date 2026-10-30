@@ -459,8 +459,8 @@
         "common_no_workaround": false,
         "evidence": "docs/mcp-tools.md"
       },
-      "status": "open",
-      "evidence": "",
+      "status": "fixed",
+      "evidence": "tests/tool_list.rs::replay_advertises_its_actions_and_every_argument_they_read, every_advertised_argument_has_a_description",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }
