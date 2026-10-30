@@ -148,7 +148,7 @@
       "id": "B-020",
       "kind": "bug",
       "area": "build",
-      "title": "clippy is red on main: 186 warnings left (was 1462); result_large_err is gone",
+      "title": "clippy is red on main: 144 warnings left (was 1462); result_large_err is gone",
       "must_fix": {
         "misleads": false,
         "blocks": true,

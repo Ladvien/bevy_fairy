@@ -65,11 +65,7 @@ pub trait PlaybackSync: Send + Sync {
 
     /// Check if drift correction is needed
     fn needs_drift_correction(&self, expected_time: Duration, actual_time: Duration) -> bool {
-        let drift = if expected_time > actual_time {
-            expected_time - actual_time
-        } else {
-            actual_time - expected_time
-        };
+        let drift = expected_time.abs_diff(actual_time);
 
         // Drift correction needed if more than 100ms off
         drift > Duration::from_millis(100)

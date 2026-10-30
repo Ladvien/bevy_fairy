@@ -192,7 +192,7 @@ impl DebugCommandRouter {
                 }
             }
             DebugCommand::ExecuteQuery { query, limit, .. } => {
-                if query.filter.with.as_ref().map_or(false, |w| w.len() > 20) {
+                if query.filter.with.as_ref().is_some_and(|w| w.len() > 20) {
                     return Err(Error::DebugError("Too many components in query (max 20)".to_string()));
                 }
                 if let Some(l) = limit {

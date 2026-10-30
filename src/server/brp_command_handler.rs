@@ -9,7 +9,6 @@
  */
 
 use async_trait::async_trait;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -107,6 +106,12 @@ pub struct CommandHandlerRegistry {
     validator: Arc<BrpValidator>,
 }
 
+impl Default for CommandHandlerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommandHandlerRegistry {
     pub fn new() -> Self {
         Self {
@@ -162,7 +167,7 @@ impl CommandHandlerRegistry {
         if let Some(handler) = self.find_handler(&request).await {
             // First run comprehensive validation
             let request_size = serde_json::to_vec(&request)
-                .map_err(|e| crate::server::error::Error::Json(e))?
+                .map_err(crate::server::error::Error::Json)?
                 .len();
             
             self.validator.validate_request(&request, session_id, request_size).await?;

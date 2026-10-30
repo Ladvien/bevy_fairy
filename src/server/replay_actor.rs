@@ -3,20 +3,18 @@
 //! This module implements the actor model for replay functionality, eliminating
 //! the need for shared mutable state through locks.
 
-use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
 use crate::server::playback_system::{DirectSync, PlaybackController};
-use crate::server::recording_system::{RecordingBuffer, RecordingConfig, RecordingState};
+use crate::server::recording_system::{RecordingConfig, RecordingState};
 use crate::server::timeline_branching::{
-    BranchId, MergeStrategy, Modification, ModificationLayer, TimelineBranchManager,
+    BranchId, MergeStrategy, Modification, TimelineBranchManager,
 };
 
 /// Messages that can be sent to the replay actor
@@ -444,7 +442,7 @@ impl ReplayActor {
         self.state.playback_status.clone()
     }
 
-    async fn create_branch(&mut self, name: String, description: Option<String>) -> Result<BranchId> {
+    async fn create_branch(&mut self, _name: String, _description: Option<String>) -> Result<BranchId> {
         // Implementation would create new branch
         Ok(BranchId::new())
     }
@@ -524,7 +522,7 @@ impl ReplayActorHandle {
         let message = ReplayMessage::GetStatus { respond_to };
         
         self.sender.send(message).map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
-        Ok(response.await.map_err(|_| Error::Internal("Response channel closed".to_string()))?)
+        response.await.map_err(|_| Error::Internal("Response channel closed".to_string()))
     }
 
     // Add similar methods for all other operations...
