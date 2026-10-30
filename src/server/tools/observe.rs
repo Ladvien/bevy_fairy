@@ -246,6 +246,9 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
     // A filter that names a component the game does not register matches nothing, and the
     // game answers `[]` for it, which reads as "no such entities". Check the names first.
+    // A short name that ends exactly one registered path is rewritten to it and reported.
+    let mut brp_request = brp_request;
+    let mut resolved_names: Vec<(String, String)> = Vec::new();
     let named = filter_names(&brp_request);
     if !named.is_empty() {
         let registered = match registered_components(&brp_client).await {
@@ -258,6 +261,12 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 }));
             }
         };
+        // Only a semantic query's own built-in names are rewritten; a name the caller typed that
+        // is not a registered path is still refused so the caller learns the full path.
+        if semantic_info.is_some() {
+            resolved_names = resolve_unique_short_names(&mut brp_request, &registered);
+        }
+        let named = filter_names(&brp_request);
         let unknown: Vec<Value> = named
             .iter()
             .filter(|name| !registered.contains(name))
@@ -426,6 +435,13 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     });
     response["metadata"][count.0] = json!(count.1);
 
+    if !resolved_names.is_empty() {
+        response["metadata"]["resolved_component_names"] = resolved_names
+            .iter()
+            .map(|(asked, used)| json!({"asked": asked, "used": used}))
+            .collect();
+    }
+
     // Add diff information if available
     if let Some(diff_result) = diff_result {
         let grouped_changes = {
@@ -475,6 +491,32 @@ fn count_of(value: &Value, decoded_entities: usize) -> (&'static str, usize) {
         Value::Object(_) => ("entity_count", 1),
         _ => ("entity_count", 0),
     }
+}
+
+/// Rewrite every filter name that is not a registered path but ends exactly one registered path
+/// (`Transform` -> `bevy_transform::components::transform::Transform`). Names that match none or
+/// several are left alone, for the caller to refuse. Returns `(asked, used)` for each rewrite.
+fn resolve_unique_short_names(request: &mut BrpRequest, registered: &[String]) -> Vec<(String, String)> {
+    let mut resolved = Vec::new();
+    let Some(filter) = request.params.as_mut().and_then(|params| params.get_mut("filter")) else {
+        return resolved;
+    };
+    for key in ["with", "without"] {
+        let Some(names) = filter.get_mut(key).and_then(|names| names.as_array_mut()) else {
+            continue;
+        };
+        for entry in names {
+            let Some(name) = entry.as_str() else { continue };
+            if registered.iter().any(|path| path == name) {
+                continue;
+            }
+            if let [only] = registered_paths_ending_with(name, registered).as_slice() {
+                resolved.push((name.to_string(), only.clone()));
+                *entry = Value::String(only.clone());
+            }
+        }
+    }
+    resolved
 }
 
 /// The component names a request's `filter` mentions, `with` first then `without`.
@@ -579,5 +621,28 @@ mod tests {
         let registered = vec!["bevy_ecs::name::Name".to_string(), "fixture_game::Crate".to_string()];
         assert_eq!(registered_paths_ending_with("Crate", &registered), vec!["fixture_game::Crate"]);
         assert!(registered_paths_ending_with("Cr", &registered).is_empty());
+    }
+
+    #[test]
+    fn a_short_name_with_one_registered_path_is_rewritten_and_an_ambiguous_one_is_not() {
+        let registered = vec![
+            "bevy_transform::components::transform::Transform".to_string(),
+            "a::Health".to_string(),
+            "b::Health".to_string(),
+        ];
+        let mut request = BrpRequest {
+            method: "world.query".to_string(),
+            id: None,
+            params: Some(json!({"filter": {"with": ["Transform", "Health"], "without": ["a::Health"]}})),
+        };
+        let resolved = resolve_unique_short_names(&mut request, &registered);
+        assert_eq!(
+            resolved,
+            vec![("Transform".to_string(), "bevy_transform::components::transform::Transform".to_string())]
+        );
+        assert_eq!(
+            filter_names(&request),
+            vec!["bevy_transform::components::transform::Transform", "Health", "a::Health"]
+        );
     }
 }

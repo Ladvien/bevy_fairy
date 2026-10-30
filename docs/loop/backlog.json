@@ -523,8 +523,8 @@
         "common_no_workaround": false,
         "evidence": "live: \"find stuck entities\" -> component not registered: Transform; src/server/semantic_analyzer.rs:208-301"
       },
-      "status": "open",
-      "evidence": "",
+      "status": "fixed",
+      "evidence": "tests/fixture_ground_truth.rs::observe_resolves_the_short_names_a_semantic_query_is_built_from failed before, passes after; semantic queries rewrite a short name ending exactly one registered path, reported in metadata.resolved_component_names; ambiguous/unknown names still refused. Caller-typed short names still refused (existing test pins it). Velocity/Collider/Health/RigidBody remain unregistered in the fixture so those queries refuse honestly.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }

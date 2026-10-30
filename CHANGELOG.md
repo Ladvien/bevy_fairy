@@ -16,6 +16,9 @@
 
 ### Fixed
 
+- `observe` semantic queries (`find memory leaks`, `find stuck entities`, ...) were refused after the unregistered-name check because they
+  are built from short names (`Transform`). A short name that ends exactly one registered path is now rewritten and listed in
+  `metadata.resolved_component_names`; unknown or ambiguous names are still refused.
 - `observe` kept a 5-minute cache of every query and answered a repeat with the first read's rows under a fresh timestamp, so a
   moving object looked frozen. The cache is deleted (`QueryCache`, `QueryMetrics`, `QueryResult` and `cache_hit` go with it); metadata now
   has `read_at`. Check: `tests/fixture_ground_truth.rs::observe_reads_the_live_game_every_time_it_is_asked`.
