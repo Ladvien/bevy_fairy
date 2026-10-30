@@ -39,7 +39,7 @@ pub struct ObserveRequest {
     /// refused. Shapes, each a complete example: `list all entities`, `list components`,
     /// `show entity 4294967298`, `find entities with component bevy_ecs::name::Name`,
     /// `find entities without component bevy_ecs::name::Name`, `find 5 entities with component bevy_ecs::name::Name`.
-    /// Component names are full type paths; a name the game does not register is an error that lists the registered paths ending in it. The metadata carries entity_count (component_type_count for the list-components query) and read_at; find N entities returns at most N rows and adds limit and matched, the number that matched before the cut. For any other read, such as one
+    /// Component names are full type paths, and a path may hold digits and generic arguments: `find entities with component bevy_mesh::components::Mesh3d`, `find entities with component bevy_time::time::Time<bevy_time::real::Real>`. In a list only the commas outside angle brackets separate components. A name the game does not register is an error that lists the registered paths ending in it. The metadata carries entity_count (component_type_count for the list-components query) and read_at; find N entities returns at most N rows and adds limit and matched, the number that matched before the cut. For any other read, such as one
     /// resource, use `brp`.
     pub query: String,
     /// Compare this read with the previous `diff: true` read of the same query in this server

@@ -65,7 +65,7 @@ pub struct AnomalyConfig {
     pub min_samples: usize,
     /// Performance degradation threshold (multiplicative factor)
     pub performance_threshold: f32,
-    /// Entity count growth threshold (entities per second)
+    /// Entity count growth threshold (entities per sample)
     pub entity_growth_threshold: f32,
     /// Known acceptable anomalies to whitelist
     pub whitelist: Vec<AnomalyPattern>,
@@ -109,10 +109,20 @@ impl<T> RingBuffer<T> {
     /// Create a new ring buffer with specified capacity
     #[must_use]
     pub fn new(capacity: usize) -> Self {
-        let capacity = capacity.max(1); // Ensure minimum capacity of 1
+        // Not `VecDeque::with_capacity(capacity)`: a capacity is a limit the caller chose, and
+        // `configure` takes any positive window size, so a window of `usize::MAX` has to be a
+        // window and not an allocation.
         Self {
-            data: VecDeque::with_capacity(capacity),
-            capacity,
+            data: VecDeque::new(),
+            capacity: capacity.max(1), // Ensure minimum capacity of 1
+        }
+    }
+
+    /// Change the capacity. Shrinking keeps the newest values; growing keeps all of them.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity.max(1);
+        while self.data.len() > self.capacity {
+            self.data.pop_front();
         }
     }
 
@@ -315,6 +325,10 @@ impl AnomalyDetector for PhysicsDetector {
     }
 
     fn configure(&mut self, config: &AnomalyConfig) {
+        // Each entity's history was sized when the entity was first seen.
+        for history in self.velocity_history.values_mut() {
+            history.set_capacity(config.window_size);
+        }
         self.config = config.clone();
     }
 }
@@ -346,18 +360,23 @@ impl AnomalyDetector for PerformanceDetector {
             value: current_count as f32,
         });
 
-        if self.entity_counts.len() >= self.config.min_samples {
+        // Growth is the change across the buffer divided by the samples that change spans, which
+        // is one fewer than the samples held. `window_size` is only how many samples the buffer
+        // may hold, so dividing by it read a 20-per-sample leak as 0.2 under a window of 100.
+        if self.entity_counts.len() >= self.config.min_samples.max(2) {
             let values: Vec<f32> = self.entity_counts.values().map(|dp| dp.value).collect();
+            let samples_spanned = values.len();
 
             // Check for rapid entity growth
             if let (Some(first), Some(last)) = (values.first(), values.last()) {
-                let growth_rate = (last - first) / self.config.window_size as f32;
+                let growth_rate = (last - first) / (samples_spanned - 1) as f32;
 
                 if growth_rate > self.config.entity_growth_threshold {
                     let severity = (growth_rate / self.config.entity_growth_threshold).min(1.0);
 
                     let metadata = [
                         ("growth_rate", serde_json::json!(growth_rate)),
+                        ("samples_spanned", serde_json::json!(samples_spanned)),
                         ("entity_count", serde_json::json!(current_count)),
                     ]
                     .into_iter()
@@ -370,8 +389,8 @@ impl AnomalyDetector for PerformanceDetector {
                         component: None,
                         severity,
                         description: format!(
-                            "Entity count growing at {:.2} entities per sample (threshold: {:.2})",
-                            growth_rate, self.config.entity_growth_threshold
+                            "Entity count growing at {:.2} entities per sample over the last {} samples (threshold: {:.2})",
+                            growth_rate, samples_spanned, self.config.entity_growth_threshold
                         ),
                         detected_at: chrono::Utc::now(),
                         metadata,
@@ -388,6 +407,7 @@ impl AnomalyDetector for PerformanceDetector {
     }
 
     fn configure(&mut self, config: &AnomalyConfig) {
+        self.entity_counts.set_capacity(config.window_size);
         self.config = config.clone();
     }
 }
@@ -792,5 +812,87 @@ mod tests {
         assert!(anomalies
             .iter()
             .any(|a| a.anomaly_type == AnomalyType::StateInconsistency));
+    }
+
+    fn entities(count: u64) -> Vec<EntityData> {
+        (0..count).map(|id| EntityData { id, components: HashMap::new() }).collect()
+    }
+
+    /// Growth is entities per sample over the samples the change spans: 20 more entities on each
+    /// call is 20 per sample whatever `window_size` is (issue #13).
+    #[test]
+    fn entity_growth_is_per_sample_spanned_not_per_window_size() {
+        let config = AnomalyConfig {
+            min_samples: 2,
+            window_size: 100,
+            entity_growth_threshold: 10.0,
+            ..Default::default()
+        };
+        let mut detector = PerformanceDetector::new(config);
+        detector.detect(&entities(0)).unwrap();
+        let found = detector.detect(&entities(20)).unwrap();
+        assert_eq!(found.len(), 1, "20 entities in one sample is over a threshold of 10 per sample");
+        assert_eq!(found[0].metadata["growth_rate"], json!(20.0));
+        assert_eq!(found[0].metadata["samples_spanned"], json!(2));
+    }
+
+    /// `configure` changes the window the detectors measure over, not only the number `status`
+    /// echoes: a window of 2 samples holds 2 samples.
+    #[test]
+    fn configure_resizes_the_window_that_growth_is_measured_over() {
+        let config = AnomalyConfig {
+            min_samples: 2,
+            window_size: 100,
+            entity_growth_threshold: 10.0,
+            ..Default::default()
+        };
+        let mut detector = PerformanceDetector::new(config.clone());
+        detector.configure(&AnomalyConfig { window_size: 2, ..config.clone() });
+        for n in [0, 20, 40, 60] {
+            detector.detect(&entities(n)).unwrap();
+        }
+        let last = detector.detect(&entities(80)).unwrap();
+        assert_eq!(last[0].metadata["growth_rate"], json!(20.0));
+        assert_eq!(last[0].metadata["samples_spanned"], json!(2), "a window of 2 spans 2 samples");
+
+        // Widening keeps what was seen and then holds more.
+        detector.configure(&AnomalyConfig { window_size: 1000, ..config });
+        for n in [100, 120, 140, 160] {
+            detector.detect(&entities(n)).unwrap();
+        }
+        let last = detector.detect(&entities(180)).unwrap();
+        assert_eq!(last[0].metadata["samples_spanned"], json!(7), "{last:?}");
+        assert_eq!(last[0].metadata["growth_rate"], json!(20.0));
+    }
+
+    /// The physics history of an entity is sized when the entity is first seen; `configure` has to
+    /// resize it too.
+    #[test]
+    fn configure_resizes_the_per_entity_velocity_histories() {
+        let moving = |speed: f64| EntityData {
+            id: 1,
+            components: [("Velocity".to_string(), json!({"linear": {"x": speed, "y": 0.0, "z": 0.0}}))]
+                .into_iter()
+                .collect(),
+        };
+        let mut detector = PhysicsDetector::new(AnomalyConfig { window_size: 100, ..Default::default() });
+        for speed in [1.0, 2.0, 3.0, 4.0] {
+            detector.detect(&[moving(speed)]).unwrap();
+        }
+        assert_eq!(detector.velocity_history[&1].len(), 4);
+        detector.configure(&AnomalyConfig { window_size: 2, ..Default::default() });
+        assert_eq!(detector.velocity_history[&1].len(), 2, "the history kept more than the window");
+        detector.detect(&[moving(5.0)]).unwrap();
+        assert_eq!(detector.velocity_history[&1].len(), 2);
+    }
+
+    /// `configure` takes any positive number for `window_size`. Sizing a buffer to it must not
+    /// allocate it: a window of `usize::MAX` aborted the server.
+    #[test]
+    fn a_window_larger_than_memory_is_a_window_not_an_allocation() {
+        let mut system = AnomalyDetectionSystem::new(AnomalyConfig::default());
+        system.update_config(AnomalyConfig { window_size: usize::MAX, ..Default::default() });
+        system.detect_anomalies(&entities(3)).unwrap();
+        assert_eq!(system.config().window_size, usize::MAX);
     }
 }

@@ -57,6 +57,37 @@ fn make_query_request(filter: Option<QueryFilter>) -> BrpRequest {
     }
 }
 
+/// One component's registered type path: letters, digits, `_` and `::`, plus the generic arguments
+/// some paths end in (`bevy_time::time::Time<bevy_time::real::Real>`, `Time<()>`). A digit is part
+/// of the name: `bevy_mesh::components::Mesh3d`, `avian3d::...`. No whitespace, so `A B` is not one
+/// name.
+const PATH: &str = r"[A-Za-z0-9_:<>()]+";
+
+/// A comma-separated list of [`PATH`]s. Whitespace is allowed, because a list reads `A, B` and a
+/// generic argument list reads `Pair<A, B>`.
+const PATH_LIST: &str = r"[A-Za-z0-9_:<>(),\s]+";
+
+/// Split `list` at the commas that separate components. A comma inside `<..>` or `(..)` belongs to
+/// one path's generic arguments (`Pair<a::A, b::B>`), so it is not a separator.
+fn split_component_list(list: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (at, ch) in list.char_indices() {
+        match ch {
+            '<' | '(' => depth += 1,
+            '>' | ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                names.push(&list[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    names.push(&list[start..]);
+    names.into_iter().map(str::trim).filter(|name| !name.is_empty()).map(str::to_string).collect()
+}
+
 /// Build a `world.get_components` request.
 fn make_get_request(entity: u64, components: Option<Vec<String>>) -> BrpRequest {
     BrpRequest {
@@ -108,7 +139,7 @@ impl RegexQueryParser {
 
             // Find entities with component
             QueryPattern {
-                pattern: Regex::new(r"^(?i)find\s+entities\s+with\s+component\s+([a-zA-Z_:]+)$")
+                pattern: Regex::new(&format!(r"^(?i)find\s+entities\s+with\s+component\s+({PATH})$"))
                     .map_err(|e| Error::Validation(format!("Invalid regex pattern: {}", e)))?,
                 builder: |caps| {
                     let component_type = caps[1].to_string();
@@ -123,7 +154,7 @@ impl RegexQueryParser {
 
             // Find entities without component
             QueryPattern {
-                pattern: Regex::new(r"^(?i)find\s+entities\s+without\s+component\s+([a-zA-Z_:]+)$")
+                pattern: Regex::new(&format!(r"^(?i)find\s+entities\s+without\s+component\s+({PATH})$"))
                     .map_err(|e| Error::Validation(format!("Invalid regex pattern: {}", e)))?,
                 builder: |caps| {
                     let component_type = caps[1].to_string();
@@ -146,15 +177,10 @@ impl RegexQueryParser {
 
             // Find entities with multiple components
             QueryPattern {
-                pattern: Regex::new(r"^(?i)find\s+entities\s+with\s+(?:components?\s+)?([a-zA-Z_:,\s]+)$")
+                pattern: Regex::new(&format!(r"^(?i)find\s+entities\s+with\s+(?:components?\s+)?({PATH_LIST})$"))
                     .map_err(|e| Error::Validation(format!("Invalid regex pattern: {}", e)))?,
                 builder: |caps| {
-                    let components_str = &caps[1];
-                    let components: Vec<String> = components_str
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
+                    let components = split_component_list(&caps[1]);
 
                     if components.is_empty() {
                         return Err(Error::Brp("No components specified".to_string()));
@@ -171,17 +197,12 @@ impl RegexQueryParser {
 
             // Get entity with specific components only
             QueryPattern {
-                pattern: Regex::new(r"^(?i)show\s+entity\s+(\d+)\s+components?\s+([a-zA-Z_:,\s]+)$")
+                pattern: Regex::new(&format!(r"^(?i)show\s+entity\s+(\d+)\s+components?\s+({PATH_LIST})$"))
                     .map_err(|e| Error::Validation(format!("Invalid regex pattern: {}", e)))?,
                 builder: |caps| {
                     let entity_id = caps[1].parse::<u64>()
                         .map_err(|_| Error::Brp("Invalid entity ID".to_string()))?;
-                    let components_str = &caps[2];
-                    let components: Vec<String> = components_str
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
+                    let components = split_component_list(&caps[2]);
 
                     Ok(make_get_request(
                         entity_id,
@@ -193,7 +214,7 @@ impl RegexQueryParser {
 
             // Query with limit
             QueryPattern {
-                pattern: Regex::new(r"^(?i)find\s+(\d+)\s+entities\s+with\s+component\s+([a-zA-Z_:]+)$")
+                pattern: Regex::new(&format!(r"^(?i)find\s+(\d+)\s+entities\s+with\s+component\s+({PATH})$"))
                     .map_err(|e| Error::Validation(format!("Invalid regex pattern: {}", e)))?,
                 builder: |caps| {
                     let limit = caps[1].parse::<usize>()
@@ -338,6 +359,63 @@ mod tests {
                 serde_json::json!("Velocity"),
                 serde_json::json!("Health"),
             ]
+        );
+    }
+
+    /// The component names a parsed query puts in the filter's `with` and `without` lists.
+    fn filter_names(query: &str) -> Vec<String> {
+        let parser = RegexQueryParser::new().unwrap();
+        let request = parser.parse(query).unwrap_or_else(|e| panic!("{query}: {e}")).request;
+        let params = request.params.expect("a filter query carries params");
+        ["with", "without"]
+            .iter()
+            .flat_map(|kind| params["filter"][*kind].as_array().cloned().unwrap_or_default())
+            .map(|name| name.as_str().expect("names are strings").to_string())
+            .collect()
+    }
+
+    /// Bevy's own `Mesh3d`, `Camera3d` and `Mesh2d`, and every component of crates such as
+    /// `avian3d`, have a digit in their registered path; the observe error tells the agent to use
+    /// exactly that path, so the parser has to accept it (issue #14).
+    #[test]
+    fn component_paths_with_digits_parse() {
+        for (query, expected) in [
+            ("find entities with component bevy_mesh::components::Mesh3d", "bevy_mesh::components::Mesh3d"),
+            (
+                "find 2 entities with component avian3d::dynamics::rigid_body::LinearVelocity",
+                "avian3d::dynamics::rigid_body::LinearVelocity",
+            ),
+            (
+                "find entities without component bevy_camera::components::Camera3d",
+                "bevy_camera::components::Camera3d",
+            ),
+            ("find entities with component Mesh3d", "Mesh3d"),
+        ] {
+            assert_eq!(filter_names(query), [expected], "{query}");
+        }
+
+        let parser = RegexQueryParser::new().unwrap();
+        let shown = parser
+            .parse("show entity 7 components bevy_mesh::components::Mesh3d")
+            .expect("a digit in a path is allowed after `show entity N components`")
+            .request;
+        assert_eq!(shown.params.unwrap()["components"], serde_json::json!(["bevy_mesh::components::Mesh3d"]));
+    }
+
+    /// A registered path can end in generic arguments, `Time<bevy_time::real::Real>` or the unit
+    /// `Time<()>`. A comma inside the angle brackets belongs to the path; a comma outside them
+    /// separates two components.
+    #[test]
+    fn generic_component_paths_parse_and_only_top_level_commas_separate() {
+        let real = "bevy_time::time::Time<bevy_time::real::Real>";
+        assert_eq!(filter_names(&format!("find entities with component {real}")), [real]);
+        assert_eq!(filter_names("find entities with component bevy_time::time::Time<()>"), ["bevy_time::time::Time<()>"]);
+
+        let two = "some::Pair<a::A, b::B>";
+        assert_eq!(filter_names(&format!("find entities with component {two}")), [two]);
+        assert_eq!(
+            filter_names(&format!("find entities with {two}, bevy_mesh::components::Mesh3d, {real}")),
+            [two, "bevy_mesh::components::Mesh3d", real]
         );
     }
 }
