@@ -1,548 +1,166 @@
-# bevy-fairy Usage Guide
+# bevy-fairy usage guide
 
-A comprehensive guide to getting the most out of bevy-fairy for debugging your Bevy games.
+How to answer "what is this game doing, and why?" with the tools the server actually has. Setup
+(the plugin in your game, the server in your MCP client) is in the [README](../README.md). Every
+tool's arguments are in [`docs/mcp-tools.md`](../docs/mcp-tools.md), which is generated from the
+server's own `tools/list`; when this guide and that file disagree, that file is right.
 
-## Table of Contents
-
-1. [Architecture Overview](#architecture-overview)
-2. [Core Concepts](#core-concepts)
-3. [Common Debugging Workflows](#common-debugging-workflows)
-4. [Advanced Features](#advanced-features)
-5. [Performance Optimization](#performance-optimization)
-6. [Real-World Examples](#real-world-examples)
-7. [Integration Patterns](#integration-patterns)
-8. [Tips and Tricks](#tips-and-tricks)
-
-## Architecture Overview
-
-The bevy-fairy acts as a bridge between Claude Code (the AI assistant) and your Bevy game:
+## How the pieces talk
 
 ```
-Claude Code <--> MCP Protocol <--> MCP Server <--> BRP Protocol <--> Bevy Game
-                                         |
-                                    Debug Tools
-                                    (Observe, Experiment, etc.)
+agent <-- MCP over stdio --> bevy-fairy (server) <-- BRP, JSON-RPC over HTTP :15702 --> your game + DebuggerPlugin
 ```
 
-### Key Components
+The server holds no copy of the game. Every answer is read from the running game when you ask,
+and the replies carry the game frame they were read on, so you can tell a fresh reading from a
+stale one.
 
-- **MCP Server**: Handles communication with Claude Code and tool orchestration
-- **BRP Client**: Manages WebSocket connection to your Bevy game
-- **Tool Modules**: Individual debugging capabilities (observe, experiment, etc.)
-- **State Management**: Tracks game state, recordings, checkpoints
-- **Error Recovery**: Automatic reconnection, checkpointing, dead letter queue
-
-## Core Concepts
-
-### 1. Entity-Component-System (ECS) Awareness
-
-The debugger understands Bevy's ECS architecture:
-- **Entities**: Unique identifiers for game objects
-- **Components**: Data attached to entities
-- **Resources**: Global game state
-- **Systems**: Logic that operates on components
-
-### 2. State Diffing
-
-Sophisticated comparison of game states:
-- Component-level differences
-- Fuzzy matching for floating-point values
-- Changes grouped by component
-
-### 3. Time-Travel Debugging
-
-Record and replay capabilities:
-- Frame-by-frame state capture
-- Deterministic replay
-- Timeline branching for "what-if" scenarios
-
-## Common Debugging Workflows
-
-### Workflow 1: Performance Bottleneck Investigation
-
-**Goal**: Find what's causing frame drops
-
-```yaml
-Step 1: Baseline Performance
-  Tool: observe
-  Query: "Show current performance metrics"
-  
-Step 2: Enable Monitoring
-  Tool: anomaly
-  Config: Monitor frame times with high sensitivity
-  
-Step 3: Stress Test
-  Tool: stress
-  Type: Gradual entity spawning
-  Monitor: FPS, memory, system time
-  
-Step 4: Identify Bottleneck
-  Tool: observe
-  Query: "What changed when FPS dropped?"
-  
-Step 5: Generate Report
-  Tool: diagnostic_report
-  Include: Performance metrics, system state at degradation point
-```
-
-**Example Session**:
-```
-Human: The game starts lagging when there are many enemies on screen
-
-Claude: I'll investigate the performance issue with multiple enemies. Let me run a systematic test.
-
-[Creates checkpoint]
-[Observes baseline with few enemies]
-[Gradually spawns more enemies while monitoring]
-[Identifies that pathfinding system time spikes at 50+ enemies]
-[Suggests optimization: Use hierarchical pathfinding or LOD system]
-```
-
-### Workflow 2: Collision Bug Investigation
-
-**Goal**: Fix entities passing through walls
-
-```yaml
-Step 1: Observe Current State
-  Tool: observe
-  Query: "Show all entities with Collider components"
-  
-Step 2: Set Up Monitoring
-  Tool: anomaly
-  Watch: Position discontinuities larger than velocity
-  
-Step 3: Reproduce Issue
-  Tool: experiment
-  Action: Move entities rapidly toward walls
-  
-Step 4: Capture Bug
-  Tool: replay
-  Record: When anomaly detected
-  
-Step 5: Analyze
-  Tool: observe
-  Compare: Frame before and after collision failure
-```
-
-### Workflow 3: Game Balance Testing
-
-**Goal**: Ensure combat system is balanced
-
-```yaml
-Step 1: Define Hypothesis
-  Tool: hypothesis
-  Test: "Player can defeat boss within 3-5 minutes"
-  
-Step 2: Run Controlled Tests
-  Tool: experiment
-  Setup: Standard player stats vs boss
-  Repeat: 10 times with different strategies
-  
-Step 3: Analyze Results
-  Tool: observe
-  Query: "Average time to defeat, damage dealt/received"
-  
-Step 4: Adjust and Retest
-  Tool: experiment
-  Modify: Tweak damage values
-  Rerun: Previous tests
-```
-
-### Workflow 4: Memory Leak Detection
-
-**Goal**: Find and fix memory leaks
-
-```yaml
-Step 1: Baseline Memory
-  Tool: observe
-  Capture: Initial memory usage
-  
-Step 2: Stress Creation/Destruction
-  Tool: stress
-  Action: Rapidly spawn and despawn entities
-  Duration: 5 minutes
-  
-Step 3: Monitor Growth
-  Tool: anomaly
-  Watch: Memory usage trend
-  
-Step 4: Identify Leak
-  Tool: observe
-  Query: "What components/resources grew without bound?"
-  
-Step 5: Pinpoint Source
-  Tool: experiment
-  Test: Isolate suspected systems
-```
-
-## Advanced Features
-
-### Pipeline Orchestration
-
-Create complex debugging workflows:
-
-```rust
-// Example pipeline definition
-{
-  "pipeline": [
-    {
-      "tool": "checkpoint",
-      "action": "create",
-      "id": "safe_state"
-    },
-    {
-      "tool": "stress",
-      "test_type": "physics",
-      "intensity": 0.8,
-      "duration": 30,
-      "save_results_as": "physics_stress"
-    },
-    {
-      "tool": "observe",
-      "query": "entities with abnormal positions",
-      "if_found": "continue",
-      "if_not_found": "skip_to_end"
-    },
-    {
-      "tool": "diagnostic_report",
-      "include_context": ["physics_stress"]
-    }
-  ]
-}
-```
-
-### Checkpoint/Restore System
-
-Save and restore debugging sessions:
-
-```yaml
-Before risky operation:
-  - checkpoint.create("before_experiment")
-  
-If something goes wrong:
-  - checkpoint.restore("before_experiment")
-  
-List available checkpoints:
-  - checkpoint.list()
-```
-
-### Dead Letter Queue
-
-Track failed operations for post-mortem analysis:
-
-```yaml
-Check failed operations:
-  - dead_letter_queue.list()
-  
-Retry failed operation:
-  - dead_letter_queue.retry(operation_id)
-  
-Clear old failures:
-  - dead_letter_queue.clear(older_than="1h")
-```
-
-## Performance Optimization
-
-### Resource Management
-
-The debugger includes built-in resource management:
-
-```yaml
-Automatic Optimizations:
-  - Request batching (reduces network overhead)
-  - State compression (efficient storage)
-  - Incremental updates (only send changes)
-  - Automatic cleanup (remove old data)
-
-Manual Controls:
-  - Set entity limits in queries
-  - Configure sampling rates
-  - Enable/disable specific monitoring
-  - Adjust checkpoint frequency
-```
-
-### Best Practices for Performance
-
-1. **Limit Entity Queries**
-   ```
-   ❌ "Show me all entities"
-   ✅ "Show me the first 100 entities with Health components"
-   ```
-
-2. **Use Targeted Monitoring**
-   ```
-   ❌ Monitor everything continuously
-   ✅ Monitor specific systems when needed
-   ```
-
-3. **Batch Operations**
-   ```
-   ❌ Multiple individual tool calls
-   ✅ Use orchestration for batch operations
-   ```
-
-4. **Clean Up Resources**
-   ```
-   - Stop recordings when done
-   - Clear old checkpoints
-   - Disable unused monitors
-   ```
-
-## Real-World Examples
-
-### Example 1: Debugging AI Pathfinding
-
-**Problem**: Enemies sometimes get stuck on corners
+## The first two calls
 
 ```
-1. Observe stuck enemy:
-   "Show me enemies with PathfindingAgent that haven't moved in 2 seconds"
-
-2. Examine state:
-   "What is the pathfinding target and current path for entity 1234?"
-
-3. Visualize problem:
-   "Show the navigation mesh around the stuck enemy"
-
-4. Test fix:
-   "Nudge the enemy by 1 unit and see if pathfinding recovers"
-
-5. Implement solution:
-   "Add recovery behavior: if stuck for >2s, recalculate path with wider clearance"
+Tool: status
+{}
 ```
 
-### Example 2: Multiplayer Desync Investigation
-
-**Problem**: Players see different game states
-
-```
-1. Record both viewpoints:
-   "Start recording on both client and server"
-
-2. Trigger desync:
-   "Simulate packet loss at 10% for 30 seconds"
-
-3. Compare states:
-   "Show entities that differ between recordings at frame 1000"
-
-4. Identify cause:
-   "Which components weren't properly replicated?"
-
-5. Verify fix:
-   "Replay scenario with fixed replication logic"
-```
-
-### Example 3: Physics Instability
-
-**Problem**: Objects jitter at high speeds
+Is the game up, is it ready, what frame is it on, how many commands did it register, and where
+would a capture come from (`offscreen`, `window` or `none`).
 
 ```
-1. Identify threshold:
-   "Gradually increase object velocity until jitter appears"
-
-2. Analyze behavior:
-   "Record position/velocity for jittering object over 100 frames"
-
-3. Test solutions:
-   "Compare: fixed timestep vs variable, different integration methods"
-
-4. Validate fix:
-   "Stress test with 100 high-speed objects"
+Tool: commands
+{}
 ```
 
-### Example 4: Save System Corruption
+The commands the game registered, each with its parameters and a working example. Run one with
+`run`. The plugin adds built-in commands of its own: `bevy_fairy/time` (pause the clock or change
+its speed), `bevy_fairy/ring` (record a query every frame inside the game), and, with the
+`plugin-ui-text` feature, `bevy_fairy/ui_text` (the UI text the player can read).
 
-**Problem**: Save files occasionally corrupt
+## Reading the world
+
+`observe` takes a short phrase. The shapes it accepts are listed in its schema; anything else is
+refused rather than guessed at.
 
 ```
-1. Monitor save process:
-   "Track all entity changes during save operation"
-
-2. Stress test:
-   "Rapidly save/load while modifying game state"
-
-3. Detect corruption:
-   "Compare: saved state vs loaded state"
-
-4. Identify cause:
-   "Which components fail to serialize correctly?"
-
-5. Fix and verify:
-   "Test save/load 1000 times with fix applied"
+Tool: observe
+{"query": "find entities with component my_game::Health"}
 ```
 
-## Integration Patterns
+Component names are full type paths. A name the game does not register is an error that lists the
+registered paths ending in it, so `Health` gets you the path to use. `{"query": "list components"}`
+lists every registered component type.
 
-### CI/CD Integration
+For anything `observe` has no phrase for (a resource, a filter with `without`, a component's field
+types), use `brp` with Bevy's own methods:
 
-Automate debugging in your pipeline:
-
-```yaml
-# .github/workflows/debug-test.yml
-name: Automated Debug Tests
-
-on: [push, pull_request]
-
-jobs:
-  debug-tests:
-    steps:
-      - name: Start Bevy Game
-        run: cargo run --features=bevy/remote &
-        
-      - name: Start MCP Server
-        run: ./bevy_fairy &
-        
-      - name: Run Debug Suite
-        run: |
-          claude-code run-script debug-suite.claude
-        
-      - name: Check Results
-        run: |
-          claude-code evaluate "Any performance regressions?"
+```
+Tool: brp
+{"method": "world.get_resources", "params": {"resource": "my_game::Score"}}
 ```
 
-### Automated Testing Scripts
+`world.query`, `world.list_components`, `registry.schema` and `rpc.discover` (every method the game
+serves) all work the same way.
 
-Create reusable debugging scripts:
+## A value that changes over time, or stops changing
 
-```claude
-# performance-regression.claude
-checkpoint.create("baseline")
-observe("current FPS and memory")
-stress.spawn_entities(count=1000, duration=60)
-observe("FPS after stress")
-if (FPS_drop > 20%):
-    diagnostic_report.generate()
-    alert("Performance regression detected!")
+Most game bugs only show across frames. `watch` samples one BRP method repeatedly and returns the
+series, each sample bracketed by the two game frames it was read between.
+
+```
+Tool: watch
+{"method": "world.query",
+ "params": {"data": {"components": ["my_game::Spinner"]}},
+ "pointer": "/0/components/my_game::Spinner/angle",
+ "samples": 20, "interval_ms": 100}
 ```
 
-### Integration with Game Analytics
+The reply says whether the value changed, how many distinct values it saw, the frame of the first
+change, and `constant_since_frame`. It polls over HTTP, so a change that comes and goes between two
+samples is not seen, and one call lasts at most 30 s.
 
-Export debugging data for analysis:
+When you need every frame, or a recording that runs while you do other things, use the in-game
+ring buffer through `run`:
 
-```yaml
-Workflow:
-  1. Record gameplay session
-  2. Detect anomalies
-  3. Export to analytics:
-     - Timestamps of issues
-     - State snapshots
-     - Performance metrics
-  4. Correlate with player reports
+```
+Tool: run
+{"command": "bevy_fairy/ring",
+ "params": {"action": "start", "query": {"data": {"components": ["my_game::Health"]}}, "frames": 120}}
 ```
 
-## Tips and Tricks
+`{"action": "dump"}` returns the samples, each with its frame number. A `trigger` stops the
+recording on the first frame a value matches, which catches a transient you could not time by
+hand.
 
-### 1. Debugging Shortcuts
+## What the player sees
 
-```yaml
-Quick Commands:
-  - "health" → Full system health check
-  - "panic" → Create checkpoint + full diagnostic dump
-  - "baseline" → Capture current state as reference
-  - "compare" → Diff against last baseline
+```
+Tool: screenshot
+{"inline": true}
 ```
 
-### 2. Entity Filters
+The default source is `offscreen`: the image a camera renders to, which leaves out UI. `{"source":
+"window"}` reads the game window, UI included; a covered or minimised window can give a stale
+frame. The reply names the source actually read and the frames the request and the delivery
+happened on.
 
-```yaml
-Useful Patterns:
-  - "entities where Component.field > value"
-  - "entities with [Component1, Component2] but not Component3"
-  - "entities matching /regex/"
-  - "top 10 entities by Component.field"
+`burst` captures a short sequence as one contact sheet: a reference frame from just before, then
+up to seven frames at the rate you ask for, each cell labelled with its game frame and time. Use it
+for a flash, a transition, or a sprite that should be moving.
+
+To read the HUD as text rather than pixels, run `bevy_fairy/ui_text` (needs `plugin-ui-text`): it
+returns each text node the player can read, with its rect. With `include_hidden`, it also returns
+the hidden ones, each with the first check it failed (empty, invisible, zero size, transparent,
+clipped, off screen).
+
+## Driving the game
+
+Input goes in through the `bevy_fairy/input` BRP method, as Bevy input messages inside the game
+process: the OS keyboard and mouse are never touched, and the game window does not need focus.
+
+```
+Tool: brp
+{"method": "bevy_fairy/input", "params": {"kind": "Keyboard", "key": "Space"}}
 ```
 
-### 3. Time-based Queries
+`kind` is `Keyboard` (`key`, or `text` to type a string), `Mouse` (`button`), `Scroll`, or `Cursor`
+(`x`, `y` in logical window pixels, or in pixels of the capture image when the game has a
+`DebugCaptureTarget`; `clear` hands the pointer back). `action` is `Tap` (the default), `Press` or
+`Release`. Input is a request, not a result: confirm it arrived by reading the state it should
+have changed, with `observe` or `watch`.
 
-```yaml
-Temporal Filters:
-  - "entities created in last 10 seconds"
-  - "components modified since checkpoint"
-  - "state at timestamp 1234567890"
-  - "changes between frame 100 and 200"
+Game commands go through `run`. `scene save` writes every command run this session to a file, and
+a game started with `BEVY_FAIRY_SCENE=<path>` runs them again, one per frame, once it is ready.
+Scenes hold commands, not input, and Bevy is not deterministic by default, so a replayed scene
+repeats the commands, not the exact frames.
+
+## Changing the world to test an idea
+
+`experiment` spawns, modifies or deletes entities and reads back what changed. `undo` reverses a
+step when its result said `rollback_available`.
+
+```
+Tool: experiment
+{"action": "execute",
+ "actions": [{"type": "modify", "entity_id": 4294967298,
+              "components": [{"type_id": "my_game::Crate", "value": {"weight": 99.0}}]}]}
 ```
 
-### 4. Correlation Analysis
+`hypothesis` tests a claim against the running game; it needs a `description` and a
+`success_condition`. `detect_anomaly` reads every entity once and flags outliers by the thresholds
+you give it. A detection is a lead to check with `observe` or `watch`, not a verdict.
 
-```yaml
-Finding Relationships:
-  - "when FPS drops, what components increase?"
-  - "entities that appear before crashes"
-  - "correlation between player_count and memory"
-```
+## Walking a person through it
 
-### 5. Automatic Watchers
+`guide` is the one tool that talks to the person at the keyboard rather than the game: it draws one
+step at a time over their window and advances when a condition the app registered holds. Tell them
+in chat that the guide is up, poll it with `{"read": true}`, and when a step is waiting on a person,
+ask them in words. The tool's description has the full protocol.
 
-```yaml
-Set and Forget:
-  - "alert when memory exceeds 1GB"
-  - "checkpoint every 1000 frames"
-  - "record when boss fight starts"
-  - "profile when FPS < 30"
-```
+## What the tools cannot see
 
-### 6. Debug Macros
-
-Create custom debugging commands:
-
-```yaml
-Macro: find_rendering_issues
-  1. observe("entities with Mesh but no Transform")
-  2. observe("entities with Transform.scale = 0")
-  3. observe("entities outside camera frustum")
-  4. report("Potential rendering issues found")
-```
-
-### 7. State Validation
-
-```yaml
-Invariant Checking:
-  - "ensure no entities have Health > MaxHealth"
-  - "verify all Children have valid Parent"
-  - "check no Transform has NaN values"
-```
-
-### 8. Performance Profiling
-
-```yaml
-System Analysis:
-  - "measure time spent in each system"
-  - "count component access patterns"
-  - "identify system dependencies"
-  - "find parallel execution opportunities"
-```
-
-## Common Pitfalls and Solutions
-
-### Pitfall 1: Over-monitoring
-**Problem**: Too much monitoring slows down the game
-**Solution**: Use targeted, temporary monitors
-
-### Pitfall 2: Large State Captures
-**Problem**: Recording everything uses too much memory
-**Solution**: Filter entities and components, use sampling
-
-### Pitfall 3: Timing-Dependent Bugs
-**Problem**: Bug disappears when debugging
-**Solution**: Use passive observation, minimal intervention
-
-### Pitfall 4: State Pollution
-**Problem**: Debug modifications affect subsequent tests
-**Solution**: Always checkpoint before modifications
-
-### Pitfall 5: Replay Divergence
-**Problem**: Replays don't match original
-**Solution**: Ensure deterministic systems, control random seeds
-
-## Conclusion
-
-The bevy-fairy provides a powerful toolkit for debugging Bevy games. By combining intelligent observation, controlled experimentation, and systematic testing, you can quickly identify and resolve issues in your game.
-
-Remember:
-- Start with observation to understand the problem
-- Use checkpoints liberally to enable safe experimentation
-- Chain tools together for complex debugging workflows
-- Generate reports for documentation and future reference
-
-Happy debugging!
+- **Events.** BRP has no method that reports the events a game has seen.
+- **Between samples.** `watch` polls; a change shorter than `interval_ms` can fall between two
+  samples. The ring buffer samples every frame.
+- **One frame across calls.** A JSON-RPC batch is not one frame: its requests can be answered on
+  different frames, which is why `watch` brackets each sample with two frame readings.
+- **UI in the default capture.** `offscreen` leaves out UI; `window` includes it but can be stale.
+- **Exact replay.** Scenes repeat commands, not input or frames.
