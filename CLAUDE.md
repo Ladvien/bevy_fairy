@@ -158,6 +158,10 @@ UPDATE_TOOL_REFERENCE=1 cargo test --test tool_list
 The plugin's examples need their own features: `plugin-screenshot` for the capture example,
 `plugin-guide` for the guided-steps example, plain `plugin` for the rest.
 
+## `watch` samples by polling, and brackets its frames
+
+The `watch` tool does not use bevy_remote's `+watch` streams: those report only changes to one entity's components, and `brp` refuses them. `watch` polls a one-shot method, sending `bevy_fairy/status`, the method and `bevy_fairy/status` as one JSON-RPC batch. **A batch is not one frame**: `bevy_remote::http::process_request_batch` awaits each request's answer before sending the next, so the requests can land on different frames (measured: the value was one frame off the first status in about half of the runs). Each sample therefore carries `frame` and `frame_until`, the two status readings, and claims only that the value was read between them. `tests/fixture_ground_truth.rs::watch_brackets_the_frame_every_sample_was_read_on` pins that against the spinner's own frame counter. A single-frame stamp needs a plugin-side method; none exists. No progress notifications yet (30 s cap instead).
+
 ## `bevy_fairy/ui_text` answers "what can the player read", and says why a node is not
 
 A `Text` node's `InheritedVisibility` stays true after its slot is set to `Display::None` (the game keeps the old string), so visibility alone reports stale strings as on screen. `src/plugin/ui_text.rs` checks, in order: empty text, `InheritedVisibility`, a zero `ComputedNode.size`, text alpha, an ancestor's `CalculatedClip`, overlap with the render target; a hidden node names the first check it failed. `rect` is physical pixels of the node's target (the space of `screenshot`'s `region`), cut to the target when visible. It is a built-in *command*, reached with `run`, not a tool. `tests/plugin_ui_text.rs` runs a real laid-out `bevy_ui` tree. Not measured: the issue's "reply at most a fifth of a raw `world.query`" — the fixture game has no HUD.

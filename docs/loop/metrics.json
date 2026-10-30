@@ -1,11 +1,11 @@
 {
-  "measured_at": "2026-10-23",
+  "measured_at": "2026-10-29",
   "sha": "13da68e",
   "server": {
     "loc": 51207,
     "direct_dependencies": 53,
     "public_modules": 72,
-    "mcp_tools": 13,
+    "mcp_tools": 14,
     "release_binary_bytes": 99925248,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
@@ -35,7 +35,7 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 13.2,
+    "mean_tool_calls_per_solved_task": 7.7,
     "dev_is_error_results_per_run": [
       5,
       7,
