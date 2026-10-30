@@ -208,8 +208,8 @@ pub fn typed(ch: char, window: Entity) -> Option<KeyboardInput> {
 ///
 /// `Window::set_cursor_position` writes only an internal field. But Bevy's windowing backend runs a
 /// `changed_windows` system that compares that field against a per-window cache each frame, and on a
-/// difference asks the platform to **move the physical pointer** — `bevy_winit-0.19.0/src/system.rs`
-/// line 433. The cache is `pub(crate)`, so a plugin cannot update it to suppress the diff.
+/// difference asks the platform to **move the physical pointer** — `bevy_winit-0.20.1/src/system.rs`
+/// lines 426-430. The cache is `pub(crate)`, so a plugin cannot update it to suppress the diff.
 ///
 /// Writing the window would therefore drag the mouse out from under whoever is at the machine. That
 /// is precisely the class of thing this crate exists to avoid, and `tests/leaf.rs` is the ratchet
@@ -238,7 +238,7 @@ pub fn cursor_position(window: &Window, injected: &DebugCursor) -> Option<Vec2> 
 ///
 /// # Why this queue exists
 ///
-/// BRP methods registered with `with_method_main` run in the **`Last`** schedule, and a message
+/// BRP methods registered with `with_method_main` run in **`RemoteLast`** (after `Last`), and a message
 /// written there would be read a whole frame late by everything. More importantly, the deferral rules
 /// below — one edge per key per frame, cursor ordering, text behind an opening keystroke — have to
 /// live in exactly one place, and this is it.
@@ -246,7 +246,7 @@ pub fn cursor_position(window: &Window, injected: &DebugCursor) -> Option<Vec2> 
 /// # The bug this shape was built around, which is worth not re-learning
 ///
 /// Bevy's `keyboard_input_system` runs in **`PreUpdate`** and begins by clearing the just-pressed and
-/// just-released sets. A press written straight into `ButtonInput` from a `Last` handler therefore had
+/// just-released sets. A press written straight into `ButtonInput` from a `RemoteLast` handler therefore had
 /// its `just_pressed` flag wiped by the very next `PreUpdate`, *before* any `Update` system could read
 /// it. **Every `just_pressed`-based action was unreachable by injected input** while the method
 /// answered `success: true`. Held `pressed` state survived the clear, which is what made it look
@@ -334,7 +334,7 @@ impl PendingInput {
 /// # The ordering, and why it is the opposite of what it used to be
 ///
 /// `keyboard_input_system` clears last frame's edges and *then* folds the [`KeyboardInput`] stream
-/// into `ButtonInput` (`bevy_input-0.19.0/src/keyboard.rs`). Writing the messages **ahead** of it
+/// into `ButtonInput` (`bevy_input-0.20.1/src/keyboard.rs`). Writing the messages **ahead** of it
 /// therefore survives the clear that erased the old direct `ButtonInput` write — the same fact, used
 /// from the other side.
 ///
@@ -343,7 +343,7 @@ impl PendingInput {
 /// the injection is silently inert. `DebuggerPlugin::finish` asserts the latter rather than leaving it
 /// to be discovered.
 ///
-/// It must also `init_resource::<DebugCursor>()` — in Bevy 0.19 a missing `ResMut<T>` panics the system
+/// It must also `init_resource::<DebugCursor>()` — in Bevy 0.20 a missing `ResMut<T>` panics the system
 /// rather than skipping it, so the absence is loud rather than a cursor injection that quietly does
 /// nothing.
 pub fn apply_pending_input(

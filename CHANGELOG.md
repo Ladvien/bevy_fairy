@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-10-29
+
+### Fixed
+
+- Plugin doc comments and CLAUDE.md cited Bevy 0.19 engine paths and line numbers, and one said BRP
+  handlers run in `Last`; they run in `RemoteLast`. Citations now point at `bevy_remote`,
+  `bevy_winit` and `bevy_input` 0.20.1 and were checked against those sources. No behaviour change.
+
 ## 0.3.1 — 2026-10-29
 
 ### Added

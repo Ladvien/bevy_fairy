@@ -91,7 +91,7 @@
         "common_no_workaround": true,
         "evidence": "crates/bevy_debugger_bevy/src/input.rs:235, :263, :340; guide.rs:430"
       },
-      "status": "open",
+      "status": "fixed",
       "evidence": "Verified 2026-10-21.",
       "last_failure": "",
       "first_seen": "2026-10-21"
