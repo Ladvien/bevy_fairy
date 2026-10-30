@@ -1,19 +1,8 @@
-# 2026-10-30 clippy-sweep: B-020 clippy warnings 186 -> 144
+# 2026-10-30 clippy-sweep: unused imports/get(0) cleared in bevy_reflection/inspector.rs
 
-Focus: none · Outcome: shipped (debt paydown, no release: 6 h rule, v0.7.2 tag under 6 h old)
+Focus: B-020 · Outcome: shipped (no release, 6 h rule; v0.8.0 published 76 min earlier)
 
-## Summary
-`cargo clippy --fix --lib --bins` on default features removed autofixable warnings in 10 server files. The first
-run also touched `src/server/bevy_reflection/` (feature-gated); it removed imports that feature needs, so
-`--all-features` stopped compiling. Those files were reverted and the baseline re-recorded: every feature builds.
-
-## Evidence
-- `scripts/ratchet.sh --record`: clippy total 186 -> 144, 0 failing features.
-- `cargo test --workspace --all-features`: all suites ok (1 pre-existing ignored doctest).
-- Lesson: autofix under default features is unsafe for feature-gated modules; check `--all-features` after.
-
-## Test and eval diffs
-none. Evals not rerun (no tool behaviour changed). Not a Phase 2 change; no release.
-
-## Deferred
-B-020 remaining 144 warnings (bevy_reflection files, tests/). Next focus: B-021 burst capture ring buffer.
+`cargo clippy --fix --lib --bins` fixed 3 files; two were reverted because the fix removed `json!`/`FieldMetadata`
+imports that the `bevy-reflection` feature and the unit tests need (autofix ran without them). Kept: `inspector.rs`.
+Ratchet green (`scripts/ratchet.sh`), `cargo test --workspace` green, baseline re-recorded (counts only down).
+No test or eval diffs. Leftover B-020 warnings: see `known_red` in metrics.json.
