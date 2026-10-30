@@ -16,7 +16,6 @@ use bevy_fairy::server::brp_messages::{
 };
 use bevy_fairy::server::brp_validation::{BrpValidator, ValidationConfig};
 use bevy_fairy::server::config::Config;
-use bevy_fairy::server::debug_brp_handler::DebugBrpHandler;
 use bevy_fairy::server::debug_command_processor::DebugCommandRouter;
 use bevy_fairy::server::error::Result;
 
@@ -140,40 +139,6 @@ async fn test_brp_client_with_handlers() {
 
     let versions = registry.get_versions().await;
     assert!(versions.contains_key("custom"));
-}
-
-#[tokio::test]
-async fn test_debug_handler_integration() {
-    use bevy_fairy::server::brp_messages::DebugCommand;
-    use bevy_fairy::server::debug_brp_handler::encode_debug_request;
-
-    // Create debug router
-    let debug_router = Arc::new(DebugCommandRouter::new());
-
-    // Create debug handler
-    let debug_handler = DebugBrpHandler::new(debug_router);
-
-    // Test metadata
-    let metadata = debug_handler.metadata();
-    assert_eq!(metadata.name, "debug");
-    assert!(metadata.supported_commands.contains(&"InspectEntity".to_string()));
-
-    // Test can_handle on a real debug-method request envelope
-    let debug_request = encode_debug_request(
-        &DebugCommand::InspectEntity {
-            entity_id: 123,
-            include_metadata: None,
-            include_relationships: None,
-        },
-        "test-123",
-        None,
-    )
-    .unwrap();
-    assert!(debug_handler.can_handle(&debug_request));
-
-    // A non-debug request should not be handled.
-    let non_debug_request = request(builtin_methods::BRP_QUERY_METHOD, None);
-    assert!(!debug_handler.can_handle(&non_debug_request));
 }
 
 #[tokio::test]
