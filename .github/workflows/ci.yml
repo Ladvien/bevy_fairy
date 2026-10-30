@@ -21,8 +21,7 @@ jobs:
       - run: cargo fmt --all --check
       # The ratchet stands in for `cargo clippy --all-targets --all-features -- -D warnings`
       # until the debt it freezes is paid. `main` was already red when the improvement loop
-      # began: the `observability` feature does not compile (so `full-debugging` does not
-      # either), and clippy reports over a thousand warnings. The ratchet fails only when
+      # began: clippy reports over a thousand warnings. The ratchet fails only when
       # something NEW breaks, so a red build means a real regression. When every `known_red`
       # count in docs/loop/metrics.json reaches zero, delete the ratchet and put the clippy line
       # back, and `--all-features` back on the two steps below.

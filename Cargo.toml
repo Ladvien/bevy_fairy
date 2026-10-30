@@ -1,6 +1,6 @@
 [package]
 name = "bevy_fairy"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["ladvien <ladvien@example.com>"]
 description = "An agentic debugger for Bevy games: a Bevy plugin that exposes the game's state over BRP, and an MCP server that lets a coding agent read and drive it"
@@ -111,20 +111,9 @@ base64 = { version = "0.22", optional = true }
 # Performance optimization dependencies
 ahash = { version = "0.8", optional = true }
 
-# Observability dependencies
-opentelemetry = { version = "0.22", optional = true }
-opentelemetry-otlp = { version = "0.15", optional = true }
-opentelemetry-prometheus = { version = "0.15", optional = true }
-opentelemetry-jaeger = { version = "0.22", optional = true }
-opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"], optional = true }
-opentelemetry-stdout = { version = "0.5", optional = true }
-tracing-opentelemetry = { version = "0.25", optional = true }
-prometheus = { version = "0.13", optional = true }
-metrics = { version = "0.23", optional = true }
-metrics-exporter-prometheus = { version = "0.15", optional = true }
 lazy_static = { version = "1.5", optional = true }
 
-# Web server dependencies (shared by the observability endpoints)
+# Web server dependencies
 hyper = { version = "1.0", features = ["full"], optional = true }
 tower = { version = "0.5", features = ["full"], optional = true }
 tower-http = { version = "0.5", features = ["auth", "cors", "trace", "metrics"], optional = true }
@@ -217,7 +206,6 @@ full-debugging = [
     "visual-debugging",
     "session-management",
     "issue-detection",
-    "observability"
 ]
 
 # Individual feature flags for granular control
@@ -231,7 +219,6 @@ memory-profiling = []
 stress-testing = []
 time-travel = []
 orchestration = []
-observability = []
 
 # Performance optimizations
 optimizations = ["caching", "pooling", "lazy-init", "fast-hash"]

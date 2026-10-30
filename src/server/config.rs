@@ -93,20 +93,6 @@ pub struct ResilienceConfig {
     pub enable_adaptive_sampling: bool,
 }
 
-/// Observability configuration for metrics and tracing
-#[derive(Debug, Clone)]
-pub struct ObservabilityConfig {
-    pub metrics_enabled: bool,
-    pub metrics_port: u16,
-    pub tracing_enabled: bool,
-    pub jaeger_endpoint: Option<String>,
-    pub otlp_endpoint: Option<String>,
-    pub health_check_enabled: bool,
-    pub health_check_port: u16,
-    pub sample_rate: f64,
-    pub environment: String,
-}
-
 impl Default for ResilienceConfig {
     fn default() -> Self {
         Self {
@@ -120,29 +106,12 @@ impl Default for ResilienceConfig {
     }
 }
 
-impl Default for ObservabilityConfig {
-    fn default() -> Self {
-        Self {
-            metrics_enabled: true,
-            metrics_port: 9090,
-            tracing_enabled: true,
-            jaeger_endpoint: None,
-            otlp_endpoint: None,
-            health_check_enabled: true,
-            health_check_port: 8080,
-            sample_rate: 1.0,
-            environment: "development".to_string(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub bevy_brp_host: String,
     pub bevy_brp_port: u16,
     pub mcp_port: u16,
     pub resilience: ResilienceConfig,
-    pub observability: ObservabilityConfig,
 }
 
 impl Default for Config {
@@ -152,7 +121,6 @@ impl Default for Config {
             bevy_brp_port: 15702,
             mcp_port: 3001,
             resilience: ResilienceConfig::default(),
-            observability: ObservabilityConfig::default(),
         }
     }
 }
@@ -223,57 +191,11 @@ impl Config {
             resilience.retry.max_delay = Duration::from_secs(seconds);
         }
 
-        let mut observability = ObservabilityConfig::default();
-        
-        // Parse observability configuration from environment
-        if let Ok(val) = env::var("METRICS_ENABLED") {
-            observability.metrics_enabled = val.parse()
-                .map_err(|_| Error::Config("Invalid METRICS_ENABLED".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("METRICS_PORT") {
-            observability.metrics_port = val.parse()
-                .map_err(|_| Error::Config("Invalid METRICS_PORT".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("TRACING_ENABLED") {
-            observability.tracing_enabled = val.parse()
-                .map_err(|_| Error::Config("Invalid TRACING_ENABLED".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("JAEGER_ENDPOINT") {
-            observability.jaeger_endpoint = Some(val);
-        }
-        
-        if let Ok(val) = env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-            observability.otlp_endpoint = Some(val);
-        }
-        
-        if let Ok(val) = env::var("HEALTH_CHECK_ENABLED") {
-            observability.health_check_enabled = val.parse()
-                .map_err(|_| Error::Config("Invalid HEALTH_CHECK_ENABLED".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("HEALTH_CHECK_PORT") {
-            observability.health_check_port = val.parse()
-                .map_err(|_| Error::Config("Invalid HEALTH_CHECK_PORT".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("OTEL_TRACES_SAMPLER_ARG") {
-            observability.sample_rate = val.parse()
-                .map_err(|_| Error::Config("Invalid OTEL_TRACES_SAMPLER_ARG".to_string()))?;
-        }
-        
-        if let Ok(val) = env::var("DEPLOYMENT_ENVIRONMENT") {
-            observability.environment = val;
-        }
-
         Ok(Config {
             bevy_brp_host,
             bevy_brp_port,
             mcp_port,
             resilience,
-            observability,
         })
     }
 
