@@ -28,7 +28,6 @@ fn every_tool_named_in_the_instructions_exists() {
         "detect_anomaly",
         "hypothesis",
         "experiment",
-        "replay",
         "guide",
     ] {
         assert!(
@@ -60,20 +59,5 @@ fn the_instructions_name_the_fields_the_tools_need() {
     assert!(
         COLLABORATION_PROTOCOL.contains("`action`"),
         "the instructions must say that these tools pick what to do with an `action`"
-    );
-}
-
-/// The instructions must not promise what a tool cannot do. `replay` records entity states; it
-/// does not re-run the game, and it cannot capture events.
-#[test]
-fn the_instructions_do_not_promise_more_than_the_tools_deliver() {
-    let lower = COLLABORATION_PROTOCOL.to_lowercase();
-    assert!(
-        !lower.contains("`replay` re-runs"),
-        "the instructions claim `replay` re-runs the game; it records and replays state"
-    );
-    assert!(
-        lower.contains("`replay` records and replays"),
-        "the instructions must say what `replay` actually does"
     );
 }

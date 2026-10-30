@@ -129,8 +129,8 @@ Expected response:
 echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}' | bevy-fairy --stdio
 ```
 
-Expected tools, sorted by name: `brp`, `commands`, `detect_anomaly`, `experiment`, `guide`,
-`hypothesis`, `observe`, `quit`, `replay`, `run`, `scene`, `screenshot`, `status`
+Expected tools, sorted by name: `brp`, `burst`, `commands`, `detect_anomaly`, `experiment`, `guide`,
+`hypothesis`, `observe`, `quit`, `run`, `scene`, `screenshot`, `status`, `watch`
 
 ### 3. Test with Claude Code
 

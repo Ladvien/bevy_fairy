@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Breaking: the `replay` MCP tool is removed. Migration is below.
+
+### Removed
+
+- The `replay` tool, and `ReplayRequest`, `ReplayAction`, `StepDirection`, `MergeStrategyArg`, `EntityModification` and `EntityRemoval` from `server::mcp_tools`. Its playback (`play`, `pause`, `seek`, `step`, `set_speed`, `playback_status`) answered "Playback started" or "Stepped forward" while nothing reached the game: the sync that was to write each recorded frame back was a `TODO` that returned `Ok`. Against the fixture game, after `record`, `stop` and `play`, the mover stood at x = 6.57 while the recording had seen it only between x = 0.53 and 2.55. Its branches (`create_branch` to `branch_tree`) compared the recording with the caller's own edits, which nothing ran, and `merge_branch` with `strategy: manual` silently took the source. A recording could not be read back either: `load` of the file `save` had just written failed with "failed to fill whole buffer", and no action returned a recorded frame. **Migration:** for state over time, use `watch` (polls one BRP method, up to 30 s) or the plugin's `bevy_fairy/ring` command through `run` (records a `world.query` every frame inside the game, and stops on a trigger); to re-run a session, use `scene`.
+
+### Changed
+
+- `status`'s description says what its `replay` field is: the progress of a scene file the game is replaying, null when none.
+
 ## 0.9.0 - 2026-10-30
 
 Covers everything since 0.8.0. Breaking (semver-checks: 9 major checks): `observe` lost its `reflection` argument and its semantic phrases, `QueryParser::parse` returns a `ParsedQuery` and lost `parse_semantic`, `observe::handle` takes `&ObserveRequest`, `ObserveState` lost its unreachable snapshot history, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted. No MCP tool was removed; `observe` callers that sent `reflection` or a semantic phrase now get a refusal naming what to use instead.

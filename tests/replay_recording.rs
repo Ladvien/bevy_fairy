@@ -1,10 +1,10 @@
-//! The `replay` tool must record what the game holds, and say what it could not record.
+//! `RecordingBuffer` must record what the game holds, and say what it could not record.
 //!
 //! `RecordingBuffer::fetch_entities` used to return an empty map with a `TODO`, so a recording held
-//! no state at all. The tool still reported "Recording started" and a frame count, so an agent
-//! looked at a recording of nothing and read it as a recording of the game.
+//! no state at all, while the `replay` tool reported "Recording started" and a frame count. The
+//! tool is gone (its playback wrote nothing to the game); the buffer and these checks remain.
 //!
-//! Entity states are observable over BRP and are now recorded. Events are not: BRP has no method
+//! Entity states are observable over BRP and are recorded. Events are not: BRP has no method
 //! that reports the events a game has seen. A recording has to say that, or an empty event list
 //! reads as "nothing happened" when it means "we cannot see events".
 
@@ -14,8 +14,6 @@ use axum::{extract::State, routing::post, Json, Router};
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::recording_system::RecordingBuffer;
-use rmcp::handler::server::tool::Parameters;
-use rmcp::model::CallToolResult;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -71,15 +69,6 @@ fn client_for(port: u16) -> Arc<RwLock<BrpClient>> {
         ..Config::default()
     };
     Arc::new(RwLock::new(BrpClient::new(&config)))
-}
-
-fn text_of(result: &CallToolResult) -> String {
-    result
-        .content
-        .iter()
-        .filter_map(|item| item.as_text().map(|text| text.text.clone()))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// A recorded frame must hold the entities the game has. The fake game has two.
@@ -146,37 +135,5 @@ async fn a_frame_says_that_events_were_not_captured() {
     assert!(
         reason.contains("events") && reason.len() > 20,
         "the reason must name what was not captured; got {reason}"
-    );
-}
-
-/// The tool must say what it captures and what it does not, when the recording starts.
-#[tokio::test]
-async fn the_record_report_says_what_is_not_captured() {
-    let game: SharedGame = Arc::new(Mutex::new(FakeGame::default()));
-    let port = start_fake_game(game.clone()).await;
-    let client = client_for(port);
-
-    let tools = bevy_fairy::server::mcp_tools::BevyDebuggerTools::new(client);
-    let status = tools
-        .status(Parameters(bevy_fairy::server::mcp_tools::NoArgs {}))
-        .await
-        .expect("status returns a result");
-    assert!(!text_of(&status).contains("\"error\""), "the fake game should answer status");
-
-    let result = tools
-        .replay(Parameters(serde_json::from_value(json!({"action": "record"})).expect("the request deserialises")))
-        .await
-        .expect("replay returns a result");
-
-    let text = text_of(&result);
-    let value: Value = serde_json::from_str(&text).expect("the reply is JSON");
-    let not_captured = value
-        .get("not_captured")
-        .and_then(|v| v.get("events"))
-        .and_then(Value::as_str)
-        .expect("the report must say that events are not captured");
-    assert!(
-        not_captured.contains("not observable") || not_captured.contains("not captured"),
-        "the report must be clear that an empty event list is not \"nothing happened\"; got {not_captured}"
     );
 }
