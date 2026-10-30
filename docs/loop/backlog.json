@@ -76,7 +76,7 @@
         "evidence": "src/lib.rs:158-276 exports them; brp_client_v2, brp_client_refactored, tools/replay_v2.rs are unused"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038).",
+      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038). 2026-10-30: 38 unreachable server modules deleted incl. legacy mcp_server and the profilers/session manager; remaining unreachable items are inside tools/ (replay_v2, observe_optimized).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -235,8 +235,8 @@
         "common_no_workaround": false,
         "evidence": "src/server/mod.rs declares 72 modules; the tool router reaches about a dozen"
       },
-      "status": "open",
-      "evidence": "The merge moved the server's modules into `src/server/`, which makes the dead ones visible as a list in one file. B-013 is the same finding from before the merge; this is the place to act on it.",
+      "status": "fixed",
+      "evidence": "The merge moved the server's modules into `src/server/`, which makes the dead ones visible as a list in one file. B-013 is the same finding from before the merge; this is the place to act on it. 2026-10-30: 38 unreachable modules (~21k lines) and the tests/benches that only exercised them deleted; 28 modules remain, all reachable from main.rs.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
