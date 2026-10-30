@@ -1,6 +1,5 @@
 use crate::server::brp_messages::{BrpRequest, QueryFilter};
 use crate::server::error::{Error, Result};
-use crate::server::semantic_analyzer::{SemanticAnalyzer, SemanticQueryResult};
 /// Query parsing for natural language to BRP conversion
 use regex::Regex;
 
@@ -12,12 +11,6 @@ pub trait QueryParser {
     /// Returns error if query cannot be parsed or is invalid
     fn parse(&self, query: &str) -> Result<BrpRequest>;
 
-    /// Parse a semantic query and return detailed results
-    ///
-    /// # Errors
-    /// Returns error if query cannot be parsed or analyzed
-    fn parse_semantic(&self, query: &str) -> Result<SemanticQueryResult>;
-
     /// Get help text for supported query patterns
     fn help(&self) -> &str;
 }
@@ -25,7 +18,6 @@ pub trait QueryParser {
 /// Basic pattern-based query parser using regex
 pub struct RegexQueryParser {
     patterns: Vec<QueryPattern>,
-    semantic_analyzer: SemanticAnalyzer,
 }
 
 struct QueryPattern {
@@ -199,10 +191,7 @@ impl RegexQueryParser {
             },
         ];
 
-        Ok(Self {
-            patterns,
-            semantic_analyzer: SemanticAnalyzer::new()?,
-        })
+        Ok(Self { patterns })
     }
 }
 
@@ -220,12 +209,6 @@ impl QueryParser for RegexQueryParser {
             return Err(Error::Brp("Empty query".to_string()));
         }
 
-        // Try semantic analysis first
-        if let Ok(semantic_result) = self.semantic_analyzer.analyze(query) {
-            return Ok(semantic_result.request);
-        }
-
-        // Fall back to basic pattern matching
         for pattern in &self.patterns {
             if let Some(captures) = pattern.pattern.captures(query) {
                 return (pattern.builder)(&captures);
@@ -239,13 +222,8 @@ impl QueryParser for RegexQueryParser {
         )))
     }
 
-    fn parse_semantic(&self, query: &str) -> Result<SemanticQueryResult> {
-        self.semantic_analyzer.analyze(query)
-    }
-
     fn help(&self) -> &str {
         "Supported query patterns:\n\
-        Basic queries:\n\
         - list all entities\n\
         - show entity X\n\
         - find entities with component Y\n\
@@ -253,16 +231,7 @@ impl QueryParser for RegexQueryParser {
         - find entities with A, B, C\n\
         - show entity X components A, B\n\
         - find N entities with component Y\n\
-        - list components\n\
-        \n\
-        Semantic queries:\n\
-        - find stuck entities\n\
-        - show fast moving objects\n\
-        - find overlapping colliders\n\
-        - find memory leaks\n\
-        - find inconsistent state\n\
-        - find physics violations\n\
-        - find stuck and fast entities (compound)"
+        - list components"
     }
 }
 

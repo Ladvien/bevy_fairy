@@ -698,22 +698,31 @@ async fn observe_show_entity_lists_the_entitys_components() {
     assert!(failed, "an entity the game does not have must be an error: {text}");
 }
 
-/// A semantic query is built from short names (`Transform`). The game registers full paths, so
-/// the query used to be refused outright (B-065). A short name that ends exactly one registered
-/// path is now resolved, and the answer says which path was used.
+/// The semantic phrases claimed selections the server never made. Their value thresholds were
+/// never sent to the game (B-077), so `find stuck entities` would have listed every entity with a
+/// velocity, and `find memory leaks` answered the fixture's mover -- its one entity with a
+/// `Transform`, which leaks nothing -- as a leak candidate at "confidence" 0.6. They
+/// are not query shapes any more: each is refused, and the refusal lists the shapes that are.
 #[tokio::test(flavor = "multi_thread")]
-async fn observe_resolves_the_short_names_a_semantic_query_is_built_from() {
+async fn observe_refuses_the_semantic_phrases_it_never_evaluated() {
     let port = start_fixture();
     let tools = tools_for(port);
     wait_until_ready(&tools).await;
 
-    let (text, failed) = observe(&tools, "find memory leaks").await;
-    assert!(!failed, "Transform is registered, the semantic query must run: {text}");
-    assert!(
-        text.contains("bevy_transform::components::transform::Transform"),
-        "the answer names the path it used: {text}"
-    );
-    assert!(text.contains("resolved_component_names"), "and says it rewrote the name: {text}");
+    for query in [
+        "find memory leaks",
+        "find stuck entities",
+        "show fast moving objects",
+        "find overlapping colliders",
+        "find inconsistent state",
+        "find physics violations",
+        "find stuck and fast entities",
+    ] {
+        let (text, failed) = observe(&tools, query).await;
+        assert!(failed, "`{query}` was never evaluated, so it cannot be answered: {text}");
+        assert!(!text.contains("semantic_analysis"), "`{query}` must not claim an analysis: {text}");
+        assert!(text.contains("find entities with component"), "the refusal lists the shapes that work: {text}");
+    }
 }
 
 /// `experiment` keeps one process-wide history, so the tests that read it take turns.
