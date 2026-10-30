@@ -2,18 +2,20 @@
 
 ## Unreleased
 
-Breaking: `observe` lost its `reflection` argument, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted.
+Breaking: `observe` lost its `reflection` argument and its semantic phrases, `QueryParser` lost `parse_semantic`, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted.
 
 ### Removed
 
 - `observe`'s `reflection` argument and the `reflection_data` it added. Its type claims were constants and guesses: every component was reported `is_reflected: false`, `type_category: "Value"` with no `fields`, and each value's `type_info` was inferred from its JSON (the fixture's `f32` weight came back as `f64`, a `Vec3` as `Vec<T>`). The advertised custom inspectors for `Option<T>`, `Vec<T>` and `HashMap` never ran. A call that still sends `reflection` is refused as an unknown field. For a component's fields and their types, call `brp` with `registry.schema`.
 - `server::replay_actor` and `server::resource_manager` (about 1,420 lines), and `BrpClient::with_resource_manager`: nothing the binary runs constructed them.
+- `observe`'s semantic phrases (`find stuck entities`, `show fast moving objects`, `find overlapping colliders`, `find memory leaks`, `find inconsistent state`, `find physics violations`, `find stuck and fast entities`) and the `semantic_analysis` and `metadata.resolved_component_names` fields they produced. Each claimed a selection the server never made: the velocity and health thresholds were built but never sent to the game, so `find stuck entities` would list every entity with the named components, and `find memory leaks` answered the fixture's mover as a leak candidate at "confidence" 0.6 because it has a `Transform`. They are now refused as unrecognised queries, with the shapes that work. To find entities by a value, read the component with `observe` or `brp` and compare the values yourself. `QueryParser::parse_semantic` is gone with them.
 
 ### Fixed
 
 - `observe` with `diff: true` compared each read with itself and always answered "No changes detected". It now compares with the previous `diff` read of the same query; a read with nothing to compare with (the first one, or the first after the query changed) answers `"diff": {"baseline": true, ...}` instead of leaving `diff` out. Comparing two different queries would have reported what the second one left out as components the game removed. The metadata's constant `"diff_target": "last"` is gone, and `ObserveState::add_snapshot` takes the query and the snapshot.
 - `observe`'s `show entity N` asked the game for no components and answered `{"components": {}}`, so every entity read as one with none. It now asks for every registered component and leaves out the "not present" errors for the ones the entity lacks.
 - `observe`'s description claimed it reads resources (no query shape does; use `brp` with `world.get_resources`), and the server instructions said `observe` takes an `action` (it takes a `query`).
+- `observe` with `diff: true` reported `entities_modified: 0` beside every component change, because it counted only a change kind the diff never produces. It now counts the distinct entities with a component added, removed or modified.
 
 ## 0.8.0 - 2026-10-30
 
