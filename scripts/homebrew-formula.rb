@@ -53,29 +53,19 @@ class BevyDebuggerMcp < Formula
     <<~EOS
       ✨ bevy-fairy has been installed!
 
-      To set up Claude Desktop integration:
-        bevy-fairy setup-claude
-
-      To start the server:
-        bevy-fairy serve
+      bevy-fairy is an MCP server over stdio: add `bevy-fairy` to your MCP
+      client's server list and the client starts it. There is nothing to run
+      as a service.
 
       Configuration file is located at:
         ~/.config/bevy-fairy/config.toml
 
-      Don't forget to add RemotePlugin to your Bevy game!
+      Add bevy_fairy's DebuggerPlugin (feature `plugin`) to your Bevy game.
     EOS
-  end
-
-  service do
-    run [opt_bin/"bevy-fairy", "serve"]
-    keep_alive true
-    log_path var/"log/bevy-fairy.log"
-    error_log_path var/"log/bevy-fairy-error.log"
-    environment_variables RUST_LOG: "info"
   end
 
   test do
     assert_match version.to_s, shell_output("#{bin}/bevy-fairy --version")
-    assert_match "doctor", shell_output("#{bin}/bevy-fairy --help")
+    assert_match "--version", shell_output("#{bin}/bevy-fairy --help")
   end
 end
