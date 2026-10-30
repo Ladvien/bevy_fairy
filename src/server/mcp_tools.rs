@@ -192,7 +192,7 @@ pub struct AnomalyRequest {
     /// How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window.
     #[serde(default)]
     pub window_size: Option<u64>,
-    /// How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous.
+    /// How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated.
     #[serde(default)]
     pub z_score_threshold: Option<f64>,
     /// The fewest samples needed before a verdict is possible; at most `window_size`.
@@ -201,7 +201,7 @@ pub struct AnomalyRequest {
     /// The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally.
     #[serde(default)]
     pub entity_growth_threshold: Option<f64>,
-    /// The lowest severity to report, from 0 to 1. Severity is how far past its threshold a reading is: 0.5 at twice the threshold.
+    /// The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement.
     #[serde(default)]
     pub min_severity: Option<f64>,
     /// How many anomalies to report at most.
@@ -625,6 +625,39 @@ impl BevyDebuggerTools {
         }
     }
 
+    /// The game's frame counter now, from `bevy_fairy/status`. The `Err` says why there is none:
+    /// the game serves BRP without this crate's plugin, or does not answer.
+    async fn frame_now(&self) -> Result<u64, String> {
+        let status = self.call_game(STATUS_METHOD, None).await?;
+        status
+            .get("frame")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("{STATUS_METHOD} returned no frame counter: {status}"))
+    }
+
+    /// Say which frames a read lies between: `frame` is the game's frame counter before the
+    /// handler ran and `frame_until` after it. The handler's own requests are served on frames of
+    /// their own, so the claim is a bracket, as in `watch`. A game that cannot report its frame
+    /// gets `frame_unavailable` and the reason, never a made-up number. A refusal is left alone.
+    async fn stamp_frames(&self, before: Result<u64, String>, result: &mut Value) {
+        if result.get("error").is_some_and(|error| !error.is_null()) {
+            return;
+        }
+        let after = self.frame_now().await;
+        let Some(fields) = result.as_object_mut() else {
+            return;
+        };
+        match (before, after) {
+            (Ok(from), Ok(until)) => {
+                fields.insert("frame".to_string(), Value::from(from));
+                fields.insert("frame_until".to_string(), Value::from(until));
+            }
+            (Err(why), _) | (_, Err(why)) => {
+                fields.insert("frame_unavailable".to_string(), Value::from(why));
+            }
+        }
+    }
+
     async fn game_url(&self) -> String {
         self.brp_client.read().await.url().to_string()
     }
@@ -720,12 +753,16 @@ pub const COLLABORATION_PROTOCOL: &str =
 #[tool_router]
 impl BevyDebuggerTools {
     /// Read the game's entities with a phrase query
-    #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
+    #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. The reply says which game frames the read lies between (\"frame\" to \"frame_until\", the counter before and after; the game serves each request on a frame of its own), or \"frame_unavailable\" with the reason when the game does not serve the plugin's status method. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
     pub async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> Result<CallToolResult, McpError> {
         debug!("Executing observe query: {}", req.query);
 
+        let before = self.frame_now().await;
         match observe::handle(&req, self.brp_client.clone()).await {
-            Ok(result) => handler_result(result),
+            Ok(mut result) => {
+                self.stamp_frames(before, &mut result).await;
+                handler_result(result)
+            }
             Err(e) => {
                 error!("Observe tool error: {}", e);
                 tool_err(format!("Observe tool error: {}", e))
@@ -802,7 +839,7 @@ impl BevyDebuggerTools {
     }
 
     /// Detect anomalies in game behavior
-    #[tool(description = "Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (compared with that entity's own recent speeds), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity is how far past its threshold a reading is, from 0 to 1. A detection is a lead to check, not a verdict.")]
+    #[tool(description = "Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.")]
     pub async fn detect_anomaly(&self, Parameters(req): Parameters<AnomalyRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running anomaly action: {}", req.action);
 
@@ -811,8 +848,15 @@ impl BevyDebuggerTools {
             Err(refusal) => return refusal,
         };
 
+        // Only `detect` reads the game; `configure` and `status` answer from this server's own state.
+        let before = if req.action == "detect" { Some(self.frame_now().await) } else { None };
         match anomaly::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => handler_result(result),
+            Ok(mut result) => {
+                if let Some(before) = before {
+                    self.stamp_frames(before, &mut result).await;
+                }
+                handler_result(result)
+            }
             Err(e) => {
                 error!("Anomaly detection error: {}", e);
                 tool_err(format!("Anomaly detection error: {}", e))

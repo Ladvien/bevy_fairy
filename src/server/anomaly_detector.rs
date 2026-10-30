@@ -82,6 +82,17 @@ fn severity_past(value: f32, threshold: f32) -> f32 {
     (1.0 - threshold / value).clamp(0.0, 1.0)
 }
 
+/// The largest z-score one sample can have among `n` samples that include it: `(n - 1) / sqrt(n)`
+/// (Samuelson's bound, for the sample standard deviation). The physics detector scores a speed
+/// against the window it belongs to, so a threshold at or above this cannot be exceeded.
+fn highest_reachable_z(n: usize) -> f32 {
+    if n < 2 {
+        0.0
+    } else {
+        (n - 1) as f32 / (n as f32).sqrt()
+    }
+}
+
 /// Detected anomaly with context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Anomaly {
@@ -332,7 +343,11 @@ impl AnomalyDetector for PhysicsDetector {
 
                 // Only analyze if we have enough samples
                 if history.len() >= self.config.min_samples {
-                    self.last_evaluated += 1;
+                    // Below the bound `highest_reachable_z` gives, the threshold cannot be
+                    // exceeded, and an entity that cannot be flagged has not been judged.
+                    if highest_reachable_z(history.len()) > self.config.z_score_threshold {
+                        self.last_evaluated += 1;
+                    }
                     let values: Vec<f32> = history.values().map(|dp| dp.value).collect();
                     let mean = Statistics::mean(&values);
                     let std_dev = Statistics::std_dev(&values);
@@ -378,14 +393,22 @@ impl AnomalyDetector for PhysicsDetector {
         let min = self.config.min_samples;
         let status = if self.last_examined == 0 {
             "not evaluated: no entity has a `Velocity` component with a `linear` vector".to_string()
-        } else if self.last_evaluated == 0 {
+        } else if self.last_evaluated == 0 && self.longest_history < min {
             format!(
                 "not evaluated: the longest velocity history holds {} of the {min} samples needed; call detect again",
                 self.longest_history
             )
+        } else if self.last_evaluated == 0 {
+            format!(
+                "not evaluated: a speed is scored against the samples that include it, so among {} samples its z-score is at most {:.2}, under the threshold of {}; more samples (window_size {}) or a lower z_score_threshold are needed",
+                self.longest_history,
+                highest_reachable_z(self.longest_history),
+                self.config.z_score_threshold,
+                self.config.window_size
+            )
         } else if self.last_evaluated < self.last_examined {
             format!(
-                "evaluated {} of {} entities; the rest are short of the {min} samples needed",
+                "evaluated {} of {} entities; the rest are short of the samples needed (min_samples {min}, and enough for the z-score threshold to be reachable)",
                 self.last_evaluated, self.last_examined
             )
         } else {
@@ -393,7 +416,7 @@ impl AnomalyDetector for PhysicsDetector {
         };
         DetectorCoverage {
             detector: "PhysicsDetector",
-            reads: "the `linear` vector (`[x, y, z]` or `{x, y, z}`) of a component named `Velocity`, compared with that entity's own recent speeds",
+            reads: "the `linear` vector (`[x, y, z]` or `{x, y, z}`) of a component named `Velocity`, scored against that entity's own recent speeds including the one just read",
             examined: self.last_examined,
             evaluated: self.last_evaluated,
             status,
@@ -1114,6 +1137,32 @@ mod tests {
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].anomaly_type, AnomalyType::StateInconsistency);
         assert_eq!(found[0].entity_id, Some(1));
+    }
+
+    /// A speed is scored against the window it belongs to, so among n samples its z-score is at
+    /// most (n - 1) / sqrt(n): 2.85 among 10. Under the default threshold of 3 ten samples cannot
+    /// flag anything, and the entity must not be reported as judged.
+    #[test]
+    fn physics_coverage_says_when_the_threshold_cannot_be_reached_with_the_samples_held() {
+        let moving = |speed: f64| EntityData {
+            id: 1,
+            components: [("Velocity".to_string(), json!({"linear": [speed, 0.0, 0.0]}))].into_iter().collect(),
+        };
+        let mut narrow = PhysicsDetector::new(AnomalyConfig { min_samples: 5, window_size: 10, ..Default::default() });
+        for _ in 0..10 {
+            narrow.detect(&[moving(10.0)]).unwrap();
+        }
+        let coverage = narrow.coverage();
+        assert_eq!((coverage.examined, coverage.evaluated), (1, 0), "{}", coverage.status);
+        assert!(coverage.status.starts_with("not evaluated") && coverage.status.contains("2.85"), "{}", coverage.status);
+
+        let mut wide = PhysicsDetector::new(AnomalyConfig { min_samples: 5, window_size: 20, ..Default::default() });
+        for _ in 0..12 {
+            wide.detect(&[moving(10.0)]).unwrap();
+        }
+        let coverage = wide.coverage();
+        assert_eq!((coverage.examined, coverage.evaluated), (1, 1), "12 samples reach 3.18, over the threshold: {}", coverage.status);
+        assert_eq!(coverage.status, "evaluated");
     }
 
     /// The description said "is marked as alive" for an entity that has no `Alive` component at
