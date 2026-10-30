@@ -4,6 +4,7 @@
 
 ### Removed
 
+- `server::tool_orchestration` and `server::tools::orchestration` (about 1,170 lines): a pipeline/workflow executor with an unbounded-lifetime result cache and "auto-record" / "auto-experiment" hooks that only logged "placeholder". Nothing the binary runs constructed it and it backed no tool; the tool list is unchanged. `ToolOrchestrator`, `ToolContext`, `ToolExecutor`, `WorkflowDSL` and the rest were `pub` items of the library (breaking for code that used them).
 - `detect_anomaly` actions `start_monitoring` and `stop_monitoring`, and `status`'s `is_monitoring`. They set a flag and reported "Continuous monitoring started" while nothing sampled the game. Use `detect` repeatedly, or `watch`. Asking for them now returns the "Invalid action" error listing `detect, configure, status`.
 
 ### Added
