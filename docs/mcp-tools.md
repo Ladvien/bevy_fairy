@@ -33,19 +33,17 @@ No arguments.
 
 ## `detect_anomaly`
 
-Look for anomalies in the game's entities. `action` picks the operation; `detect` reads every entity once and runs the detectors over them with the thresholds below. A detection is a lead to check, not a verdict.
+Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (compared with that entity's own recent speeds), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity is how far past its threshold a reading is, from 0 to 1. A detection is a lead to check, not a verdict.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `action` | string | yes | The operation to run. One of `detect`, `configure`, `status`. |
-| `entity_growth_threshold` | number | no | The entity growth per sample above which the count counts as anomalous. |
-| `iqr_multiplier` | number | no | The IQR multiplier above which a sample counts as anomalous. |
+| `entity_growth_threshold` | number | no | The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally. |
 | `limit` | integer | no | How many anomalies to report at most. |
 | `min_samples` | integer | no | The fewest samples needed before a verdict is possible; at most `window_size`. |
-| `min_severity` | number | no | The lowest severity to report. The handler reads this as a number. |
-| `performance_threshold` | number | no | The frame time, in milliseconds, above which performance counts as anomalous. |
+| `min_severity` | number | no | The lowest severity to report, from 0 to 1. Severity is how far past its threshold a reading is: 0.5 at twice the threshold. |
 | `window_size` | integer | no | How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window. |
-| `z_score_threshold` | number | no | The z-score above which a sample counts as anomalous. |
+| `z_score_threshold` | number | no | How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. |
 
 ## `experiment`
 

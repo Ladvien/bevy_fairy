@@ -177,9 +177,9 @@ async fn detect_anomaly_analyses_the_live_game_with_the_given_thresholds() {
     let value: Value = serde_json::from_str(&text).expect("the detection reply is JSON");
     let summary = value.get("summary").expect("the reply carries a summary");
     assert_eq!(
-        summary.get("entities_analyzed").and_then(Value::as_u64),
+        summary.get("entities_read").and_then(Value::as_u64),
         Some(2),
-        "the detection must have analysed the game it was pointed at; text: {text}"
+        "the detection must have read the game it was pointed at; text: {text}"
     );
     assert_eq!(
         summary.get("limit_applied").and_then(Value::as_u64),
@@ -191,6 +191,66 @@ async fn detect_anomaly_analyses_the_live_game_with_the_given_thresholds() {
         Some(0.25),
         "the caller's severity floor must reach the handler; text: {text}"
     );
+}
+
+/// B-089: `detect` answered `anomalies: []` and `entities_analyzed: 2` for a game in which no
+/// detector found a component it reads, so an empty list looked like a clean bill of health. Each
+/// detector says what it read and whether it could judge anything. The fake game's two entities
+/// carry `Transform` and `Health: 100` (a number, not the `{current}` the consistency check
+/// reads), and no `Velocity` or `Alive`, so the physics and consistency detectors have nothing to
+/// examine, and the performance detector has one sample of the ten it needs.
+#[tokio::test]
+async fn detect_anomaly_says_what_each_detector_could_read() {
+    let game: SharedGame = Arc::new(Mutex::new(FakeGame::default()));
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    connect(&tools).await;
+
+    let result = tools
+        .detect_anomaly(request::<AnomalyRequest>(json!({"action": "detect"})))
+        .await
+        .expect("detect_anomaly returns a result");
+    let text = text_of(&result);
+    let value: Value = serde_json::from_str(&text).expect("the detection reply is JSON");
+
+    let detectors = value["detectors"].as_array().unwrap_or_else(|| panic!("no `detectors` list: {text}"));
+    let detector = |name: &str| {
+        detectors
+            .iter()
+            .find(|d| d["detector"] == name)
+            .unwrap_or_else(|| panic!("no coverage for {name}: {text}"))
+    };
+    for name in ["PhysicsDetector", "ConsistencyDetector"] {
+        let d = detector(name);
+        assert_eq!(d["examined"], 0, "{name} found nothing to read in this game: {text}");
+        assert_eq!(d["evaluated"], 0, "{name}: {text}");
+        assert!(
+            d["status"].as_str().is_some_and(|s| s.starts_with("not evaluated")),
+            "{name} must say it did not evaluate: {text}"
+        );
+        assert!(d["reads"].as_str().is_some_and(|s| !s.is_empty()), "{name} must say what it reads: {text}");
+    }
+    let performance = detector("PerformanceDetector");
+    assert_eq!(performance["examined"], 1, "it read the entity count once: {text}");
+    assert_eq!(performance["evaluated"], 0, "one sample is short of the ten it needs: {text}");
+
+    assert_eq!(value["summary"]["entities_read"], 2, "{text}");
+    assert!(value["summary"].get("entities_analyzed").is_none(), "that count claimed more than it measured: {text}");
+    assert!(
+        value["note"].as_str().is_some_and(|n| n.contains("says nothing about the game")),
+        "an empty list from detectors that evaluated nothing must not read as clean: {text}"
+    );
+}
+
+/// B-088: `configure` accepted `iqr_multiplier` and `performance_threshold`, echoed them back, and
+/// no detector read either. A field nothing reads is refused, not accepted.
+#[test]
+fn detect_anomaly_refuses_thresholds_no_detector_reads() {
+    for field in ["iqr_multiplier", "performance_threshold"] {
+        let refused = serde_json::from_value::<AnomalyRequest>(json!({"action": "configure", field: 2.0}));
+        let message = refused.expect_err("a threshold nothing reads must be refused").to_string();
+        assert!(message.contains(field), "the refusal names `{field}`: {message}");
+    }
 }
 
 /// `hypothesis` must run the test the caller asked for. Before the fix it fell through to
