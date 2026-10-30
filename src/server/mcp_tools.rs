@@ -81,7 +81,7 @@ pub struct GuideRequest {
 /// `action` picks the operation, `actions` is what it acts on. Before this struct was written the
 /// tool advertised `type`/`params`/`duration` and the handler read `action`/`actions`, so every
 /// call ran the default branch and the caller's intent was dropped.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExperimentRequest {
     /// The operation to run. One of `execute`, `undo`, `redo`, `history`, `clear_history`,
@@ -106,7 +106,7 @@ pub enum VariationType {
 /// `hypothesis`: state a claim and check it against the game. The handler reads `description` and
 /// `success_condition`; the tool used to send `hypothesis`/`confidence`/`context`, so the handler
 /// fell through to its default and then failed on a `description` the schema never advertised.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HypothesisRequest {
     /// The operation to run. One of `test`, `quick_test` (10 iterations, 10 s), `stress_test` (fuzz
@@ -185,7 +185,7 @@ pub struct HypothesisRequest {
 /// `detect_anomaly`: look for anomalies in the running game. The handler reads the thresholds below;
 /// the tool used to send `type`/`sensitivity`/`window`, none of which the handler reads, so every
 /// call ran with the default configuration and the caller's intent was dropped.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AnomalyRequest {
     /// The operation to run. One of `detect`, `configure`, `status`.
@@ -519,6 +519,13 @@ fn tool_ok(text: impl Into<String>) -> Result<CallToolResult, McpError> {
 
 fn tool_err(text: impl Into<String>) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![Content::text(text.into())]))
+}
+
+/// A request as the handler's argument object. Serialising the request struct, not listing its
+/// fields by hand, means a field added to the schema reaches the handler; a hand-written list was
+/// the second place a field could be added and missed (B-024).
+fn request_args<T: Serialize>(req: &T) -> Result<Value, Result<CallToolResult, McpError>> {
+    serde_json::to_value(req).map_err(|e| tool_err(format!("the request could not be encoded: {e}")))
 }
 
 /// A tool handler's answer as a tool result. The handlers report a refusal -- an unknown action,
@@ -898,10 +905,10 @@ impl BevyDebuggerTools {
     pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running experiment action: {}", req.action);
 
-        let arguments = serde_json::json!({
-            "action": req.action,
-            "actions": req.actions,
-        });
+        let arguments = match request_args(&req) {
+            Ok(arguments) => arguments,
+            Err(refusal) => return refusal,
+        };
 
         match experiment::handle(arguments, self.brp_client.clone()).await {
             Ok(result) => handler_result(result),
@@ -917,30 +924,10 @@ impl BevyDebuggerTools {
     pub async fn hypothesis(&self, Parameters(req): Parameters<HypothesisRequest>) -> Result<CallToolResult, McpError> {
         debug!("Testing hypothesis action: {}", req.action);
 
-        let arguments = serde_json::json!({
-            "action": req.action,
-            "description": req.description,
-            "success_condition": req.success_condition,
-            "actions": req.actions,
-            "variation_type": req.variation_type,
-            "numeric_min": req.numeric_min,
-            "numeric_max": req.numeric_max,
-            "string_pool": req.string_pool,
-            "bool_probability": req.bool_probability,
-            "numeric_values": req.numeric_values,
-            "string_values": req.string_values,
-            "bool_values": req.bool_values,
-            "include_zero": req.include_zero,
-            "include_negative": req.include_negative,
-            "include_max": req.include_max,
-            "include_empty": req.include_empty,
-            "max_mutations": req.max_mutations,
-            "mutation_probability": req.mutation_probability,
-            "iterations": req.iterations,
-            "timeout": req.timeout,
-            "seed": req.seed,
-            "threshold": req.threshold,
-        });
+        let arguments = match request_args(&req) {
+            Ok(arguments) => arguments,
+            Err(refusal) => return refusal,
+        };
 
         match hypothesis::handle(arguments, self.brp_client.clone()).await {
             Ok(result) => handler_result(result),
@@ -956,17 +943,10 @@ impl BevyDebuggerTools {
     pub async fn detect_anomaly(&self, Parameters(req): Parameters<AnomalyRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running anomaly action: {}", req.action);
 
-        let arguments = serde_json::json!({
-            "action": req.action,
-            "window_size": req.window_size,
-            "z_score_threshold": req.z_score_threshold,
-            "iqr_multiplier": req.iqr_multiplier,
-            "min_samples": req.min_samples,
-            "performance_threshold": req.performance_threshold,
-            "entity_growth_threshold": req.entity_growth_threshold,
-            "min_severity": req.min_severity,
-            "limit": req.limit,
-        });
+        let arguments = match request_args(&req) {
+            Ok(arguments) => arguments,
+            Err(refusal) => return refusal,
+        };
 
         match anomaly::handle(arguments, self.brp_client.clone()).await {
             Ok(result) => handler_result(result),
