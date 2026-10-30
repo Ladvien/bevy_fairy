@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- `observe`, `guide` and `replay` accepted and silently dropped arguments they do not have (`observe` with `limit: 5` ran
+  unlimited). They now refuse unknown arguments like every other tool; `tests/tool_list.rs::every_tool_refuses_arguments_it_does_not_advertise`
+  checks every tool in `tools/list` advertises `additionalProperties: false`.
+
 ### Breaking
 
 - `server::error::Error::WithContext { context }` now holds `Box<ErrorContext>`. It was 150+ bytes inline, which made every

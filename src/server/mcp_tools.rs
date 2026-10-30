@@ -33,6 +33,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // tools were unreachable in Claude Code for exactly that reason.
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ObserveRequest {
     /// A phrase in one of the shapes the parser accepts; a bare word such as "score" or "crate" is
     /// refused. Shapes, each a complete example: `list all entities`, `list components`,
@@ -52,6 +53,7 @@ pub struct ObserveRequest {
 /// What `guide` accepts. One tool, four verbs, because they are four things you do to one script
 /// and splitting them would make an agent choose a tool before it knows what it wants.
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GuideRequest {
     /// The steps to post, replacing whatever is up. Each step is an object:
     /// `label` (required), `goal`, `do` (array of 2-4 short imperatives), `checkpoint`
@@ -175,6 +177,7 @@ pub struct AnomalyRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReplayRequest {
     pub action: String,
     pub checkpoint_id: Option<String>,

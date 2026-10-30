@@ -75,6 +75,19 @@ fn tools_are_listed_by_name_and_in_the_same_order_every_launch() {
     }
 }
 
+/// A tool that does not set `deny_unknown_fields` drops a misspelled or invented argument and
+/// runs anyway, so the agent believes `{"query": "list all entities", "limit": 5}` was limited.
+/// Every advertised input schema must say `additionalProperties: false`.
+#[test]
+fn every_tool_refuses_arguments_it_does_not_advertise() {
+    let open: Vec<String> = listed_tools()
+        .iter()
+        .filter(|tool| tool["inputSchema"]["additionalProperties"] != json!(false))
+        .map(|tool| tool["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert!(open.is_empty(), "these tools silently drop unknown arguments: {open:?}");
+}
+
 /// `stress_test` stays out of `tools/list` until it can report what it did. Against the fixture
 /// game it answered `"success": true` while every spawn it sent failed (it used short type names
 /// like `Transform` and components no game has, like `Health`), reported `16.67 + rand * 10` as
