@@ -411,8 +411,8 @@
         "common_no_workaround": false,
         "evidence": "scripts/ratchet.sh with tools/guide.rs as a touched file: 'ratchet: OK'; `cargo clippy --all-targets --message-format=short` on the same code: 'warning: the `Err`-variant returned from this function is very large --> src/server/tools/guide.rs:48:78'; guide.rs is not in known_red.clippy_by_file, so the baseline allowed 0"
       },
-      "status": "open",
-      "evidence": "Hypothesis, unconfirmed: measure_clippy_files attributes a warning to `.message.spans[0].file_name`, which need not be the primary span (result_large_err may list the large variant's span first). Fix: select the span with is_primary == true, then re-check that every per-file count still matches known_red. The guide.rs warning itself was fixed after the release.",
+      "status": "fixed",
+      "evidence": "Confirmed 2026-10-30: spans[0] charged 882 result_large_err warnings to error.rs; guide.rs read 0. Fixed: select is_primary span; per-file baseline re-attributed (sum 1368). Probe: 2 probe fns added to guide.rs -> primary attribution 8, first-span 2.",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

@@ -87,10 +87,12 @@ measure_clippy() {
         | sort | uniq -c | awk '{print $2"\t"$1}' | sort
 }
 
-# Clippy warnings per file.
+# Clippy warnings per file, attributed to the primary span. `spans[0]` is not the primary span:
+# result_large_err lists the large variant's span (src/server/error.rs) first, so 882 warnings
+# were charged to error.rs and the functions' own files looked clean (B-051).
 measure_clippy_files() {
     capped cargo clippy --workspace --all-targets --message-format=json 2>/dev/null \
-        | jq -r 'select(.reason=="compiler-message" and .message.level=="warning" and .message.spans!=null) | .message.spans[0].file_name' \
+        | jq -r 'select(.reason=="compiler-message" and .message.level=="warning" and .message.spans!=null) | ([.message.spans[] | select(.is_primary)][0].file_name // empty)' \
         | sort | uniq -c | awk '{print $2"\t"$1}' | sort
 }
 
