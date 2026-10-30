@@ -42,7 +42,8 @@ pub struct ObserveRequest {
     /// `find stuck entities`, `show fast moving objects`. Component names are full type paths; a name the game does not register is an error that lists the registered paths ending in it. The metadata carries entity_count (component_type_count for the list-components query) and read_at. For any other read, such as one
     /// resource, use `brp`.
     pub query: String,
-    /// Compare this read with the previous `diff: true` read of this server session.
+    /// Compare this read with the previous `diff: true` read of the same query in this server
+    /// session. The first such read is the baseline and says so.
     #[serde(default)]
     pub diff: bool,
 }
@@ -813,14 +814,14 @@ pub const COLLABORATION_PROTOCOL: &str =
                  commands you ran to a replayable file, `brp` calls any Bevy Remote Protocol method, \
                  `watch` samples one over N frames (a value that stops, a speed), and \
                  `quit` closes the game.\n\n\
-                 INSPECTING THE GAME: `observe` reads the game's state. `detect_anomaly` looks for \
-                 anomalies in it. `hypothesis` tests a claim about it -- it needs a `description` of \
-                 the claim and a `success_condition` that decides it, or it cannot run. \
-                 `experiment` changes it (spawn, modify, delete) and needs the `actions` to carry \
-                 out. `replay` records and replays what it holds.\n\n\
-                 Every one of these takes an `action` that picks what to do, and each has its own \
-                 action names -- read them from the tool's schema. A tool asked for something it \
-                 cannot do says so; it does not answer with a default.\n\n\
+                 INSPECTING THE GAME: `observe` reads the game's entities from a short phrase `query`. \
+                 `detect_anomaly` looks for anomalies in them. `hypothesis` tests a claim about the game \
+                 -- it needs a `description` of the claim and a `success_condition` that decides it, or it \
+                 cannot run. `experiment` changes the game (spawn, modify, delete) and needs the `actions` \
+                 to carry out. `replay` records and replays what it holds.\n\n\
+                 `detect_anomaly`, `hypothesis`, `experiment` and `replay` each take an `action` that picks \
+                 what to do, and each has its own action names -- read them from the tool's schema. A tool \
+                 asked for something it cannot do says so; it does not answer with a default.\n\n\
                  WORKING WITH THE PERSON AT THE KEYBOARD:\n\
                  `guide` is different from the rest -- it talks to the human, not the game. It \
                  draws one instruction at a time on their own window and watches for the state it \
@@ -848,7 +849,7 @@ pub const COLLABORATION_PROTOCOL: &str =
 #[tool_router]
 impl BevyDebuggerTools {
     /// Read the game's entities with a phrase query
-    #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, the registered component types, or a semantic query such as stuck entities or fast-moving objects. `diff` compares a read with the previous `diff` read. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
+    #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
     pub async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> Result<CallToolResult, McpError> {
         debug!("Executing observe query: {}", req.query);
         

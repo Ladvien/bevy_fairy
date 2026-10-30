@@ -638,7 +638,8 @@ async fn observe_diff_reports_the_mover_moving_between_two_reads() {
 
     let transform = "bevy_transform::components::transform::Transform";
     let query = format!("show entity {mover} components {transform}");
-    observe_diff(&tools, &query).await;
+    let first = observe_diff(&tools, &query).await;
+    assert_eq!(first["diff"]["baseline"], true, "the first diff read has nothing to compare with: {first}");
     tokio::time::sleep(Duration::from_millis(500)).await;
     let second = observe_diff(&tools, &query).await;
 
@@ -649,6 +650,14 @@ async fn observe_diff_reports_the_mover_moving_between_two_reads() {
         fixture_game::MOVER_SPEED * 0.5
     );
     assert!(changes.iter().all(|c| c["entity_id"] == mover), "only the mover was read: {second}");
+
+    // A read of another query covers other components, so it is not compared with this one: the
+    // mover's Name and Mover are outside the Transform-only query, not removed from the game.
+    for query in [format!("show entity {mover}"), query] {
+        let switched = observe_diff(&tools, &query).await;
+        assert_eq!(switched["diff"]["baseline"], true, "a new query starts a new baseline: {switched}");
+        assert!(switched["diff"].get("changes").is_none(), "nothing is compared across queries: {switched}");
+    }
 }
 
 /// `show entity N` shows that entity: the mover has a `Transform` and a `fixture_game::Mover`. It
