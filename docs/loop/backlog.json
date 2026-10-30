@@ -475,8 +475,8 @@
         "common_no_workaround": false,
         "evidence": "cargo test --features plugin-guide prints 'running 0 tests' for plugin_guide_steps; rustc warns unexpected cfg value `guide`"
       },
-      "status": "open",
-      "evidence": "",
+      "status": "fixed",
+      "evidence": "gate removed; 19 tests now run and pass (tests/plugin_guide_steps.rs); v0.3.3",
       "last_failure": "protected test file; fixing the cfg is an evaluator change, left for a human pass",
       "first_seen": "2026-10-29"
     }

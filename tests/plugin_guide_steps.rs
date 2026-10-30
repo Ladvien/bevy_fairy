@@ -1,4 +1,3 @@
-#![cfg(feature = "guide")]
 //! **The guide channel's contract, pinned.**
 //!
 //! The half of this crate that talks to a *person* has a failure mode the other two do not: it can be
@@ -360,7 +359,7 @@ fn hiding_the_overlay_keeps_the_script() {
 /// what font a host has installed. The example is what a reader copies, so it is what must be right.
 #[test]
 fn the_one_script_this_crate_ships_is_ascii() {
-    let rel = "examples/guided_steps_land.rs";
+    let rel = "examples/plugin_guided_steps_land.rs";
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let Ok(src) = std::fs::read_to_string(root.join(rel)) else {
         panic!("{rel} is named by this test and must exist");

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 — 2026-10-29
+
+### Fixed
+
+- `tests/plugin_guide_steps.rs` (19 tests pinning the guide channel) was gated on
+  `#![cfg(feature = "guide")]`, a feature that does not exist, so it compiled to nothing and CI never
+  ran it. The gate is gone (the manifest's `required-features = ["plugin-guide"]` is the real one);
+  the test had also rotted against a renamed example path, now corrected. `GuidePlacement` and
+  `BEAT_SECONDS` are re-exported from the crate root next to the other guide items.
+
 ## 0.3.2 — 2026-10-29
 
 ### Fixed
