@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.5 — 2026-10-29
+
+### Added
+
+- `watch` tool: samples one one-shot BRP method 2-100 times (20-5000 ms apart, 30 s at most) and
+  returns the series. Every sample carries the game frame it was read on (the method and
+  `bevy_fairy/status` travel in one JSON-RPC batch, which the game serves in one frame) and its
+  time since the first sample. The reply states whether the value changed, how many distinct
+  values were seen, the frame of the first change, and `constant_since_frame`, so "the angle stops
+  at frame N" is one call instead of dozens of `brp` polls. `pointer` (RFC 6901) picks the value to
+  watch; a pointer matching nothing, an out-of-range count and a `+watch` method are refused with
+  the valid range. Polled, not streamed: changes between samples are not seen, and the reply says so.
+- `BrpClient::send_batch`.
+
+### Changed
+
+- The `brp` refusal of a `+watch` method now points at `watch`.
+
 ## 0.3.4 — 2026-10-29
 
 ### Fixed

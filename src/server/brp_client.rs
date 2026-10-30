@@ -263,6 +263,38 @@ impl BrpClient {
         response.json::<BrpResponse>().await.map_err(Error::from)
     }
 
+    /// Send several requests as one JSON-RPC batch. The game reads a batch's requests in one
+    /// frame, so their answers describe the same frame. Responses come back in the order of
+    /// `requests`, matched by `id`; every request must carry one.
+    pub async fn send_batch(&mut self, requests: &[BrpRequest]) -> Result<Vec<BrpResponse>> {
+        let response = self.http.post(&self.url).json(requests).send().await.map_err(|e| {
+            self.connected.store(false, Ordering::Relaxed);
+            if e.is_timeout() {
+                Error::Connection("Request timeout".to_string())
+            } else {
+                Error::Connection(format!("BRP HTTP request failed: {e}"))
+            }
+        })?;
+        let status = response.status();
+        if !status.is_success() {
+            self.connected.store(false, Ordering::Relaxed);
+            return Err(Error::Connection(format!("BRP server returned HTTP {status}")));
+        }
+        self.connected.store(true, Ordering::Relaxed);
+        let mut answers = response.json::<Vec<BrpResponse>>().await.map_err(Error::from)?;
+        let mut ordered = Vec::with_capacity(requests.len());
+        for request in requests {
+            let Some(position) = answers.iter().position(|answer| answer.id == request.id) else {
+                return Err(Error::Connection(format!(
+                    "the game's batch reply has no answer for `{}`",
+                    request.method
+                )));
+            };
+            ordered.push(answers.swap_remove(position));
+        }
+        Ok(ordered)
+    }
+
     /// Send a batched request: executes immediately like `send_request`.
     ///
     /// BRP is request/response over HTTP, so batching has no transport to

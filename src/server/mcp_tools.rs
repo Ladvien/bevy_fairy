@@ -257,6 +257,33 @@ pub struct SceneRequest {
     pub path: Option<String>,
 }
 
+/// `watch`: sample one BRP method over time, each sample stamped with the frame it was read on.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchRequest {
+    /// The one-shot BRP method to sample, for example `world.query` or `world.get_resources`.
+    /// Names ending in `+watch` are refused.
+    pub method: String,
+    /// The method's params, exactly as for `brp`.
+    #[serde(default)]
+    pub params: Option<Value>,
+    /// A JSON pointer (RFC 6901) into each result, for example
+    /// `/0/components/my_game::Health/current`. Without it each sample carries the whole result,
+    /// so use it for anything larger than a few values. A pointer that matches nothing is an error.
+    #[serde(default)]
+    pub pointer: Option<String>,
+    /// How many samples to take, 2 to 100. Default 10.
+    #[serde(default)]
+    pub samples: Option<u32>,
+    /// Milliseconds between samples, 20 to 5000. Default 100. `samples` x `interval_ms` may not
+    /// exceed 30000.
+    #[serde(default)]
+    pub interval_ms: Option<u64>,
+}
+
+const WATCH_MAX_TOTAL_MS: u64 = 30_000;
+const WATCH_MAX_REPLY_BYTES: usize = 60_000;
+
 // Default value functions
 fn default_speed() -> f32 { 1.0 }
 
@@ -371,6 +398,53 @@ fn default_capture_path() -> PathBuf {
     dir.join(format!("capture-{unix_ms}.png"))
 }
 
+fn truncate_for_error(value: &Value) -> String {
+    let text = value.to_string();
+    if text.len() <= 300 {
+        text
+    } else {
+        format!("{}…", text.chars().take(300).collect::<String>())
+    }
+}
+
+impl BevyDebuggerTools {
+    /// Read `method` and the game's frame counter in one JSON-RPC batch, which the game serves in
+    /// a single frame. Returns `(frame, result)`.
+    async fn sample_with_frame(&self, method: &str, params: Option<Value>) -> Result<(u64, Value), String> {
+        let requests = [
+            BrpRequest { method: STATUS_METHOD.to_string(), id: Some(Value::from(1)), params: None },
+            BrpRequest { method: method.to_string(), id: Some(Value::from(2)), params },
+        ];
+        let mut client = self.brp_client.write().await;
+        let answers = match client.send_batch(&requests).await {
+            Ok(answers) => answers,
+            Err(e) if client.is_connected() => {
+                return Err(format!(
+                    "bevy-fairy: the game at {} answered, but not with a batch reply this server can read: {e}",
+                    client.url()
+                ))
+            }
+            Err(e) => {
+                debug!("BRP batch did not reach the game: {e}");
+                return Err(no_game_text(client.url()));
+            }
+        };
+        let mut values = Vec::with_capacity(2);
+        for (request, answer) in requests.iter().zip(answers) {
+            match answer.payload {
+                BrpPayload::Result(value) => values.push(value),
+                BrpPayload::Error(err) => return Err(crate::server::brp::refusal_text(&request.method, &err)),
+            }
+        }
+        let result = values.pop().unwrap_or(Value::Null);
+        let status = values.pop().unwrap_or(Value::Null);
+        let Some(frame) = status.get("frame").and_then(Value::as_u64) else {
+            return Err(format!("{STATUS_METHOD} returned no frame counter: {status}"));
+        };
+        Ok((frame, result))
+    }
+}
+
 impl BevyDebuggerTools {
     /// One BRP call to the game. The `Err` is the text an agent reads: the no-game message when
     /// nothing answers, the game's own error message verbatim, or -- when the game answered with
@@ -455,7 +529,8 @@ pub const COLLABORATION_PROTOCOL: &str =
                  DRIVING A GAME THAT REGISTERS ITS OWN COMMANDS: call `status` first (is the game up and \
                  ready?), then `commands` (what can be run, with each one's parameters and an example), then \
                  `run` for each step. `screenshot` saves a PNG on this machine, `scene save` writes the \
-                 commands you ran to a replayable file, `brp` calls any Bevy Remote Protocol method, and \
+                 commands you ran to a replayable file, `brp` calls any Bevy Remote Protocol method, \
+                 `watch` samples one over N frames (a value that stops, a speed), and \
                  `quit` closes the game.\n\n\
                  INSPECTING THE GAME: `observe` reads the game's state. `detect_anomaly` looks for \
                  anomalies in it. `hypothesis` tests a claim about it -- it needs a `description` of \
@@ -693,7 +768,7 @@ impl BevyDebuggerTools {
             return tool_err(format!(
                 "`{}` is a watching method: the game streams a new answer every time the value \
                  changes, and `brp` returns one answer per call, so it cannot read it. Call \
-                 `{one_shot}` again to see a later value.",
+                 `{one_shot}` again for a later value, or `watch` with method `{one_shot}` for a series over frames.",
                 req.method
             ));
         }
@@ -805,6 +880,103 @@ impl BevyDebuggerTools {
                 Err(text) => tool_err(text),
             },
         }
+    }
+
+    /// Sample a BRP method over time
+    #[tool(description = "Sample one BRP method repeatedly and return the series, each sample stamped with the game frame it was read on and the milliseconds since the first sample. Use it for anything that happens over time: a value that stops changing, a position's speed, a counter that drifts. The reply says whether the value changed, how many distinct values were seen, the frame of the first change, and \"constant_since_frame\" (the frame from which the last value never changed, null when it changed at the last sample). Samples are polled over HTTP at `interval_ms` (20-5000), so changes between samples are not seen; 2-100 samples, 30 s in total at most. Pass `pointer` (JSON pointer into each result) to keep samples small; a pointer that matches nothing is an error. Streaming `+watch` methods are refused.")]
+    pub async fn watch(&self, Parameters(req): Parameters<WatchRequest>) -> Result<CallToolResult, McpError> {
+        if let Some(one_shot) = req.method.strip_suffix("+watch") {
+            return tool_err(format!(
+                "`{}` is a streaming method; `watch` polls a one-shot method. Call \
+                 `watch` with method `{one_shot}`.",
+                req.method
+            ));
+        }
+        let samples = req.samples.unwrap_or(10);
+        if !(2..=100).contains(&samples) {
+            return tool_err(format!("`samples` must be between 2 and 100, got {samples}. Example: {{\"method\": \"world.query\", \"samples\": 10}}"));
+        }
+        let interval_ms = req.interval_ms.unwrap_or(100);
+        if !(20..=5000).contains(&interval_ms) {
+            return tool_err(format!("`interval_ms` must be between 20 and 5000, got {interval_ms}."));
+        }
+        if u64::from(samples) * interval_ms > WATCH_MAX_TOTAL_MS {
+            return tool_err(format!(
+                "{samples} samples x {interval_ms} ms is {} s; the most `watch` runs is {} s. Lower `samples` or `interval_ms`.",
+                u64::from(samples) * interval_ms / 1000,
+                WATCH_MAX_TOTAL_MS / 1000
+            ));
+        }
+
+        let started = Instant::now();
+        let mut series: Vec<(u64, u128, Value)> = Vec::with_capacity(samples as usize);
+        let mut stopped: Option<String> = None;
+        let mut reply_bytes = 0usize;
+        for n in 0..samples {
+            if n > 0 {
+                tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+            }
+            let (frame, result) = match self.sample_with_frame(&req.method, req.params.clone()).await {
+                Ok(pair) => pair,
+                Err(text) if series.is_empty() => return tool_err(text),
+                Err(text) => {
+                    stopped = Some(text);
+                    break;
+                }
+            };
+            let value = match &req.pointer {
+                None => result,
+                Some(pointer) => match result.pointer(pointer) {
+                    Some(value) => value.clone(),
+                    None if series.is_empty() => {
+                        return tool_err(format!(
+                            "pointer `{pointer}` matches nothing in the result of `{}`; the result was: {}",
+                            req.method,
+                            truncate_for_error(&result)
+                        ));
+                    }
+                    None => {
+                        stopped = Some(format!("pointer `{pointer}` stopped matching at sample {}", n + 1));
+                        break;
+                    }
+                },
+            };
+            reply_bytes += value.to_string().len();
+            if reply_bytes > WATCH_MAX_REPLY_BYTES {
+                return tool_err(format!(
+                    "the series passed {WATCH_MAX_REPLY_BYTES} bytes after {n} samples. Pass `pointer` to pick the value to watch, or lower `samples`."
+                ));
+            }
+            series.push((frame, started.elapsed().as_millis(), value));
+        }
+
+        let first = &series[0].2;
+        let first_change = series.iter().find(|(_, _, v)| v != first).map(|(frame, _, _)| *frame);
+        let mut distinct: Vec<&Value> = Vec::new();
+        for (_, _, value) in &series {
+            if !distinct.contains(&value) {
+                distinct.push(value);
+            }
+        }
+        let last = &series[series.len() - 1].2;
+        let run_start = series.iter().rposition(|(_, _, v)| v != last).map_or(0, |i| i + 1);
+        let constant_since = (run_start + 1 < series.len()).then(|| series[run_start].0);
+        let body = serde_json::json!({
+            "method": req.method,
+            "source": "polled: each sample is read in one batch with bevy_fairy/status, so `frame` is the game frame the value was read on",
+            "interval_ms": interval_ms,
+            "samples_taken": series.len(),
+            "changed": first_change.is_some(),
+            "distinct_values": distinct.len(),
+            "first_change_frame": first_change,
+            "constant_since_frame": constant_since,
+            "stopped_early": stopped,
+            "samples": series
+                .iter()
+                .map(|(frame, t_ms, value)| serde_json::json!({"frame": frame, "t_ms": t_ms, "value": value}))
+                .collect::<Vec<_>>(),
+        });
+        tool_ok(body.to_string())
     }
 
     /// Ask the game to quit
