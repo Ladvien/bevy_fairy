@@ -170,6 +170,10 @@ A `Text` node's `InheritedVisibility` stays true after its slot is set to `Displ
 
 The command writes `ClockRequest`; `time.rs` re-applies it in `First`, `.before(TimeSystems)`, every frame, because a host (Sanctuary) that writes `Time<Virtual>` in `Update` overwrote the old one-shot write within a frame. `DebuggerPlugin::host_owns_clock()` removes that system; the host reads `ClockRequest`. `held` is measured by a system `.after(TimeSystems)` and compared with the *current* request, so it is `null` until a frame has run under it. `tests/plugin_clock.rs` pins this with hostile host systems. Issue #10.
 
+## `bevy_fairy/ring` records state inside the game, so it samples every frame
+
+It runs `process_remote_query_request` (public in bevy_remote) from an exclusive system in `Last`, after `tick_frames`, so a sample's `frame` is the same counter `status` reports. The query is made `strict` unless the caller says otherwise: non-strict `world.query` silently matches nothing for an unknown component path, and a buffer of empty arrays reads as "no entity has it". `tests/plugin_ring.rs` checks each sample against a counter the test itself bumps. Samples are query results, not pixels; the frame half of the old B-021 idea (a frame ring beside `burst`) is not built.
+
 ## The fixture game is the ground truth
 
 `examples/fixture_game.rs` is a headless Bevy app whose state is known from its own `pub const`s:

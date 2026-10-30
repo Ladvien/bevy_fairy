@@ -256,6 +256,10 @@ futures-util = "0.3"
 name = "plugin_clock"
 required-features = ["plugin"]
 
+
+[[test]]
+name = "plugin_ring"
+required-features = ["plugin"]
 [[test]]
 name = "plugin_commands"
 required-features = ["plugin"]
