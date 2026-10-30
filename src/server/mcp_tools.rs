@@ -198,6 +198,11 @@ pub struct RunRequest {
 pub struct BrpCallRequest {
     /// The BRP method, for example `world.query` or `registry.schema`.
     pub method: String,
+    /// The method's params as JSON, omitted for a method that takes none. Shapes, one per line:
+    /// - `world.query`: `{"data":{"components":["bevy_ecs::name::Name"]},"filter":{"with":[],"without":[]}}` (full type paths, never short names: take the game's own from `world.list_components`; `filter` is optional)
+    /// - `registry.schema`: `{"with_crates":["bevy_transform"],"type_limit":{"with":["Component"]}}` (every field optional and a list; omit one rather than sending null)
+    /// - `world.list_components`: no params for every registered component, or `{"entity":4294967296}` for one entity
+    /// - `rpc.discover`: no params; lists every method the game serves with its param schema
     #[serde(default)]
     pub params: Option<Value>,
 }

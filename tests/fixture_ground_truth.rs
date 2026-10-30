@@ -484,3 +484,44 @@ async fn watch_refuses_what_it_cannot_measure() {
         .expect_err("refused");
     assert!(long.contains("30"), "states the time cap: {long}");
 }
+
+/// Every params example the `brp` tool's schema shows an agent is accepted by a real game. The
+/// examples are read out of the advertised schema, not copied here, so an example that goes
+/// stale (or an edit that drops them) fails this test. Examples that need an entity id are
+/// skipped: the fixture's ids are not known to a description.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_params_examples_in_the_brp_schema_are_accepted_by_the_game() {
+    let schema = schemars::schema_for!(BrpCallRequest);
+    let schema = serde_json::to_value(&schema).expect("the schema serialises");
+    let description = schema["properties"]["params"]["description"]
+        .as_str()
+        .expect("the brp `params` field must describe its shapes for an agent");
+
+    let mut examples: Vec<(String, Value)> = Vec::new();
+    // schemars folds a doc comment's lines into one paragraph, so list items split on " - `".
+    for item in description.split(" - `").skip(1) {
+        let line = format!("`{item}");
+        let mut spans = line.split('`').skip(1).step_by(2);
+        let Some(method) = spans.next() else { continue };
+        let Some(json_span) = spans.next().filter(|s| s.starts_with('{')) else { continue };
+        if json_span.contains("entity") {
+            continue;
+        }
+        let params: Value = serde_json::from_str(json_span)
+            .unwrap_or_else(|e| panic!("the example for {method} is not JSON ({e}): {json_span}"));
+        examples.push((method.to_string(), params));
+    }
+    let methods: Vec<&str> = examples.iter().map(|(m, _)| m.as_str()).collect();
+    assert!(
+        methods.contains(&"world.query") && methods.contains(&"registry.schema"),
+        "the schema must show params for world.query and registry.schema; found {methods:?}"
+    );
+
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    for (method, params) in examples {
+        // `brp` asserts the call was not an error.
+        brp(&tools, json!({"method": method, "params": params})).await;
+    }
+}

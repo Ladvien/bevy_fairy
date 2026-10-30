@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1 - 2026-10-30
+
+### Changed
+
+- The `brp` tool's `params` schema now shows the params shape for `world.query`,
+  `registry.schema`, `world.list_components` and `rpc.discover`, including that every
+  `registry.schema` field is a list and must be omitted rather than sent as null. Agents had
+  guessed `with_crates: null` and been refused. A ground-truth test runs every example in the
+  advertised schema against the fixture game. No behaviour change.
+
 ## 0.7.0 - 2026-10-30
 
 ### Removed
