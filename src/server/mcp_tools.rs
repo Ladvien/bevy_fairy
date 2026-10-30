@@ -189,7 +189,7 @@ pub struct HypothesisRequest {
 pub struct AnomalyRequest {
     /// The operation to run. One of `detect`, `configure`, `status`.
     pub action: String,
-    /// How many samples the window covers.
+    /// How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window.
     #[serde(default)]
     pub window_size: Option<u64>,
     /// The z-score above which a sample counts as anomalous.
@@ -198,7 +198,7 @@ pub struct AnomalyRequest {
     /// The IQR multiplier above which a sample counts as anomalous.
     #[serde(default)]
     pub iqr_multiplier: Option<f64>,
-    /// The fewest samples needed before a verdict is possible.
+    /// The fewest samples needed before a verdict is possible; at most `window_size`.
     #[serde(default)]
     pub min_samples: Option<u64>,
     /// The frame time, in milliseconds, above which performance counts as anomalous.
@@ -660,7 +660,7 @@ impl BevyDebuggerTools {
             entries.push(CommandEntry {
                 name: TIME_COMMAND.to_string(),
                 description: "Pause or slow game time (Time<Virtual>); returns the paused flag and the speed.".to_string(),
-                params: "pause: bool (optional); speed: f32 (optional, must be > 0)".to_string(),
+                params: "pause: bool (optional); speed: f32 (optional, above 0 and at most 1000)".to_string(),
                 example: serde_json::json!({"pause": true}),
             });
         }

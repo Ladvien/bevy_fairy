@@ -41,10 +41,10 @@ Look for anomalies in the game's entities. `action` picks the operation; `detect
 | `entity_growth_threshold` | number | no | The entity growth per sample above which the count counts as anomalous. |
 | `iqr_multiplier` | number | no | The IQR multiplier above which a sample counts as anomalous. |
 | `limit` | integer | no | How many anomalies to report at most. |
-| `min_samples` | integer | no | The fewest samples needed before a verdict is possible. |
+| `min_samples` | integer | no | The fewest samples needed before a verdict is possible; at most `window_size`. |
 | `min_severity` | number | no | The lowest severity to report. The handler reads this as a number. |
 | `performance_threshold` | number | no | The frame time, in milliseconds, above which performance counts as anomalous. |
-| `window_size` | integer | no | How many samples the window covers. |
+| `window_size` | integer | no | How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window. |
 | `z_score_threshold` | number | no | The z-score above which a sample counts as anomalous. |
 
 ## `experiment`

@@ -202,6 +202,21 @@ fn positive_arg(arguments: &Value, key: &str) -> std::result::Result<Option<f64>
     }
 }
 
+/// A detector keeps `window_size` samples and needs `min_samples` of them, and at least 2 (growth
+/// and a standard deviation are changes between samples), before it can report anything. A
+/// window below that is a detector that never reports while `status` says it is configured, so
+/// `configure` refuses it instead of accepting it.
+fn check_window_holds_min_samples(config: &AnomalyConfig) -> std::result::Result<(), String> {
+    let needed = config.min_samples.max(2);
+    if config.window_size < needed {
+        return Err(format!(
+            "window_size ({}) is smaller than the {needed} samples a detector needs before it can report (min_samples is {}, and at least 2 are needed to measure a change), so it would never report. Raise window_size, or lower min_samples in the same call.",
+            config.window_size, config.min_samples
+        ));
+    }
+    Ok(())
+}
+
 /// Configure anomaly detection system: fields not named keep their current value.
 async fn handle_configure(arguments: Value) -> Result<Value> {
     info!("Configuring anomaly detection system");
@@ -229,7 +244,7 @@ async fn handle_configure(arguments: Value) -> Result<Value> {
         if let Some(n) = positive_arg(&arguments, "entity_growth_threshold")? {
             config.entity_growth_threshold = n as f32;
         }
-        Ok(())
+        check_window_holds_min_samples(&config)
     })();
     if let Err(message) = parsed {
         return Ok(json!({
@@ -368,6 +383,30 @@ mod tests {
         let result = handle_status().await.unwrap();
         assert!(result["detectors"].is_array());
         assert!(result["supported_anomaly_types"].is_array());
+    }
+
+    /// The window a detector keeps has to hold the samples it needs: `window_size` 5 under the
+    /// default `min_samples` of 10 is a detector that can never report, and `configure` used to
+    /// answer "Configuration updated successfully" for it.
+    #[test]
+    fn a_window_smaller_than_the_samples_a_detector_needs_is_refused() {
+        let config = |window_size, min_samples| AnomalyConfig { window_size, min_samples, ..Default::default() };
+        assert!(check_window_holds_min_samples(&config(10, 10)).is_ok());
+        assert!(check_window_holds_min_samples(&config(2, 1)).is_ok());
+        for (window, min) in [(5, 10), (9, 10), (1, 1), (0, 1)] {
+            let message = check_window_holds_min_samples(&config(window, min)).expect_err("a window that cannot hold the samples");
+            assert!(message.contains("window_size") && message.contains("min_samples"), "{message}");
+        }
+    }
+
+    /// Through the tool: the refusal names both fields, and does not depend on what an earlier
+    /// call configured because the same call names both.
+    #[tokio::test]
+    async fn configure_refuses_a_window_below_min_samples() {
+        let r = handle_configure(json!({"window_size": 5, "min_samples": 10})).await.unwrap();
+        assert_eq!(r["error"], "Invalid configuration", "{r}");
+        let message = r["message"].as_str().unwrap();
+        assert!(message.contains("window_size (5)") && message.contains("min_samples is 10"), "{r}");
     }
 
     /// `start_monitoring` used to set a flag, answer "Continuous monitoring started" and run
