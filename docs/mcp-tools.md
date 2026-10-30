@@ -37,7 +37,7 @@ Look for anomalies in the game's entities. `action` picks the operation; `detect
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes | The operation to run. One of `detect`, `configure`, `start_monitoring`, `stop_monitoring`, `status`. |
+| `action` | string | yes | The operation to run. One of `detect`, `configure`, `status`. |
 | `entity_growth_threshold` | number | no | The entity growth per sample above which the count counts as anomalous. |
 | `iqr_multiplier` | number | no | The IQR multiplier above which a sample counts as anomalous. |
 | `limit` | integer | no | How many anomalies to report at most. |

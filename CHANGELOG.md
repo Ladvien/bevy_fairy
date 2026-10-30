@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Removed
+
+- `detect_anomaly` actions `start_monitoring` and `stop_monitoring`, and `status`'s `is_monitoring`. They set a flag and reported "Continuous monitoring started" while nothing sampled the game. Use `detect` repeatedly, or `watch`. Asking for them now returns the "Invalid action" error listing `detect, configure, status`.
+
 ### Added
 
 - `burst` tool: a reference frame plus 1-7 captures at 0.5-10 fps (default 4) as one contact sheet (2 rows x 4 columns at most). Each cell is

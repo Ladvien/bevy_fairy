@@ -568,6 +568,38 @@
       "evidence": "tests/fixture_ground_truth.rs::experiment_undo_restores_a_modified_component_when_it_claims_rollback, experiment_delete_does_not_claim_a_rollback_undo_cannot_perform (both failed before)",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-069",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly start_monitoring set a flag and answered 'Continuous monitoring started' with no task running; status reported is_monitoring true",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/tools/anomaly.rs handle_start_monitoring: 'In a real implementation, this would start a background task'"
+      },
+      "status": "fixed",
+      "evidence": "anomaly::tests::monitoring_actions_are_refused_not_pretended failed before, passes after",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-070",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly configure resets every unspecified field to default instead of keeping the current config; action is a free string with Ok(error JSON) for unknown values",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "anomaly.rs handle_configure starts from AnomalyConfig::default()"
+      },
+      "status": "open",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }

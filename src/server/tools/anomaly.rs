@@ -14,7 +14,6 @@ use crate::server::error::Result;
 /// Shared state for anomaly detection
 pub struct AnomalyState {
     detection_system: AnomalyDetectionSystem,
-    is_monitoring: bool,
 }
 
 impl AnomalyState {
@@ -24,7 +23,6 @@ impl AnomalyState {
         let config = AnomalyConfig::default();
         Self {
             detection_system: AnomalyDetectionSystem::new(config),
-            is_monitoring: false,
         }
     }
 
@@ -33,7 +31,6 @@ impl AnomalyState {
     pub fn with_config(config: AnomalyConfig) -> Self {
         Self {
             detection_system: AnomalyDetectionSystem::new(config),
-            is_monitoring: false,
         }
     }
 }
@@ -68,13 +65,11 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     match action {
         "detect" => handle_detect(arguments, brp_client).await,
         "configure" => handle_configure(arguments).await,
-        "start_monitoring" => handle_start_monitoring(arguments, brp_client).await,
-        "stop_monitoring" => handle_stop_monitoring().await,
         "status" => handle_status().await,
         _ => Ok(json!({
             "error": "Invalid action",
-            "message": format!("Unknown action: {}. Available actions: detect, configure, start_monitoring, stop_monitoring, status", action),
-            "available_actions": ["detect", "configure", "start_monitoring", "stop_monitoring", "status"]
+            "message": format!("Unknown action: {}. Available actions: detect, configure, status", action),
+            "available_actions": ["detect", "configure", "status"]
         })),
     }
 }
@@ -253,64 +248,9 @@ async fn handle_configure(arguments: Value) -> Result<Value> {
     }))
 }
 
-/// Start continuous monitoring (placeholder for future async monitoring)
-async fn handle_start_monitoring(
-    _arguments: Value,
-    _brp_client: Arc<RwLock<BrpClient>>,
-) -> Result<Value> {
-    info!("Starting continuous anomaly monitoring");
-
-    let state = get_anomaly_state();
-    let mut state_guard = state.write().await;
-
-    if state_guard.is_monitoring {
-        return Ok(json!({
-            "message": "Monitoring is already running",
-            "is_monitoring": true
-        }));
-    }
-
-    state_guard.is_monitoring = true;
-
-    // In a real implementation, this would start a background task
-    // that continuously monitors game state and reports anomalies
-
-    Ok(json!({
-        "message": "Continuous monitoring started",
-        "is_monitoring": true,
-        "note": "Monitoring implementation requires background task setup"
-    }))
-}
-
-/// Stop continuous monitoring
-async fn handle_stop_monitoring() -> Result<Value> {
-    info!("Stopping continuous anomaly monitoring");
-
-    let state = get_anomaly_state();
-    let mut state_guard = state.write().await;
-
-    if !state_guard.is_monitoring {
-        return Ok(json!({
-            "message": "Monitoring is not currently running",
-            "is_monitoring": false
-        }));
-    }
-
-    state_guard.is_monitoring = false;
-
-    Ok(json!({
-        "message": "Continuous monitoring stopped",
-        "is_monitoring": false
-    }))
-}
-
-/// Get monitoring status
+/// List the detectors and the anomaly types they can report
 async fn handle_status() -> Result<Value> {
-    let state = get_anomaly_state();
-    let state_guard = state.read().await;
-
     Ok(json!({
-        "is_monitoring": state_guard.is_monitoring,
         "detectors": [
             "PhysicsDetector",
             "PerformanceDetector",
@@ -387,17 +327,25 @@ mod tests {
         assert!(result["supported_anomaly_types"].is_array());
     }
 
+    /// `start_monitoring` used to set a flag, answer "Continuous monitoring started" and run
+    /// nothing: no task ever sampled the game. The actions are gone, so asking for one is an error
+    /// naming the valid actions, and `status` has no `is_monitoring` to claim.
     #[tokio::test]
-    async fn test_anomaly_monitoring_control() {
-        // Test start monitoring
-        let start_result = handle_start_monitoring(json!({}), create_test_brp_client())
-            .await
-            .unwrap();
-        assert_eq!(start_result["is_monitoring"], true);
-
-        // Test stop monitoring
-        let stop_result = handle_stop_monitoring().await.unwrap();
-        assert_eq!(stop_result["is_monitoring"], false);
+    async fn monitoring_actions_are_refused_not_pretended() {
+        for action in ["start_monitoring", "stop_monitoring"] {
+            let result = handle(json!({ "action": action }), create_test_brp_client())
+                .await
+                .unwrap();
+            assert_eq!(result["error"], "Invalid action", "{action}: {result}");
+            assert_eq!(
+                result["available_actions"],
+                json!(["detect", "configure", "status"]),
+                "{action}"
+            );
+            assert!(result.get("is_monitoring").is_none(), "{action}: {result}");
+        }
+        let status = handle_status().await.unwrap();
+        assert!(status.get("is_monitoring").is_none(), "{status}");
     }
 
     #[tokio::test]
