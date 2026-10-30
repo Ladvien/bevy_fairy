@@ -261,7 +261,7 @@ back how many times it came up, how many of those its checkpoint passed, and how
 
 Every game command the agent runs is recorded. `scene save <path>` writes them to a file;
 starting the game with `BEVY_FAIRY_SCENE=<path>` replays them, one step per frame, once the game
-reports ready. Scenes record commands, not raw input.
+reports ready. Scenes record commands, not raw input: keys, text and clicks sent with `bevy_fairy/input` are not in the file, and replay is command-level, not frame-exact (Bevy is not deterministic by default).
 
 ## Reference
 

@@ -177,22 +177,6 @@
       "first_seen": "2026-10-21"
     },
     {
-      "id": "B-022",
-      "kind": "change",
-      "area": "docs",
-      "title": "scene scripts record commands, not input, and this is not documented",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "crates/bevy_debugger_bevy/src/commands.rs:224-229 records only debug commands"
-      },
-      "status": "open",
-      "evidence": "Verified 2026-10-21.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
       "id": "B-023",
       "kind": "change",
       "area": "release",

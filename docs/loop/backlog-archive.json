@@ -422,6 +422,22 @@
       "evidence": "v0.7.2: the `query` field schema lists the grammar; tool_list::every_observe_query_example_in_the_schema_is_accepted_by_the_parser",
       "last_failure": "",
       "first_seen": "2026-10-23"
+    },
+    {
+      "id": "B-022",
+      "kind": "change",
+      "area": "docs",
+      "title": "scene scripts record commands, not input, and this is not documented",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "crates/bevy_debugger_bevy/src/commands.rs:224-229 records only debug commands"
+      },
+      "status": "fixed",
+      "evidence": "2026-10-30: scene.rs module docs and README state that bevy_fairy/input is not recorded and replay is command-level.",
+      "last_failure": "",
+      "first_seen": "2026-10-21"
     }
   ]
 }

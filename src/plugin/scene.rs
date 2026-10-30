@@ -15,6 +15,14 @@
 //! A file whose format or version differs is refused with one `error!` and nothing is replayed. A bad
 //! file never panics.
 //!
+//! # What a scene does not record
+//!
+//! Only calls to registered debug commands are recorded. `bevy_fairy/input` (keys, text, cursor,
+//! buttons) is a built-in method, not a command, so a keypress or click an agent injected is **not**
+//! in the file and a replay will not repeat it. Replay is also command-level, not frame-exact: Bevy
+//! is not deterministic by default, so the same calls on a later run can land on a different world.
+//! Drive input after the replay, or register the action as a command.
+//!
 //! # Replay
 //!
 //! Set `BEVY_FAIRY_SCENE` to a file path before the game starts. Steps run one per frame, and only
