@@ -42,6 +42,8 @@ use image::{imageops::FilterType, ImageFormat};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::plugin::ready::FrameTicks;
+
 /// How many finished or pending captures [`Captures`] keeps. The oldest is dropped.
 const KEPT: usize = 8;
 
@@ -88,8 +90,21 @@ pub struct Region {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CaptureState {
     Pending,
-    Done { png: Vec<u8>, width: u32, height: u32 },
+    Done { png: Vec<u8>, width: u32, height: u32, provenance: Provenance },
     Failed(String),
+}
+
+/// Where a finished capture came from and when, so a caller can tell a fresh frame from a stale one.
+///
+/// Frames are the plugin's own count (the `frame` of `bevy_fairy/status`): `frame_requested` is the
+/// frame the request was handled on, `frame_captured` the frame its pixels were delivered on. The
+/// pixels are the render of some frame between the two, never later than `frame_captured`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Provenance {
+    /// `"offscreen"` or `"window"`: the source that was actually read.
+    pub source: &'static str,
+    pub frame_requested: u32,
+    pub frame_captured: u32,
 }
 
 /// The last few captures, by id. A capture is `Pending` from the request until its frame is read.
@@ -142,6 +157,7 @@ pub fn handle_screenshot(
     target: Option<Res<DebugCaptureTarget>>,
     windows: Query<(), With<PrimaryWindow>>,
     mut captures: ResMut<Captures>,
+    ticks: Res<FrameTicks>,
 ) -> BrpResult {
     let params: ScreenshotParams = match params {
         Some(p) => serde_json::from_value(p)
@@ -200,22 +216,28 @@ pub fn handle_screenshot(
     };
 
     let id = captures.begin();
+    let source_name = match source {
+        Source::Offscreen => "offscreen",
+        Source::Window => "window",
+    };
+    let frame_requested = ticks.0;
     let path = params.path;
     let reported = path.clone();
     let region = params.region;
     let zoom = params.zoom;
 
-    commands.spawn(screenshot).observe(move |trigger: On<ScreenshotCaptured>, mut captures: ResMut<Captures>| {
+    commands.spawn(screenshot).observe(move |trigger: On<ScreenshotCaptured>, mut captures: ResMut<Captures>, ticks: Res<FrameTicks>| {
+        let provenance = Provenance { source: source_name, frame_requested, frame_captured: ticks.0 };
         let state = match encode_capture(&trigger.image, region.as_ref(), zoom) {
             Ok((png, width, height)) => match path.as_deref() {
                 Some(p) => match std::fs::write(p, &png) {
                     Ok(()) => {
                         info!("bevy_fairy/screenshot: wrote {p}");
-                        CaptureState::Done { png, width, height }
+                        CaptureState::Done { png, width, height, provenance }
                     }
                     Err(e) => CaptureState::Failed(format!("could not write {p}: {e}")),
                 },
-                None => CaptureState::Done { png, width, height },
+                None => CaptureState::Done { png, width, height, provenance },
             },
             Err(e) => CaptureState::Failed(e),
         };
@@ -249,10 +271,13 @@ pub(crate) fn handle_capture(In(params): In<Option<Value>>, captures: Res<Captur
             params.id
         ))),
         Some(CaptureState::Pending) => Ok(json!({ "status": "pending" })),
-        Some(CaptureState::Done { png, width, height }) => Ok(json!({
+        Some(CaptureState::Done { png, width, height, provenance }) => Ok(json!({
             "status": "done",
             "width": width,
             "height": height,
+            "source": provenance.source,
+            "frame_requested": provenance.frame_requested,
+            "frame_captured": provenance.frame_captured,
             "png_base64": base64_encode(png),
         })),
         Some(CaptureState::Failed(error)) => Ok(json!({ "status": "failed", "error": error })),
@@ -330,6 +355,7 @@ pub(crate) fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn base64_matches_the_rfc_4648_vectors() {
@@ -345,6 +371,24 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(base64_encode(input.as_bytes()), expected, "input {input:?}");
         }
+    }
+
+    #[test]
+    fn a_done_capture_reports_where_and_when_it_was_taken() {
+        let mut world = World::new();
+        let mut captures = Captures::default();
+        let id = captures.begin();
+        let provenance = Provenance { source: "window", frame_requested: 40, frame_captured: 43 };
+        captures.finish(id, CaptureState::Done { png: vec![1, 2, 3], width: 4, height: 5, provenance });
+        world.insert_resource(captures);
+        let reply = world
+            .run_system_once_with(handle_capture, Some(json!({ "id": id })))
+            .expect("system runs")
+            .expect("capture answers");
+        assert_eq!(reply["status"], "done");
+        assert_eq!(reply["source"], "window");
+        assert_eq!(reply["frame_requested"], 40);
+        assert_eq!(reply["frame_captured"], 43);
     }
 
     #[test]

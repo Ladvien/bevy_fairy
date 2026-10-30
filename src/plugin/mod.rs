@@ -96,7 +96,7 @@ pub use guide::{
 };
 #[cfg(feature = "plugin-screenshot")]
 pub use screenshot::{
-    handle_screenshot, CaptureState, Captures, DebugCaptureTarget, ScreenshotParams,
+    handle_screenshot, CaptureState, Captures, DebugCaptureTarget, Provenance, ScreenshotParams,
 };
 
 // The handlers above are public so that tests and examples can drive them directly.

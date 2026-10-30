@@ -100,7 +100,8 @@ fn dispatch(game: &mut FakeGame, method: &str, params: &Value) -> Result<Value, 
                 game.polls_seen += 1;
                 Ok(json!({"status": "pending"}))
             } else {
-                Ok(json!({"status": "done", "width": 1, "height": 1, "png_base64": PNG_1X1_BASE64}))
+                Ok(json!({"status": "done", "width": 1, "height": 1, "png_base64": PNG_1X1_BASE64,
+                    "source": "window", "frame_requested": 40, "frame_captured": 43}))
             }
         }
         "bevy_fairy/scene" => match params.get("action").and_then(Value::as_str) {
@@ -209,7 +210,11 @@ async fn screenshot_writes_a_png_after_one_pending_reply() {
 
     assert_ne!(result.is_error, Some(true), "{}", text_of(&result));
     let text = text_of(&result);
-    assert!(text.starts_with("saved ") && text.ends_with("(1x1)"), "{text}");
+    assert!(text.starts_with("saved ") && text.contains("(1x1)"), "{text}");
+    assert!(
+        text.ends_with("source window, requested at frame 40, delivered at frame 43"),
+        "the reply must say which source was read and on which frames: {text}"
+    );
     assert_eq!(game.lock().expect("fake game lock").polls_seen, 1, "the first poll must have been pending");
 
     let written = std::fs::read(&save_to).expect("the PNG was written, creating its directory");

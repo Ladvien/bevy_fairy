@@ -799,7 +799,7 @@ impl BevyDebuggerTools {
     }
 
     /// Capture the game to a PNG file
-    #[tool(description = "Capture the game to a PNG file on this machine and return its path and size. The default offscreen capture leaves out UI; source 'window' captures the game window with its UI included. Pass inline true to also get the image in the reply.")]
+    #[tool(description = "Capture the game to a PNG file on this machine and return its path, size, the source actually read (offscreen or window) and the game frames the request and the delivery happened on (compare with `status`'s frame to judge freshness). The default offscreen capture leaves out UI; source 'window' captures the game window with its UI included. Pass inline true to also get the image in the reply.")]
     pub async fn screenshot(&self, Parameters(req): Parameters<ScreenshotRequest>) -> Result<CallToolResult, McpError> {
         let mut params = serde_json::Map::new();
         if let Some(source) = req.source {
@@ -856,7 +856,17 @@ impl BevyDebuggerTools {
             return tool_err(format!("could not write {}: {e}", path.display()));
         }
         let absolute = std::path::absolute(&path).unwrap_or_else(|_| path.clone());
-        let mut content = vec![Content::text(format!("saved {} ({width}x{height})", absolute.display()))];
+        let provenance = match (
+            captured.get("source").and_then(Value::as_str),
+            captured.get("frame_requested").and_then(Value::as_u64),
+            captured.get("frame_captured").and_then(Value::as_u64),
+        ) {
+            (Some(source), Some(requested), Some(taken)) => {
+                format!("source {source}, requested at frame {requested}, delivered at frame {taken}")
+            }
+            _ => "source and frame unavailable: this game's plugin does not report them".to_string(),
+        };
+        let mut content = vec![Content::text(format!("saved {} ({width}x{height}); {provenance}", absolute.display()))];
         if req.inline.unwrap_or(false) {
             content.push(Content::image(png_base64.to_string(), "image/png"));
         }

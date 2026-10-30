@@ -131,7 +131,7 @@ Work with the commands recorded in this game session. save writes them to a repl
 
 ## `screenshot`
 
-Capture the game to a PNG file on this machine and return its path and size. The default offscreen capture leaves out UI; source 'window' captures the game window with its UI included. Pass inline true to also get the image in the reply.
+Capture the game to a PNG file on this machine and return its path, size, the source actually read (offscreen or window) and the game frames the request and the delivery happened on (compare with `status`'s frame to judge freshness). The default offscreen capture leaves out UI; source 'window' captures the game window with its UI included. Pass inline true to also get the image in the reply.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|

@@ -105,7 +105,7 @@ pub use plugin::{
 };
 
 #[cfg(feature = "plugin-screenshot")]
-pub use plugin::{handle_screenshot, CaptureState, Captures, DebugCaptureTarget, ScreenshotParams};
+pub use plugin::{handle_screenshot, CaptureState, Captures, DebugCaptureTarget, Provenance, ScreenshotParams};
 
 #[cfg(feature = "server")]
 pub use server::prelude;

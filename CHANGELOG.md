@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `screenshot` and `bevy_fairy/capture` report provenance: `source` (the one actually read, `offscreen` or `window`),
+  `frame_requested` and `frame_captured` (the plugin's frame count, comparable with `status`'s `frame`). A game whose
+  plugin predates this is reported as "source and frame unavailable" rather than shown without them. `Provenance` is a
+  new public type and `CaptureState::Done` has a new field (breaking for code matching it).
+
 ### Fixed
 
 - `observe`, `guide` and `replay` accepted and silently dropped arguments they do not have (`observe` with `limit: 5` ran
