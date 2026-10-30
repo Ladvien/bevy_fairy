@@ -948,8 +948,8 @@ If you need to recover debugging session data:
 ls ~/.local/share/bevy-fairy/sessions/
 ls debug_sessions/checkpoints/
 
-# Export session data
-cargo run --bin bevy-fairy -- export-sessions --output sessions_backup.json
+# The session files are plain JSON; copy them to back them up
+cp -r ~/.local/share/bevy-fairy/sessions/ sessions_backup/
 ```
 
 ---

@@ -30,7 +30,6 @@ include = [
 exclude = [
     "target/*",
     ".git/*",
-    "launchd/*",
     "scripts/homebrew-formula.rb",
     "docs/CLAUDE_SUBAGENT_GUIDE.md"
 ]
