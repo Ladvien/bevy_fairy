@@ -43,8 +43,8 @@
         "common_no_workaround": true,
         "evidence": "`grep -n 'mod cli' src/lib.rs src/main.rs` finds nothing"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21.",
+      "status": "fixed",
+      "evidence": "Deleted 2026-10-30 (v0.6.0).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -76,7 +76,7 @@
         "evidence": "src/lib.rs:158-276 exports them; brp_client_v2, brp_client_refactored, tools/replay_v2.rs are unused"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports.",
+      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },

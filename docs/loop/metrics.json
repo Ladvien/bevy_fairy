@@ -1,8 +1,8 @@
 {
-  "measured_at": "2026-10-29",
-  "sha": "13da68e",
+  "measured_at": "2026-10-30",
+  "sha": "pending",
   "server": {
-    "loc": 51207,
+    "loc": 47558,
     "direct_dependencies": 53,
     "public_modules": 72,
     "mcp_tools": 14,
@@ -58,7 +58,8 @@
     "direct dependencies 52 -> 53: `image`, promoted from the plugin crate. A game that takes the plugin compiles 4 direct dependencies, not 53 -- Cargo resolves dependencies per feature.",
     "2026-10-22: the fixture game and its ground-truth tests exist. They are the only behavioural gate until the eval suite exists.",
     "2026-10-23: stress_test left tools/list (14 -> 13 tools); server loc 51212 -> 51187. The eval suite exists: dev and held-out success are measured from here on (see evals).",
-    "2026-10-23 (13da68e): server loc 51187 -> 51207 for the +watch refusal and the unreadable-answer branch in call_game."
+    "2026-10-23 (13da68e): server loc 51187 -> 51207 for the +watch refusal and the unreadable-answer branch in call_game.",
+    "2026-10-30: server loc 51207 -> 47558 (find src/server -name '*.rs' | cat | wc -l): cli.rs (426, never compiled), brp_client_v2.rs (383), brp_client_refactored.rs (278) deleted, plus earlier observability removal; clippy ratchet OK, known_red unchanged."
   ],
   "known_red": {
     "recorded_at": "2026-10-29",

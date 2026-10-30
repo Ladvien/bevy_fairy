@@ -14,3 +14,4 @@
 - 2026-10-29 watch: B-045 `watch` tool (frame-stamped polled series, batch-with-status); ratchet ok, dev 6/6, heldout 3/3 — v0.3.5 — [report](iterations/2026-10-29-watch.md)
 - 2026-10-29 tcp-flag-removal: B-012 fixed, dead `--tcp`/`--server` removed, stdio only; ratchet ok, workspace tests green, evals not run (no tool change) — v0.4.0 — [report](iterations/2026-10-29-tcp-flag-removal.md)
 - 2026-10-29 observability-removal: B-019 fixed, dead `observability` feature + config + env vars + 11 deps deleted, `--all-features` builds; ratchet ok, workspace tests green, evals not run (no tool change) — v0.5.0 — [report](iterations/2026-10-29-observability-removal.md)
+- 2026-10-30 dead-clients: B-011 fixed, cli.rs + duplicate BrpClientV2/refactored deleted; ratchet ok, tests green, evals not run (no tool change) — v0.6.0 — [report](iterations/2026-10-30-dead-clients.md)

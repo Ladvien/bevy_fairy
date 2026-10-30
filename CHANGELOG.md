@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 - 2026-10-30
+
+### Removed
+
+- **Breaking:** `server::brp_client_v2` (`BrpClientV2`) and `server::brp_client_refactored`: two
+  unused duplicates of `server::brp_client::BrpClient`, the one client every tool uses. The
+  published server has one BRP client now.
+- `src/server/cli.rs` (426 lines): it was never declared as a module, so it was never compiled.
+  No MCP tool, flag or behaviour changes.
+
 ## 0.5.0 - 2026-10-29
 
 ### Removed
