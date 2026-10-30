@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 - 2026-10-29
+
+### Removed
+
+- **Breaking:** the `observability` feature and the `server::observability` module (2.7k lines).
+  It never compiled (42 errors), so `full-debugging` and `cargo build --all-features` failed with
+  it; nothing in the 14 registered tools reached it. `full-debugging` no longer lists it, and
+  `cargo build --all-features` is green again.
+- **Breaking:** `Config::observability` and `ObservabilityConfig`, and the environment variables
+  that only filled it (`METRICS_ENABLED`, `METRICS_PORT`, `TRACING_ENABLED`, `JAEGER_ENDPOINT`,
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_PORT`,
+  `OTEL_TRACES_SAMPLER_ARG`, `DEPLOYMENT_ENVIRONMENT`). They were parsed and then ignored; an
+  invalid value was refused for a setting that did nothing.
+- Unused optional dependencies `opentelemetry*`, `tracing-opentelemetry`, `prometheus`, `metrics`,
+  `metrics-exporter-prometheus`.
+
 ## 0.4.0 — 2026-10-29
 
 ### Removed

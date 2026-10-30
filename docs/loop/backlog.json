@@ -139,8 +139,8 @@
         "common_no_workaround": false,
         "evidence": "scripts/ratchet.sh --record at e93da67: features observability=42, full-debugging=42; the errors are in src/observability/metrics.rs, health.rs, tracing.rs"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21 by the ratchet. The default build is clean and the other 22 features build. CI's `cargo build --all-features` is red because of this. Earlier notes said 48 errors; the ratchet counts 42.",
+      "status": "fixed",
+      "evidence": "Verified 2026-10-21 by the ratchet. The default build is clean and the other 22 features build. CI's `cargo build --all-features` is red because of this. Earlier notes said 48 errors; the ratchet counts 42. Fixed 2026-10-29 by deleting the feature, module, config and tests (v0.5.0).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
