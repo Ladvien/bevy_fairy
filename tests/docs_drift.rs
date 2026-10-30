@@ -138,7 +138,7 @@ fn doc_files() -> Vec<(String, String)> {
                     // `target/` and `.git/` hold no docs and are huge. `docs/loop/` is the
                     // loop's own history.
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-                    if name == "target" || name == ".git" || name == "loop" {
+                    if name == "target" || name == ".git" || name == "loop" || name == ".omp" {
                         continue;
                     }
                     stack.push(path);
@@ -441,4 +441,93 @@ fn no_shipped_file_tells_the_reader_to_run_a_subcommand_the_binary_lacks() {
             );
         }
     }
+}
+
+/// The tools and arguments `docs/mcp-tools.md` lists. That file is generated from the server's own
+/// `tools/list` (and `tool_list.rs` fails when it drifts), so it is the registered schema.
+fn registered_tools() -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut tools = std::collections::BTreeMap::new();
+    let mut current: Option<String> = None;
+    for line in read("docs/mcp-tools.md").lines() {
+        if let Some(name) = line.strip_prefix("## `").and_then(|r| r.strip_suffix('`')) {
+            tools.insert(name.to_string(), std::collections::BTreeSet::new());
+            current = Some(name.to_string());
+        } else if let (Some(tool), Some(row)) = (&current, line.strip_prefix("| `")) {
+            if let Some(arg) = row.split('`').next() {
+                tools.get_mut(tool).expect("tool is registered").insert(arg.to_string());
+            }
+        }
+    }
+    tools
+}
+
+/// Every `callTool("name", { key: ... })` in a doc names a registered tool and only keys that tool
+/// accepts. The hand-written tool references that described `experiment_type` and a REST API were
+/// deleted because nothing ran their examples; this keeps the next one from growing back.
+#[test]
+fn every_call_tool_example_names_a_registered_tool_and_its_arguments() {
+    let tools = registered_tools();
+    assert!(tools.len() > 5, "docs/mcp-tools.md lists no tools; the parser is broken");
+    let mut problems = Vec::new();
+    for (path, text) in doc_files() {
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find("callTool(\"") {
+            rest = &rest[at + "callTool(\"".len()..];
+            let name = rest.split('"').next().unwrap_or_default().to_string();
+            let Some(args) = tools.get(&name) else {
+                problems.push(format!("{path}: callTool(\"{name}\") is not a registered tool"));
+                continue;
+            };
+            let Some(open) = rest.find('{') else { continue };
+            // Top-level keys of the object literal: identifiers followed by `:` at depth 1.
+            let (mut depth, mut token, mut keys) = (0, String::new(), Vec::new());
+            for c in rest[open..].chars() {
+                match c {
+                    '{' | '[' => depth += 1,
+                    '}' | ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    ':' if depth == 1 && !token.is_empty() => keys.push(std::mem::take(&mut token)),
+                    c if depth == 1 && (c.is_alphanumeric() || c == '_') => token.push(c),
+                    c if depth == 1 && c != '"' && c != ' ' => token.clear(),
+                    _ => {}
+                }
+                if depth == 1 && c.is_whitespace() && c != ' ' {
+                    token.clear();
+                }
+            }
+            for key in keys {
+                if !args.contains(&key) {
+                    problems.push(format!("{path}: callTool(\"{name}\") passes `{key}`, which {name} does not take"));
+                }
+            }
+        }
+    }
+    assert!(problems.is_empty(), "docs show calls the server would refuse:\n{}", problems.join("\n"));
+}
+
+/// A relative markdown link must resolve to a file. `docs/quick-start.md` linked
+/// `troubleshooting.md` and `tools/` for as long as neither existed at that path.
+#[test]
+fn every_relative_doc_link_resolves() {
+    let mut broken = Vec::new();
+    for (path, text) in doc_files() {
+        let dir = root().join(&path).parent().expect("a file has a parent").to_path_buf();
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find("](") {
+            rest = &rest[at + 2..];
+            let target = rest.split(')').next().unwrap_or_default();
+            let file = target.split('#').next().unwrap_or_default();
+            if file.is_empty() || file.contains("://") || file.starts_with("mailto:") || file.contains(' ') {
+                continue;
+            }
+            if !dir.join(file).exists() {
+                broken.push(format!("{path}: ]({target}) does not exist"));
+            }
+        }
+    }
+    assert!(broken.is_empty(), "broken relative links:\n{}", broken.join("\n"));
 }
