@@ -597,3 +597,104 @@ async fn observe_resolves_the_short_names_a_semantic_query_is_built_from() {
     );
     assert!(text.contains("resolved_component_names"), "and says it rewrote the name: {text}");
 }
+
+/// `experiment` keeps one process-wide history, so the tests that read it take turns.
+static EXPERIMENT_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Call the `experiment` tool the way an agent does and parse what it returns.
+async fn experiment(tools: &BevyDebuggerTools, request: Value) -> Value {
+    let params: bevy_fairy::server::mcp_tools::ExperimentRequest =
+        serde_json::from_value(request).expect("the request deserialises");
+    let result = tools
+        .experiment(Parameters(params))
+        .await
+        .expect("the experiment tool returns a result");
+    let text = text_of(&result);
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("experiment returned non-JSON ({e}): {text}"))
+}
+
+/// The weight of every fixture crate, keyed by entity id.
+async fn crate_weights(tools: &BevyDebuggerTools) -> std::collections::BTreeMap<u64, f64> {
+    rows_of(tools, "fixture_game::Crate")
+        .await
+        .iter()
+        .map(|row| {
+            (
+                row["entity"].as_u64().expect("a row names its entity"),
+                row["components"]["fixture_game::Crate"]["weight"].as_f64().expect("a crate has a weight"),
+            )
+        })
+        .collect()
+}
+
+/// `experiment` modify says `rollback_available: true` and records the original value, so `undo`
+/// must put that value back. Before the fix the claim was a constant: the history entry had no
+/// reverse action, `undo` answered "No reverse action available", and it had already popped the
+/// entry, so a second `undo` found nothing to undo either.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_undo_restores_a_modified_component_when_it_claims_rollback() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+
+    let before = crate_weights(&tools).await;
+    let (&entity, &original) = before.iter().next().expect("the fixture spawns crates");
+    assert!(CRATE_WEIGHTS.iter().any(|w| (f64::from(*w) - original).abs() < 1e-9));
+
+    let run = experiment(
+        &tools,
+        json!({"action": "execute", "actions": [{
+            "type": "modify", "entity_id": entity,
+            "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]
+        }]}),
+    )
+    .await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+    assert_eq!(crate_weights(&tools).await[&entity], 99.0, "the modify must reach the game");
+    let claimed = run["results"][0]["rollback_available"] == json!(true);
+    assert!(claimed, "the crate's original weight was readable, so the modify is reversible: {run}");
+
+    let undo = experiment(&tools, json!({"action": "undo"})).await;
+    let restored = crate_weights(&tools).await[&entity];
+    if claimed {
+        assert_eq!(undo["result"]["success"], json!(true), "rollback was claimed, undo said: {undo}");
+        assert_eq!(restored, original, "undo must put the original weight back");
+    } else {
+        assert_eq!(undo["result"]["success"], json!(false), "{undo}");
+    }
+
+    let history = experiment(&tools, json!({"action": "history"})).await;
+    if !claimed {
+        assert_eq!(history["count"], json!(1), "a refused undo must not drop the entry: {history}");
+    }
+}
+
+/// A delete cannot be put back (a respawned entity is a different entity), so it must not claim
+/// `rollback_available`, and the failed `undo` must leave the entry in `history`.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_delete_does_not_claim_a_rollback_undo_cannot_perform() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+    let run = experiment(&tools, json!({"action": "execute", "actions": [{"type": "delete", "entity_id": entity}]})).await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+    assert!(!crate_weights(&tools).await.contains_key(&entity), "the delete must reach the game");
+
+    let undo = experiment(&tools, json!({"action": "undo"})).await;
+    let claimed = run["results"][0]["rollback_available"] == json!(true);
+    assert_eq!(
+        undo["result"]["success"] == json!(true),
+        claimed,
+        "rollback_available={claimed} but undo said: {undo}"
+    );
+    if !claimed {
+        let history = experiment(&tools, json!({"action": "history"})).await;
+        assert_eq!(history["count"], json!(1), "a refused undo must not drop the entry: {history}");
+    }
+}

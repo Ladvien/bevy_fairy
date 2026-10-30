@@ -16,6 +16,13 @@
 
 ### Fixed
 
+- `experiment`: `rollback_available: true` on a `modify` or `delete` was a constant. Neither had a reverse action, so `undo` answered
+  "No reverse action available" and had already dropped the entry from `history`. `rollback_available` is now true only when `undo`
+  will run a recorded reverse: a `spawn` (deleted again) or a `modify` whose components were all readable beforehand (original values
+  restored; they are now read by name, which the old empty-list request never returned). A `delete` cannot be put back and says
+  `false`. A refused or failed `undo` keeps its history entry; undo/redo no longer add their own history entries; `redo` of a spawn
+  records the new entity. An atomic `batch` that fails reports how many successful actions it could not reverse instead of claiming it
+  rolled back.
 - `hypothesis` (`test`): `entity_exists` and `component_equals` conditions always evaluated true without asking the game, so every such
   hypothesis was reported confirmed. They now query the game (`count` on `entity_exists` is an exact match; `component_equals` with no
   `entity_id` holds when any entity has the value; short names match the end of a registered path). `component_matches` is refused

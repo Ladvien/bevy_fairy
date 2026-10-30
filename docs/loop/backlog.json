@@ -552,6 +552,22 @@
       "status": "fixed",
       "evidence": "tests/hypothesis_assertions.rs (4 of 5 failed before, all pass after)",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-068",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "experiment modify/delete claimed rollback_available:true but undo had no reverse action ('No reverse action available') and had already dropped the history entry; atomic batch claimed 'rolled back' while modifies/deletes persisted",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/experiment_system.rs create_reverse_action returned None for Modify/Delete"
+      },
+      "status": "fixed",
+      "evidence": "tests/fixture_ground_truth.rs::experiment_undo_restores_a_modified_component_when_it_claims_rollback, experiment_delete_does_not_claim_a_rollback_undo_cannot_perform (both failed before)",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
