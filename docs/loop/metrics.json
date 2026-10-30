@@ -1,6 +1,6 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "pending",
+  "sha": "release-v0.6.0",
   "server": {
     "loc": 47558,
     "direct_dependencies": 53,
