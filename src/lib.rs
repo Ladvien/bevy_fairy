@@ -101,7 +101,7 @@ pub use plugin::{
 #[cfg(feature = "plugin-guide")]
 pub use plugin::{
     handle_guide, watch_guide, Checkpoints, Guide, GuideOverlay, GuideOverlayPlugin, GuideParams,
-    Step, StepRecord,
+    GuidePlacement, Step, StepRecord, BEAT_SECONDS,
 };
 
 #[cfg(feature = "plugin-screenshot")]
