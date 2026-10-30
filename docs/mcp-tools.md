@@ -20,7 +20,7 @@ Capture a short sequence of frames and return it as one contact sheet (a PNG, at
 |---|---|---|---|
 | `fps` | number | no | Requested captures per second, 0.5 to 10. Default 4. The real spacing is in the labels. |
 | `frames` | integer | no | Frames to capture after the reference, 1 to 7. Default 4. |
-| `full_frames` | boolean | no | Also save every frame at full resolution as frame-<n>.png. Default false. |
+| `full_frames` | boolean | no | Also save every frame at full resolution as `frame-<n>.png`. Default false. |
 | `inline` | boolean | no | Also return the contact sheet inline, so the agent sees it in the reply. |
 | `save_dir` | string | no | Directory to write sheet.png and ref.png into. Default: a new `burst-<unix_ms>` directory under `$BEVY_FAIRY_CAPTURE_DIR`, or `./debug_captures/` when that variable is unset. |
 | `source` | string | no | `offscreen` (the default) renders the game's own image and leaves out UI. `window` captures the game window, UI included. |

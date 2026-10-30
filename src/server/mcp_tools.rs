@@ -609,7 +609,7 @@ pub struct BurstRequest {
     /// under `$BEVY_FAIRY_CAPTURE_DIR`, or `./debug_captures/` when that variable is unset.
     #[serde(default)]
     pub save_dir: Option<String>,
-    /// Also save every frame at full resolution as frame-<n>.png. Default false.
+    /// Also save every frame at full resolution as `frame-<n>.png`. Default false.
     #[serde(default)]
     pub full_frames: Option<bool>,
     /// Also return the contact sheet inline, so the agent sees it in the reply.

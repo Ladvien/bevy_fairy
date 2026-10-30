@@ -1,6 +1,6 @@
 # 2026-10-30 ring-buffer: bevy_fairy/ring records a query per frame inside the game
 
-Focus: B-021 (always-on ring buffer with trigger) · Outcome: shipped (v0.7.3)
+Focus: B-021 (always-on ring buffer with trigger) · Outcome: shipped (v0.8.0)
 
 ## Summary
 No bug issues were open (#1, #2 answered earlier). Added `bevy_fairy/ring`, a built-in command (reached with `run`) that samples a `world.query` every frame in `Last`, keeps the newest 1-600, stops on an optional JSON-pointer trigger, and dumps samples with frame numbers. State only; a pixel ring beside `burst` stays in B-021.

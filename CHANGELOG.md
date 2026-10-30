@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 - 2026-10-30
+
+Covers everything since 0.7.2. Breaking (semver-checks: 13 checks) because the unreachable `server::tool_orchestration` and `server::tools::orchestration` public modules were deleted; no MCP tool or parameter was removed except `detect_anomaly`'s `start_monitoring`/`stop_monitoring`.
 
 ### Removed
 
