@@ -3,7 +3,6 @@ use crate::server::error::{Error, Result};
 use crate::server::semantic_analyzer::{SemanticAnalyzer, SemanticQueryResult};
 /// Query parsing for natural language to BRP conversion
 use regex::Regex;
-use std::collections::HashMap;
 
 /// Trait for parsing natural language queries into BRP requests
 pub trait QueryParser {
@@ -62,7 +61,7 @@ fn make_get_request(entity: u64, components: Option<Vec<String>>) -> BrpRequest 
 }
 
 /// Build a `world.list_components` request.
-fn make_list_components_request() -> BrpRequest {
+pub(crate) fn make_list_components_request() -> BrpRequest {
     BrpRequest {
         method: crate::server::brp::builtin_methods::BRP_LIST_COMPONENTS_METHOD.to_string(),
         id: None,
@@ -267,94 +266,6 @@ impl QueryParser for RegexQueryParser {
     }
 }
 
-/// Query execution metrics
-#[derive(Debug, Clone)]
-pub struct QueryMetrics {
-    pub query: String,
-    pub execution_time_ms: u64,
-    pub entity_count: usize,
-    pub cache_hit: bool,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// Query result with metadata
-#[derive(Debug, Clone)]
-pub struct QueryResult {
-    pub result: serde_json::Value,
-    pub metrics: QueryMetrics,
-}
-
-/// Cached query result
-#[derive(Debug, Clone)]
-struct CachedResult {
-    result: serde_json::Value,
-    timestamp: std::time::Instant,
-    entity_count: usize,
-}
-
-/// Query cache with TTL support
-pub struct QueryCache {
-    cache: dashmap::DashMap<String, CachedResult>,
-    ttl_seconds: u64,
-}
-
-impl QueryCache {
-    /// Create a new query cache with specified TTL
-    #[must_use]
-    pub fn new(ttl_seconds: u64) -> Self {
-        Self {
-            cache: dashmap::DashMap::new(),
-            ttl_seconds,
-        }
-    }
-
-    /// Get cached result if available and not expired
-    pub fn get(&self, query: &str) -> Option<(serde_json::Value, usize)> {
-        let entry = self.cache.get(query)?;
-
-        if entry.timestamp.elapsed().as_secs() > self.ttl_seconds {
-            drop(entry);
-            self.cache.remove(query);
-            return None;
-        }
-
-        Some((entry.result.clone(), entry.entity_count))
-    }
-
-    /// Cache a query result
-    pub fn set(&self, query: String, result: serde_json::Value, entity_count: usize) {
-        self.cache.insert(
-            query,
-            CachedResult {
-                result,
-                timestamp: std::time::Instant::now(),
-                entity_count,
-            },
-        );
-    }
-
-    /// Clear expired entries from cache
-    pub fn cleanup(&self) {
-        let cutoff = std::time::Instant::now() - std::time::Duration::from_secs(self.ttl_seconds);
-        self.cache.retain(|_, entry| entry.timestamp > cutoff);
-    }
-
-    /// Get cache statistics
-    pub fn stats(&self) -> HashMap<String, usize> {
-        let mut stats = HashMap::new();
-        stats.insert("total_entries".to_string(), self.cache.len());
-
-        let expired_count = self
-            .cache
-            .iter()
-            .filter(|entry| entry.timestamp.elapsed().as_secs() > self.ttl_seconds)
-            .count();
-        stats.insert("expired_entries".to_string(), expired_count);
-
-        stats
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,23 +322,6 @@ mod tests {
         assert!(parser.parse("").is_err());
         assert!(parser.parse("invalid query").is_err());
         assert!(parser.parse("show entity abc").is_err()); // Invalid entity ID
-    }
-
-    #[test]
-    fn test_query_cache() {
-        let cache = QueryCache::new(300); // 5 minute TTL
-
-        let query = "list all entities";
-        let result = serde_json::json!({"entities": []});
-
-        // Cache miss
-        assert!(cache.get(query).is_none());
-
-        // Cache set and hit
-        cache.set(query.to_string(), result.clone(), 0);
-        let cached = cache.get(query).unwrap();
-        assert_eq!(cached.0, result);
-        assert_eq!(cached.1, 0);
     }
 
     #[test]
