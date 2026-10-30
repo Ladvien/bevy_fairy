@@ -22,15 +22,14 @@ use bevy::reflect::*;
 use ::serde::{Deserialize, Serialize};
 #[cfg(not(feature = "bevy-reflection"))]
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::server::bevy_reflection::inspector::{ReflectionMetadata, FieldMetadata, TypeCategory};
-use crate::server::error::{Error, Result};
+use crate::server::bevy_reflection::inspector::{ReflectionMetadata, TypeCategory};
+use crate::server::error::Result;
 
 /// TypeRegistry manager for dynamic component type discovery
 #[derive(Clone)]
@@ -336,34 +335,6 @@ impl TypeRegistryManager {
                 })
             }
         }
-    }
-
-    /// Find aliases for a type name
-    async fn find_type_aliases(&self, type_name: &str) -> Vec<String> {
-        let mut aliases = Vec::new();
-        
-        // Extract short name from full path
-        if let Some(short_name) = type_name.split("::").last() {
-            if short_name != type_name {
-                aliases.push(short_name.to_string());
-            }
-        }
-
-        // Add common Bevy type aliases
-        match type_name {
-            "bevy_transform::components::transform::Transform" => {
-                aliases.extend(vec!["Transform".to_string(), "transform".to_string()]);
-            }
-            "bevy_transform::components::global_transform::GlobalTransform" => {
-                aliases.extend(vec!["GlobalTransform".to_string(), "global_transform".to_string()]);
-            }
-            "bevy_core::name::Name" => {
-                aliases.extend(vec!["Name".to_string(), "name".to_string()]);
-            }
-            _ => {}
-        }
-
-        aliases
     }
 
     /// Query types by name pattern or characteristics

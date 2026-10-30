@@ -331,17 +331,6 @@ impl BevyReflectionInspector {
         }
     }
 
-    /// Find custom inspector for a type
-    async fn find_inspector_for_type(&self, type_path: &str) -> Option<String> {
-        let inspectors = self.custom_inspectors.read().await;
-        for inspector in inspectors.values() {
-            if inspector.supported_types().contains(&type_path.to_string()) {
-                return Some(inspector.name().to_string());
-            }
-        }
-        None
-    }
-
     /// Inspect a component value using reflection
     pub async fn inspect_component(&self, component_type: &str, component_value: &ComponentValue) -> Result<ReflectionInspectionResult> {
         debug!("Inspecting component: {}", component_type);
