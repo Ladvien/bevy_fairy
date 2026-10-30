@@ -443,6 +443,9 @@ Every iteration releases. Publish a new version whenever anything that goes into
 
    If any step fails, fix it on a new commit and rerun the gate. If it stays red, do not publish; log the blocker and stop.
 4. **Publish locally**, in dependency order: `cargo publish -p <crate>` for each crate being released, with the token from `CARGO_REGISTRY_TOKEN` or `cargo login`'s credentials file. Never print, log, or write the token. If it fails for want of a usable token, push the release commit without a tag, log a must-fix item naming what the owner must provide, and stop the release.
+
+   **At most one release every 6 hours** (owner, 2026-10-30: bevy_lights published v0.2.1 through v0.2.20 in one day, and then crates.io answered 429 for three passes in a row, each of which did nothing but retry). Release only when the last tag is more than 6 hours old (`git log -1 --format=%ct <last tag>`); until then the changes ride in the next release. A publish refused with 429 is not retried in this pass or the next: log it once and build, and the next release carries it. A pass that only retries a release is an idle pass.
+
 5. **Tag and push.** Create an annotated tag `v<version>`, or `<crate>-v<version>` per crate, and push the commit and tags. If `origin/main` has commits you don't have, merge them in (never rebase pushed history, never force-push), rerun the gate if the merge touched code, then push. `release.yml` runs on the tag and skips a version already on crates.io: never watch it, and never wait for it.
 6. **Verify.**
    - `cargo info <crate>@<version>` resolves.
