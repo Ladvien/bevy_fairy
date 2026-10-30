@@ -579,3 +579,21 @@ async fn observe_refuses_a_component_name_the_game_does_not_register() {
     let (text, failed) = observe(&tools, "find entities with component fixture_game::Crate").await;
     assert!(!failed, "the registered path is accepted: {text}");
 }
+
+/// A semantic query is built from short names (`Transform`). The game registers full paths, so
+/// the query used to be refused outright (B-065). A short name that ends exactly one registered
+/// path is now resolved, and the answer says which path was used.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_resolves_the_short_names_a_semantic_query_is_built_from() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+
+    let (text, failed) = observe(&tools, "find memory leaks").await;
+    assert!(!failed, "Transform is registered, the semantic query must run: {text}");
+    assert!(
+        text.contains("bevy_transform::components::transform::Transform"),
+        "the answer names the path it used: {text}"
+    );
+    assert!(text.contains("resolved_component_names"), "and says it rewrote the name: {text}");
+}
