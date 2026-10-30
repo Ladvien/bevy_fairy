@@ -650,6 +650,12 @@ async fn observe_diff_reports_the_mover_moving_between_two_reads() {
         fixture_game::MOVER_SPEED * 0.5
     );
     assert!(changes.iter().all(|c| c["entity_id"] == mover), "only the mover was read: {second}");
+    // The summary counts what `changes` lists: one entity, the mover, had a component change. It
+    // said `entities_modified: 0` beside `components_modified: 1`, because it counted only a change
+    // kind the diff never produces (B-078).
+    let summary = &second["diff"]["summary"];
+    assert_eq!(summary["entities_modified"], 1, "the mover is the one entity that changed: {second}");
+    assert_eq!(summary["components_modified"], changes.len(), "every change listed is a modified component: {second}");
 
     // A read of another query covers other components, so it is not compared with this one: the
     // mover's Name and Mover are outside the Transform-only query, not removed from the game.

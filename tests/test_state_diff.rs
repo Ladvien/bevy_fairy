@@ -209,8 +209,10 @@ fn test_game_rules_immutable_components() {
 
 #[test]
 fn test_game_rules_position_rate_limit() {
-    let mut rules = GameRules::default();
-    rules.max_position_change_per_second = Some(10.0);
+    let rules = GameRules {
+        max_position_change_per_second: Some(10.0),
+        ..Default::default()
+    };
 
     let mut change = Change::new(
         ChangeType::ComponentModified,
@@ -226,8 +228,10 @@ fn test_game_rules_position_rate_limit() {
 
 #[test]
 fn test_game_rules_velocity_rate_limit() {
-    let mut rules = GameRules::default();
-    rules.max_velocity_change_per_second = Some(5.0);
+    let rules = GameRules {
+        max_velocity_change_per_second: Some(5.0),
+        ..Default::default()
+    };
 
     let mut change = Change::new(
         ChangeType::ComponentModified,
@@ -539,12 +543,29 @@ fn test_diff_summary_calculation() {
 
     assert_eq!(summary.entities_added, 1);
     assert_eq!(summary.entities_removed, 1);
-    assert_eq!(summary.entities_modified, 0);
+    // Entities 3, 4 and 5 each had a component modified, added or removed. This said 0, which
+    // pinned B-078: the summary counted only `EntityModified`, a kind the diff never produces.
+    assert_eq!(summary.entities_modified, 3);
     assert_eq!(summary.components_added, 1);
     assert_eq!(summary.components_removed, 1);
     assert_eq!(summary.components_modified, 1);
     assert_eq!(summary.total_changes, 5);
     assert_eq!(summary.unexpected_changes, 0);
+}
+
+/// An entity with several component changes is one modified entity, not one per change.
+#[test]
+fn test_diff_summary_counts_each_modified_entity_once() {
+    let modified = |entity, component: &str| {
+        Change::new(ChangeType::ComponentModified, entity, Some(component.to_string()), None, None)
+    };
+    let changes = vec![modified(7, "Transform"), modified(7, "Velocity"), modified(8, "Transform")];
+
+    let summary = DiffSummary::from_changes(&changes);
+
+    assert_eq!(summary.entities_modified, 2);
+    assert_eq!(summary.components_modified, 3);
+    assert!(summary.format().contains("~2 entities"), "{}", summary.format());
 }
 
 #[test]
@@ -746,8 +767,10 @@ fn test_engine_configuration_updates() {
     };
     engine.set_fuzzy_config(new_config);
 
-    let mut new_rules = GameRules::default();
-    new_rules.max_position_change_per_second = Some(100.0);
+    let new_rules = GameRules {
+        max_position_change_per_second: Some(100.0),
+        ..Default::default()
+    };
     engine.set_game_rules(new_rules);
 
     // Test that the new configuration is applied.

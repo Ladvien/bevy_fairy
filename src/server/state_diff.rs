@@ -692,7 +692,11 @@ pub struct DiffSummary {
 }
 
 impl DiffSummary {
-    /// Create summary from a list of changes
+    /// Create summary from a list of changes.
+    ///
+    /// `entities_modified` counts the distinct entities with a component added, removed or
+    /// modified. The diff reports an entity's change as component-level changes, never as one
+    /// `EntityModified`, so counting only that kind answered 0 beside every component change.
     #[must_use]
     pub fn from_changes(changes: &[Change]) -> Self {
         let mut summary = Self {
@@ -705,21 +709,34 @@ impl DiffSummary {
             unexpected_changes: 0,
             total_changes: changes.len(),
         };
+        let mut modified_entities = HashSet::new();
 
         for change in changes {
             match change.change_type {
                 ChangeType::EntityAdded => summary.entities_added += 1,
                 ChangeType::EntityRemoved => summary.entities_removed += 1,
-                ChangeType::EntityModified => summary.entities_modified += 1,
-                ChangeType::ComponentAdded => summary.components_added += 1,
-                ChangeType::ComponentRemoved => summary.components_removed += 1,
-                ChangeType::ComponentModified => summary.components_modified += 1,
+                ChangeType::EntityModified => {
+                    modified_entities.insert(change.entity_id);
+                }
+                ChangeType::ComponentAdded => {
+                    summary.components_added += 1;
+                    modified_entities.insert(change.entity_id);
+                }
+                ChangeType::ComponentRemoved => {
+                    summary.components_removed += 1;
+                    modified_entities.insert(change.entity_id);
+                }
+                ChangeType::ComponentModified => {
+                    summary.components_modified += 1;
+                    modified_entities.insert(change.entity_id);
+                }
             }
 
             if change.is_unexpected {
                 summary.unexpected_changes += 1;
             }
         }
+        summary.entities_modified = modified_entities.len();
 
         summary
     }
@@ -939,8 +956,10 @@ mod tests {
     #[test]
     fn test_game_rules_unexpected_changes() {
         let mut diff_engine = StateDiff::new();
-        let mut rules = GameRules::default();
-        rules.max_position_change_per_second = Some(10.0);
+        let rules = GameRules {
+            max_position_change_per_second: Some(10.0),
+            ..Default::default()
+        };
         diff_engine.set_game_rules(rules);
 
         let before = diff_engine.create_snapshot(vec![create_test_entity(
@@ -963,7 +982,7 @@ mod tests {
 
     #[test]
     fn test_change_grouping() {
-        let mut diff_engine = StateDiff::new();
+        let diff_engine = StateDiff::new();
 
         let changes = vec![
             Change::new(
