@@ -188,8 +188,7 @@ pub struct HypothesisRequest {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AnomalyRequest {
-    /// The operation to run. One of `detect`, `configure`, `start_monitoring`, `stop_monitoring`,
-    /// `status`.
+    /// The operation to run. One of `detect`, `configure`, `status`.
     pub action: String,
     /// How many samples the window covers.
     #[serde(default)]
