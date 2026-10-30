@@ -1,102 +1,6 @@
 {
   "items": [
     {
-      "id": "B-009",
-      "kind": "bug",
-      "area": "input",
-      "title": "injected cursor emits no CursorMoved, so bevy_picking and bevy_ui never see it",
-      "must_fix": {
-        "misleads": false,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "crates/bevy_debugger_bevy/src/input.rs writes DebugCursor only; bevy_picking-0.20.0/src/input.rs:133 tracks the pointer from WindowEvent::CursorMoved"
-      },
-      "status": "fixed",
-      "evidence": "confirmed by issue #9 and tests/plugin_pointer.rs (fails with routing removed, passes with it); fixed 2026-10-29 in v0.3.0",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-010",
-      "kind": "bug",
-      "area": "server",
-      "title": "no input tool and no watch tool; the plugin's core capabilities are reachable only through raw `brp`",
-      "must_fix": {
-        "misleads": false,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "src/mcp_tools.rs registers 15 tools, none of them input or watch; BrpClient parses one JSON response at src/brp_client.rs:263 so streaming methods fail"
-      },
-      "status": "fixed",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the BRP client. 2026-10-30: stale as filed: `watch` is a registered tool and input is bevy_fairy/input via `run`/`commands` (docs/mcp-tools.md).",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-011",
-      "kind": "bug",
-      "area": "dead-code",
-      "title": "src/cli.rs is never declared as a module, so it is never compiled",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "`grep -n 'mod cli' src/lib.rs src/main.rs` finds nothing"
-      },
-      "status": "fixed",
-      "evidence": "Deleted 2026-10-30 (v0.6.0).",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-012",
-      "kind": "bug",
-      "area": "dead-code",
-      "title": "`--tcp`/`--server` binds a port, accepts a connection, logs capabilities and drops it without reading anything",
-      "must_fix": {
-        "misleads": false,
-        "blocks": true,
-        "common_no_workaround": true,
-        "evidence": "src/main.rs:60 advertises the flag; src/mcp_server.rs:170-189 handle_connection"
-      },
-      "status": "fixed",
-      "evidence": "tests/cli_args.rs::the_tcp_flags_that_never_served_anything_are_refused (hung before, passes after); flags removed, v0.4.0",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-013",
-      "kind": "bug",
-      "area": "dead-code",
-      "title": "about 60 public modules are unreachable from the 15 registered tools; three BRP clients, two replay tools, two observe tools",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "src/lib.rs:158-276 exports them; brp_client_v2, brp_client_refactored, tools/replay_v2.rs are unused"
-      },
-      "status": "fixed",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038). 2026-10-30: 38 unreachable server modules deleted incl. legacy mcp_server and the profilers/session manager; remaining unreachable items are inside tools/ (replay_v2, observe_optimized). 2026-10-30: replay_v2, observe_optimized, query_optimization, parallel_query_executor and their bench deleted; no unreachable tool module remains.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-016",
-      "kind": "bug",
-      "area": "docs",
-      "title": "plugin comments cite Bevy 0.19 engine paths and say handlers run in `Last`; they run in `RemoteLast`",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "crates/bevy_debugger_bevy/src/input.rs:235, :263, :340; guide.rs:430"
-      },
-      "status": "fixed",
-      "evidence": "Verified 2026-10-21.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
       "id": "B-017",
       "kind": "bug",
       "area": "protocol",
@@ -109,38 +13,6 @@
       },
       "status": "deferred",
       "evidence": "Its own iteration per the loop's priority order. A watch or burst-capture design has to fit the 2026-07-28 task model, so do it before those.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-018",
-      "kind": "bug",
-      "area": "tests",
-      "title": "`test_profiling_history` is ignored: 'Frame history implementation needs refactoring'",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "cargo test -p bevy_debugger_mcp output: 4 ignored, one is test_profiling_history"
-      },
-      "status": "fixed",
-      "evidence": "2026-10-30: root cause was get_system_history stamping samples with frame.start_time.elapsed() (age, falls over time) instead of a wall-clock time; fixed, test un-ignored and passes.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-019",
-      "kind": "bug",
-      "area": "build",
-      "title": "`observability` does not compile: 42 errors, and `full-debugging` inherits the failure",
-      "must_fix": {
-        "misleads": false,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "scripts/ratchet.sh --record at e93da67: features observability=42, full-debugging=42; the errors are in src/observability/metrics.rs, health.rs, tracing.rs"
-      },
-      "status": "fixed",
-      "evidence": "Verified 2026-10-21 by the ratchet. The default build is clean and the other 22 features build. CI's `cargo build --all-features` is red because of this. Earlier notes said 48 errors; the ratchet counts 42. Fixed 2026-10-29 by deleting the feature, module, config and tests (v0.5.0).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -177,102 +49,6 @@
       "first_seen": "2026-10-21"
     },
     {
-      "id": "B-024",
-      "kind": "bug",
-      "area": "tooling",
-      "title": "the tools' request structs and the handlers' own types are two sources of truth for the same argument",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/mcp_tools.rs request structs vs src/experiment_system.rs Action/Assertion"
-      },
-      "status": "fixed",
-      "evidence": "experiment/hypothesis/detect_anomaly now serialise the request struct into the handler arguments (request_args in src/server/mcp_tools.rs); no hand-written field list remains. tests/tool_contract.rs and tests/docs_drift.rs pass.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-025",
-      "kind": "bug",
-      "area": "docs",
-      "title": "docs/mcp-tools.md does not exist; the tool reference is not generated from the registered schemas",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "the loop's docs rule names docs/mcp-tools.md as a generated output; there is no such file"
-      },
-      "status": "fixed",
-      "evidence": "The docs rule says `docs/mcp-tools.md` is generated from the registered schemas and that the docs-drift test covers it. Neither the file nor the generator exists. The docs-drift test covers README, the book, CLAUDE.md and the instructions string instead. Stale: docs/mcp-tools.md exists, generated by tests/tool_list.rs.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-030",
-      "kind": "change",
-      "area": "server",
-      "title": "the server's 72 public modules are one directory now, and most of them are unreachable from the 14 tools",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/server/mod.rs declares 72 modules; the tool router reaches about a dozen"
-      },
-      "status": "fixed",
-      "evidence": "The merge moved the server's modules into `src/server/`, which makes the dead ones visible as a list in one file. B-013 is the same finding from before the merge; this is the place to act on it. 2026-10-30: 38 unreachable modules (~21k lines) and the tests/benches that only exercised them deleted; 28 modules remain, all reachable from main.rs.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
-      "id": "B-031",
-      "kind": "bug",
-      "area": "docs",
-      "title": "the launchd plist runs `bevy-fairy serve --config ...` and the troubleshooting guide runs `export-sessions`; neither subcommand exists",
-      "must_fix": {
-        "misleads": true,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "launchd/com.bevy-fairy.plist:13-16; docs/troubleshooting/README.md:952; the subcommands live only in src/server/cli.rs, which is never compiled (B-011)"
-      },
-      "status": "fixed",
-      "evidence": "Deleted launchd/ and book/MACOS_SERVICE.md; fixed homebrew formula, install.sh, troubleshooting. tests/docs_drift.rs::no_shipped_file_tells_the_reader_to_run_a_subcommand_the_binary_lacks failed before.",
-      "last_failure": "",
-      "first_seen": "2026-10-22"
-    },
-    {
-      "id": "B-038",
-      "kind": "debt",
-      "area": "server",
-      "title": "delete the stress modules nothing reaches: src/server/tools/stress.rs, src/server/stress_test_system.rs, and their registrations in mcp_server.rs, tool_orchestration.rs and tools/orchestration.rs",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "stress_test left tools/list in B-034; the only other caller is the legacy McpServer behind --tcp, which drops every connection (B-012)"
-      },
-      "status": "fixed",
-      "evidence": "2026-10-30: stress.rs, stress_test_system.rs, registrations, debug_performance pipeline and `stress-testing` feature deleted; workspace tests + ratchet green.",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-040",
-      "kind": "bug",
-      "area": "docs",
-      "title": "README and docs/tools describe tools and features that do not exist: 'Internal Debug Commands (11 Integrated Tools)', 'all 6 debugging tools', `detect_anomaly \"frame_time\"`, a `bevy-fairy <tool>` CLI",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "README.md 'Internal Debug Commands' section; docs/tools/README.md intro and quick-start"
-      },
-      "status": "fixed",
-      "evidence": "2026-10-30: deleted docs/tools, docs/api, docs/api-reference.md, docs/troubleshooting (fiction); docs_drift now checks callTool examples and relative links",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
       "id": "B-042",
       "kind": "debt",
       "area": "ci",
@@ -305,54 +81,6 @@
       "first_seen": "2026-10-23"
     },
     {
-      "id": "B-045",
-      "kind": "change",
-      "area": "watch",
-      "title": "a watch tool: agents poll the same query dozens of times to see a value change over frames",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "evals 2026-10-23 spinner_stops: 52 calls with 31 repeats at a497577, 37 calls with 16 repeats at dcd9805; mover_speed 4-7 repeats"
-      },
-      "status": "fixed",
-      "evidence": "watch tool shipped in v0.3.5; fixture_ground_truth::watch_* tests; dev spinner_stops 19 calls (was 37-52), mover_speed 5",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-047",
-      "kind": "bug",
-      "area": "brp",
-      "title": "agents guess `registry.schema` params (`with_crates: null`) and get refused; `brp`'s description gives no shape for any method's params",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "evals 2026-10-23: 8 brp game refusals over six dev runs, 4 of them registry.schema 'invalid type: null, expected a sequence' or 'boolean false, expected a sequence'"
-      },
-      "status": "fixed",
-      "evidence": "Every agent recovered on the next call. A one-line example per common method in the description, or a pointer to `rpc.discover`, would cut it; measure with the dev evals' isError count. Fixed 0.7.1: params shapes in the schema, example-run test tests/fixture_ground_truth.rs::the_params_examples_in_the_brp_schema_are_accepted_by_the_game.",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-048",
-      "kind": "bug",
-      "area": "tools",
-      "title": "handler `Err`s (guide refusals, experiment's missing `actions`, ...) come back as JSON-RPC internal errors, not as tool results with isError",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/server/mcp_tools.rs: every wrapper maps `Err(e)` to `McpError::internal_error`; src/server/tools/guide.rs returns `Error::Validation` for an app refusal. Found by the 2026-10-23 review"
-      },
-      "status": "fixed",
-      "evidence": "tests/tool_contract.rs::a_handler_error_comes_back_as_a_tool_error_the_model_can_read; also found execute with empty actions succeeded with 0 results",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
       "id": "B-049",
       "kind": "bug",
       "area": "evals",
@@ -369,219 +97,82 @@
       "first_seen": "2026-10-23"
     },
     {
-      "id": "B-051",
-      "kind": "bug",
-      "area": "ratchet",
-      "title": "the ratchet's touched-file check passed tools/guide.rs while clippy reported a result_large_err in it",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "scripts/ratchet.sh with tools/guide.rs as a touched file: 'ratchet: OK'; `cargo clippy --all-targets --message-format=short` on the same code: 'warning: the `Err`-variant returned from this function is very large --> src/server/tools/guide.rs:48:78'; guide.rs is not in known_red.clippy_by_file, so the baseline allowed 0"
-      },
-      "status": "fixed",
-      "evidence": "Confirmed 2026-10-30: spans[0] charged 882 result_large_err warnings to error.rs; guide.rs read 0. Fixed: select is_primary span; per-file baseline re-attributed (sum 1368). Probe: 2 probe fns added to guide.rs -> primary attribution 8, first-span 2.",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-052",
+      "id": "B-074",
       "kind": "change",
-      "area": "server",
-      "title": "box the crate's Error so result_large_err (937 at baseline) goes away in one sweep; it changes public signatures, so it belongs in a minor release",
+      "area": "dead-code",
+      "title": "delete the unreachable debug-command router: src/server/debug_command_processor.rs, src/server/entity_inspector.rs, tests/entity_inspector_integration_tests.rs, BrpClient::with_debug_router, and the DebugCommand/DebugResponse types (plus payload types only they use) in src/server/brp/mod.rs",
       "must_fix": {
         "misleads": false,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "71adcb4 boxed guide::handle's error to clear one result_large_err and was reverted (8d73f17): `bevy_fairy::server::tools::guide::handle` is public and 0.2.0 was published with `-> Result<Value>`"
+        "evidence": "with_debug_router has no caller; debug_router is read only by BrpClient's Debug impl; DebugCommand/DebugResponse/EntityMetadata/... are used only by these two files and their test (rg -w, 2026-10-30)"
       },
-      "status": "fixed",
-      "evidence": "ErrorContext boxed in Error::WithContext; clippy::result_large_err 485 -> 0 (default features, all targets); ratchet OK; workspace tests --all-features green",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-053",
-      "kind": "bug",
-      "area": "tests",
-      "title": "tests/plugin_guide_steps.rs is gated on `#![cfg(feature = \"guide\")]`, a feature that does not exist (it is `plugin-guide`), so its tests silently compile to zero",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "cargo test --features plugin-guide prints 'running 0 tests' for plugin_guide_steps; rustc warns unexpected cfg value `guide`"
-      },
-      "status": "fixed",
-      "evidence": "gate removed; 19 tests now run and pass (tests/plugin_guide_steps.rs); v0.3.3",
-      "last_failure": "protected test file; fixing the cfg is an evaluator change, left for a human pass",
-      "first_seen": "2026-10-29"
-    },
-    {
-      "id": "B-060",
-      "kind": "bug",
-      "area": "hypothesis",
-      "title": "hypothesis schema advertised variation_type values the handler refuses and fields it never reads",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "mcp_tools.rs vs tools/hypothesis.rs parse_variation_strategy"
-      },
-      "status": "fixed",
-      "evidence": "tests/tool_contract.rs::every_advertised_variation_type_runs",
+      "status": "blocked",
+      "evidence": "About 2,000 lines plus ~600 in brp/mod.rs. Needs the owner's express OK to `git rm` the three files: CLAUDE.md's rule says deleting files this pass did not create needs permission by name, and a loop brief is not permission. Command: git rm src/server/debug_command_processor.rs src/server/entity_inspector.rs tests/entity_inspector_integration_tests.rs",
       "last_failure": "",
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-061",
-      "kind": "bug",
-      "area": "schema",
-      "title": "replay, scene and observe advertise fields with empty descriptions; replay.action is not enumerated",
+      "id": "B-075",
+      "kind": "change",
+      "area": "dead-code",
+      "title": "src/server/bevy_reflection/ (5 files, 2,953 lines) is unreachable from every tool since observe dropped `reflection`",
       "must_fix": {
         "misleads": false,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "docs/mcp-tools.md"
+        "evidence": "rg 'bevy_reflection::' outside the module: no hits after b964dc5"
       },
-      "status": "fixed",
-      "evidence": "tests/tool_list.rs::replay_advertises_its_actions_and_every_argument_they_read, every_advertised_argument_has_a_description",
+      "status": "blocked",
+      "evidence": "Deleting it is `git rm -r src/server/bevy_reflection` plus `pub mod bevy_reflection` in src/server/mod.rs; needs the owner's OK naming the path (same rule as B-074).",
       "last_failure": "",
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-062",
-      "kind": "bug",
+      "id": "B-076",
+      "kind": "change",
       "area": "observe",
-      "title": "observe keyed a single-entity read (show entity N) on entity 0: reflection_data.entity_id and diff snapshots named the wrong entity",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/server/tools/observe.rs unwrap_or(0) on a reply that never carries the entity"
-      },
-      "status": "fixed",
-      "evidence": "tests/agent_tools.rs::observe_reflection_names_the_entity_that_was_asked_about (failed with entity_id 0 before)",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-063",
-      "kind": "bug",
-      "area": "observe",
-      "title": "observe cached each query for 5 minutes and answered a repeat with the first read's rows under a fresh timestamp",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "live: two reads 1.5 s apart returned cache_hit true and identical state"
-      },
-      "status": "fixed",
-      "evidence": "tests/fixture_ground_truth.rs::observe_reads_the_live_game_every_time_it_is_asked (mover x identical before)",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-064",
-      "kind": "bug",
-      "area": "observe",
-      "title": "observe filter naming an unregistered component (short name such as the advertised \"Name\", or Transform in semantic queries) returned [] with entity_count 0; list components reported its 323 type names as entity_count",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "live against fixture_game: \"find entities with component Crate\" -> result [] entity_count 0"
-      },
-      "status": "fixed",
-      "evidence": "tests/fixture_ground_truth.rs::observe_refuses_a_component_name_the_game_does_not_register; observe.rs unit tests for count_of",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-065",
-      "kind": "bug",
-      "area": "observe",
-      "title": "semantic queries (find stuck/fast entities, overlapping colliders, memory leaks, physics violations) hard-code short component names (Transform, Velocity, Collider, Health, RigidBody); with B-064 they now refuse instead of silently returning nothing, so they are unusable until they resolve full paths",
+      "title": "observe::handle still dispatches on serde_json::Value string keys; ObserveState keeps a snapshot history (diff_against_history, clear_history) no field can reach",
       "must_fix": {
         "misleads": false,
-        "blocks": true,
+        "blocks": false,
         "common_no_workaround": false,
-        "evidence": "live: \"find stuck entities\" -> component not registered: Transform; src/server/semantic_analyzer.rs:208-301"
+        "evidence": "src/server/mcp_tools.rs builds json!({query, diff}) for observe::handle; the tool contract asks for the handler to take the request struct"
       },
-      "status": "fixed",
-      "evidence": "tests/fixture_ground_truth.rs::observe_resolves_the_short_names_a_semantic_query_is_built_from failed before, passes after; semantic queries rewrite a short name ending exactly one registered path, reported in metadata.resolved_component_names; ambiguous/unknown names still refused. Caller-typed short names still refused (existing test pins it). Velocity/Collider/Health/RigidBody remain unregistered in the fixture so those queries refuse honestly.",
+      "status": "open",
+      "evidence": "In-file edits only, no file deletion needed.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-066",
+      "id": "B-077",
       "kind": "bug",
-      "area": "replay",
-      "title": "replay record: sample_rate <= 0 panicked the recorder task (status kept saying recording, no frames); rates above 30 were silently recorded at 30 by a fixed 33 ms poll",
+      "area": "observe",
+      "title": "observe semantic queries (find stuck entities, show fast moving objects, ...) never send their value thresholds: query_params ignores where_clause, so every entity with the named components comes back while semantic_analysis claims a velocity threshold was applied",
       "must_fix": {
         "misleads": true,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "src/server/tools/replay.rs record loop slept 33 ms; recording_system.rs:180 Duration::from_secs_f32(1/rate)"
+        "evidence": "src/server/brp/mod.rs query_params reads only with/without; src/server/semantic_analyzer.rs:208-247 builds where_clause thresholds (independent review of d148e25)"
       },
-      "status": "fixed",
-      "evidence": "replay::tests::record_refuses_a_sample_rate_that_cannot_be_a_period, recorder_polls_at_the_requested_rate_not_a_fixed_33_ms",
+      "status": "open",
+      "evidence": "Not reproduced against the fixture yet: it has no Velocity component, so the semantic query is refused there. Needs a fixture component or a fake-game test first. The observe description stopped offering semantic queries as filters in d148e25; the query field still lists them as accepted shapes.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-067",
+      "id": "B-078",
       "kind": "bug",
-      "area": "hypothesis",
-      "title": "entity_exists / component_equals / component_matches assertions returned true without querying the game",
-      "status": "fixed",
-      "evidence": "tests/hypothesis_assertions.rs (4 of 5 failed before, all pass after)",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-068",
-      "kind": "bug",
-      "area": "experiment",
-      "title": "experiment modify/delete claimed rollback_available:true but undo had no reverse action ('No reverse action available') and had already dropped the history entry; atomic batch claimed 'rolled back' while modifies/deletes persisted",
+      "area": "observe",
+      "title": "observe diff summary reports entities_modified 0 while an entity's component changed: nothing ever produces ChangeType::EntityModified",
       "must_fix": {
         "misleads": true,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "src/server/experiment_system.rs create_reverse_action returned None for Modify/Delete"
+        "evidence": "live proof 2026-10-30: summary components_modified 1, entities_modified 0 for the moving mover; src/server/state_diff.rs DiffSummary::from_changes counts only EntityModified"
       },
-      "status": "fixed",
-      "evidence": "tests/fixture_ground_truth.rs::experiment_undo_restores_a_modified_component_when_it_claims_rollback, experiment_delete_does_not_claim_a_rollback_undo_cannot_perform (both failed before)",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-069",
-      "kind": "bug",
-      "area": "anomaly",
-      "title": "detect_anomaly start_monitoring set a flag and answered 'Continuous monitoring started' with no task running; status reported is_monitoring true",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/server/tools/anomaly.rs handle_start_monitoring: 'In a real implementation, this would start a background task'"
-      },
-      "status": "fixed",
-      "evidence": "anomaly::tests::monitoring_actions_are_refused_not_pretended failed before, passes after",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-070",
-      "kind": "bug",
-      "area": "anomaly",
-      "title": "detect_anomaly configure resets every unspecified field to default instead of keeping the current config; action is a free string with Ok(error JSON) for unknown values",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "anomaly.rs handle_configure starts from AnomalyConfig::default()"
-      },
-      "status": "fixed",
-      "evidence": "tools/anomaly.rs::configure_keeps_fields_it_was_not_given, configure_refuses_a_value_it_cannot_apply; status now reports config in force",
+      "status": "open",
+      "evidence": "tests/test_state_diff.rs::test_diff_summary_calculation asserts entities_modified == 0 for three entities with component changes; a fix changes that expectation (justify it in the report). state_diff.rs has 2 test-module clippy warnings to clear when touched.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }

@@ -63,7 +63,7 @@
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
-    "recorded_at_sha": "1a4db7d",
+    "recorded_at_sha": "cb8c933",
     "features": {
       "server": 0,
       "plugin": 0,
@@ -100,21 +100,19 @@
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
       "clippy::manual_range_contains": 3,
-      "clippy::manual_strip": 2,
       "clippy::needless_borrows_for_generic_args": 8,
       "clippy::new_without_default": 2,
       "clippy::should_implement_trait": 2,
       "clippy::single_component_path_imports": 1,
       "clippy::useless_vec": 2,
-      "clippy::vec_init_then_push": 1,
-      "dead_code": 14,
+      "dead_code": 12,
       "unused_imports": 6,
       "unused_must_use": 1,
       "unused_mut": 1,
       "unused_variables": 16
     },
     "clippy_by_file": {
-      "src/server/anomaly_detector.rs": 8,
+      "src/server/anomaly_detector.rs": 5,
       "src/server/brp_validation.rs": 1,
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,
@@ -125,7 +123,6 @@
       "src/server/state_diff.rs": 2,
       "src/server/timeline_branching.rs": 7,
       "src/server/tools/experiment.rs": 5,
-      "src/server/tools/observe.rs": 2,
       "tests/brp_validation_tests.rs": 9,
       "tests/dependency_audit_test.rs": 4,
       "tests/entity_inspector_integration_tests.rs": 22,
@@ -135,6 +132,7 @@
       "tests/test_state_diff.rs": 3
     },
     "failing_or_ignored_tests": [
+      "observe_diff_reports_the_mover_moving_between_two_reads|FAILED",
       "src/server/brp_command_handler.rs - server::brp_command_handler::BrpCommandHandler (line 62)|ignored"
     ]
   },
