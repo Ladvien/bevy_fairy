@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 - 2026-10-30
 
-Breaking: `observe` lost its `reflection` argument and its semantic phrases, `QueryParser::parse` returns a `ParsedQuery` and lost `parse_semantic`, `observe::handle` takes `&ObserveRequest`, `ObserveState` lost its unreachable snapshot history, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted.
+Covers everything since 0.8.0. Breaking (semver-checks: 9 major checks): `observe` lost its `reflection` argument and its semantic phrases, `QueryParser::parse` returns a `ParsedQuery` and lost `parse_semantic`, `observe::handle` takes `&ObserveRequest`, `ObserveState` lost its unreachable snapshot history, and the unreachable `server::replay_actor` and `server::resource_manager` public modules were deleted. No MCP tool was removed; `observe` callers that sent `reflection` or a semantic phrase now get a refusal naming what to use instead.
 
 ### Removed
 

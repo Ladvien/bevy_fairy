@@ -81,7 +81,7 @@ This takes a game you already have and an agent that speaks MCP, such as Claude 
 # Cargo.toml
 [dependencies]
 bevy = "0.20"
-bevy_fairy = { version = "0.8", default-features = false, features = ["plugin"] }
+bevy_fairy = { version = "0.9", default-features = false, features = ["plugin"] }
 ```
 
 ```rust
