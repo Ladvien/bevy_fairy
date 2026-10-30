@@ -18,6 +18,8 @@
 //!   startup, one step per frame.
 //! - **Time and quit.** `bevy_fairy/time` pauses the virtual clock or changes its
 //!   speed. `bevy_fairy/quit` exits cleanly.
+//! - **Ring buffer.** `bevy_fairy/ring` keeps the newest N frames of a `world.query`
+//!   result, recorded inside the game every frame, and dumps them with frame numbers.
 //! - **UI text.** With `plugin-ui-text`, `bevy_fairy/ui_text` lists the `bevy_ui` text the
 //!   player can read, each node with its on-screen rect and, when hidden, why.
 //! - **Input.** `bevy_fairy/input` injects keys, clicks, drags and text as the
@@ -70,6 +72,7 @@ mod input;
 mod quit;
 mod ready;
 mod pointer;
+mod ring;
 mod scene;
 mod time;
 
@@ -172,6 +175,7 @@ impl Plugin for DebuggerPlugin {
         app.init_resource::<Captures>();
 
         time::register(app, self.host_owns_clock);
+        ring::register(app);
         #[cfg(feature = "plugin-ui-text")]
         ui_text::register(app);
 

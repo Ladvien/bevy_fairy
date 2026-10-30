@@ -9,6 +9,7 @@
 
 ### Added
 
+- `bevy_fairy/ring` (a built-in command, called with `run`): an always-on, bounded recording of a `world.query` result, one sample per frame, taken inside the game at the end of each frame. `start` (query, `frames` 1-600, optional `trigger` {JSON pointer, value} that stops recording on the first matching frame), `dump` (optionally the newest `last` N), `stop`, `status`. Every sample has its frame number and elapsed seconds; the reply says whether it is recording, how many samples were evicted and the trigger frame. The query defaults to `strict`, because `world.query` otherwise matches nothing for a component path it cannot find and the buffer would fill with empty arrays; a result over 256 KiB ends the recording with the reason. State only: pixels are `burst`'s job.
 - `burst` tool: a reference frame plus 1-7 captures at 0.5-10 fps (default 4) as one contact sheet (2 rows x 4 columns at most). Each cell is
   labelled with the game frame the plugin reported for it and the milliseconds since the sequence began, so a sprite that stops
   moving or a flash is visible in one image; a cell with no frame reported is labelled `F-`. Saves `sheet.png` and `ref.png`
