@@ -66,7 +66,6 @@ pub mod anomaly_detector;
 pub mod resource_manager;
 
 // Infrastructure
-pub mod tool_orchestration;
 pub mod tools;
 
 // Panic prevention and reliability testing
