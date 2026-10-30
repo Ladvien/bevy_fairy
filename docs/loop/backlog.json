@@ -267,8 +267,8 @@
         "common_no_workaround": false,
         "evidence": "launchd/com.bevy-fairy.plist:13-16; docs/troubleshooting/README.md:952; the subcommands live only in src/server/cli.rs, which is never compiled (B-011)"
       },
-      "status": "open",
-      "evidence": "Before B-032 the plist silently fell into stdio mode with a closed stdin and exited; now it exits 2 naming `serve`. Fix with B-011/B-012: decide whether the server runs as a service at all (MCP clients spawn stdio servers), then delete or correct the plist and the doc.",
+      "status": "fixed",
+      "evidence": "Deleted launchd/ and book/MACOS_SERVICE.md; fixed homebrew formula, install.sh, troubleshooting. tests/docs_drift.rs::no_shipped_file_tells_the_reader_to_run_a_subcommand_the_binary_lacks failed before.",
       "last_failure": "",
       "first_seen": "2026-10-22"
     },

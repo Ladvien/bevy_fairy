@@ -407,3 +407,40 @@ fn the_docs_name_the_plugin_the_way_the_crate_exports_it() {
         }
     }
 }
+
+/// The binary takes `--version`, `--help`, and (as a legacy alias for stdio) `stdio`/`serve`;
+/// nothing else (`tests/cli_args.rs`). A launchd plist, a Homebrew caveat and a troubleshooting
+/// step told readers to run `serve --config`, `setup-claude` and `export-sessions`, which were
+/// subcommands of a `cli.rs` that was never compiled, and the plist exited 2 on load. An MCP
+/// server is spawned by its client over stdio, so a launchd service has nothing to serve.
+#[test]
+fn no_shipped_file_tells_the_reader_to_run_a_subcommand_the_binary_lacks() {
+    let mut files: Vec<(String, String)> = doc_files();
+    for dir in ["scripts", "homebrew", "launchd"] {
+        let path = root().join(dir);
+        let Ok(entries) = fs::read_dir(&path) else { continue };
+        for entry in entries.flatten() {
+            if let Ok(text) = fs::read_to_string(entry.path()) {
+                files.push((format!("{dir}/{}", entry.file_name().to_string_lossy()), text));
+            }
+        }
+    }
+    for top in ["install.sh"] {
+        files.push((top.to_string(), read(top)));
+    }
+    for (what, text) in files {
+        for stale in [
+            "export-sessions",
+            "bevy-fairy setup-claude",
+            "$BINARY_NAME setup-claude",
+            "serve --config",
+            "<string>serve</string>",
+        ] {
+            assert!(
+                !text.contains(stale),
+                "{what} names `{stale}`, which the binary does not have. The binary speaks MCP \
+                 over stdio and is spawned by its client; see tests/cli_args.rs."
+            );
+        }
+    }
+}

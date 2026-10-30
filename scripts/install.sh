@@ -200,7 +200,7 @@ setup_claude() {
     # Check if Claude is installed
     if [ ! -d "$(dirname "$CLAUDE_CONFIG")" ]; then
         print_warn "Claude Desktop not found. Please install it first."
-        print_info "You can manually configure it later by running: $BINARY_NAME setup-claude"
+        print_info "You can configure it later with scripts/setup-claude.sh, or add $BINARY_NAME to your MCP client by hand"
         return
     fi
     
