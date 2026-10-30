@@ -75,10 +75,6 @@ pub mod tools;
 // Bevy reflection integration (Epic BEVDBG-012)
 pub mod bevy_reflection;
 
-// Query performance optimization (Epic BEVDBG-014)
-pub mod query_optimization;
-pub mod parallel_query_executor;
-
 // Production features
 
 // Epic 6: Production features - Observability stack

@@ -4,6 +4,8 @@
 
 ### Removed
 
+- `server::tools::replay_v2`, `server::tools::observe_optimized`, `server::query_optimization`, `server::parallel_query_executor`,
+  the one bench that exercised them, and the `criterion` dev-dependency. No registered tool reached any of them.
 - 38 server modules (about 21,000 lines) that nothing the binary runs could reach, and the tests and
   benches that only exercised them: the legacy `mcp_server` (the live one is `mcp_server_v2`), the
   session manager, system/memory profilers, issue detector, performance budget, query builder,

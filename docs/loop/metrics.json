@@ -1,10 +1,10 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "dead-modules",
+  "sha": "dead-tools",
   "server": {
-    "loc": 24076,
-    "direct_dependencies": 53,
-    "public_modules": 28,
+    "loc": 21861,
+    "direct_dependencies": 52,
+    "public_modules": 26,
     "mcp_tools": 14,
     "release_binary_bytes": 99925248,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."

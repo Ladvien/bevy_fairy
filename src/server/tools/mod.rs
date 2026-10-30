@@ -3,7 +3,5 @@ pub mod experiment;
 pub mod guide;
 pub mod hypothesis;
 pub mod observe;
-pub mod observe_optimized;
 pub mod orchestration;
 pub mod replay;
-pub mod replay_v2;

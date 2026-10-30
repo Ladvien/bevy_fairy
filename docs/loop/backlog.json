@@ -27,8 +27,8 @@
         "common_no_workaround": false,
         "evidence": "src/mcp_tools.rs registers 15 tools, none of them input or watch; BrpClient parses one JSON response at src/brp_client.rs:263 so streaming methods fail"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the BRP client.",
+      "status": "fixed",
+      "evidence": "Verified 2026-10-21 by reading the tool router and the BRP client. 2026-10-30: stale as filed: `watch` is a registered tool and input is bevy_fairy/input via `run`/`commands` (docs/mcp-tools.md).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -75,8 +75,8 @@
         "common_no_workaround": true,
         "evidence": "src/lib.rs:158-276 exports them; brp_client_v2, brp_client_refactored, tools/replay_v2.rs are unused"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038). 2026-10-30: 38 unreachable server modules deleted incl. legacy mcp_server and the profilers/session manager; remaining unreachable items are inside tools/ (replay_v2, observe_optimized).",
+      "status": "fixed",
+      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038). 2026-10-30: 38 unreachable server modules deleted incl. legacy mcp_server and the profilers/session manager; remaining unreachable items are inside tools/ (replay_v2, observe_optimized). 2026-10-30: replay_v2, observe_optimized, query_optimization, parallel_query_executor and their bench deleted; no unreachable tool module remains.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
