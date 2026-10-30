@@ -241,22 +241,6 @@
       "first_seen": "2026-10-21"
     },
     {
-      "id": "B-026",
-      "kind": "bug",
-      "area": "tooling",
-      "title": "the `observe` tool's description does not say how to call it; the same class of gap the instructions had",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/mcp_tools.rs, the `observe` tool's description"
-      },
-      "status": "open",
-      "evidence": "B-007 fixed the instructions string. The per-tool descriptions were not audited the same way: `observe` does not name the field it reads.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
       "id": "B-030",
       "kind": "change",
       "area": "server",
@@ -349,22 +333,6 @@
       },
       "status": "blocked",
       "evidence": "Needs the human: crates.io -> bevy_fairy -> Settings -> Trusted Publishing -> GitHub, repository Ladvien/bevy_fairy, workflow release.yml. Possible only once the first version is published.",
-      "last_failure": "",
-      "first_seen": "2026-10-23"
-    },
-    {
-      "id": "B-044",
-      "kind": "bug",
-      "area": "observe",
-      "title": "agents keep sending `observe` short queries it refuses (\"crate\", \"score\", \"all entities\")",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "evals 2026-10-23: 3 of the 5 isError results in the dcd9805 dev run, and 1 of the 2 hidden refusals at a497577, are observe 'Query parsing failed' on short noun queries; every agent recovered through brp"
-      },
-      "status": "open",
-      "evidence": "Either the description should say the query grammar (it lists none) or observe should accept a bare component name. Candidate change; measure with the dev evals' invalid-call count.",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

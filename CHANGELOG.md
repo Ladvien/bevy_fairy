@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.2 - 2026-10-30
+
+### Changed
+
+- The `observe` tool's `query` field now carries its grammar in the schema: eight complete example
+  queries (`list all entities`, `show entity <id>`, `find entities with component <Name>`, ...) and a
+  pointer to `brp` for anything else. `observe` refuses bare nouns such as "score" or "crate", and
+  agents kept sending them because nothing advertised the shapes. A test feeds every advertised
+  example to the parser `observe` uses. No behaviour change in the handler.
+
 ## 0.7.1 - 2026-10-30
 
 ### Changed

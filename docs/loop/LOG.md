@@ -18,3 +18,4 @@
 - 2026-10-30 profiler-history: B-018 fixed (history timestamps were frame age, test un-ignored); ratchet ok, tests green, evals not run (no tool change) — v0.6.1 — [report](iterations/2026-10-30-profiler-history.md)
 - 2026-10-30 stress-removal: B-038 fixed, unreachable stress modules + `stress-testing` feature deleted; ratchet ok, tests green, evals not run (no tool change) — v0.7.0 — [report](iterations/2026-10-30-stress-removal.md)
 - 2026-10-30 brp-params: B-047 fixed, brp params shapes in schema + example-run test; ratchet ok, tests green, dev 6/6, heldout 3/3 — v0.7.1 — [report](iterations/2026-10-30-brp-params.md)
+- 2026-10-30 observe-grammar: B-026/B-044 fixed, observe schema lists its query grammar + test that parser accepts every example; ratchet ok, tests green, dev 5/6 (spinner_stops racy, baseline also flaky), heldout 3/3 — v0.7.2 — [report](iterations/2026-10-30-observe-grammar.md)

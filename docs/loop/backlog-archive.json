@@ -390,6 +390,38 @@
       "last_failure": "",
       "first_seen": "2026-10-23",
       "fixed_at": "2026-10-23"
+    },
+    {
+      "id": "B-026",
+      "kind": "bug",
+      "area": "tooling",
+      "title": "the `observe` tool's description does not say how to call it; the same class of gap the instructions had",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/mcp_tools.rs, the `observe` tool's description"
+      },
+      "status": "fixed",
+      "evidence": "v0.7.2: the `query` field schema lists the grammar; tool_list::every_observe_query_example_in_the_schema_is_accepted_by_the_parser",
+      "last_failure": "",
+      "first_seen": "2026-10-21"
+    },
+    {
+      "id": "B-044",
+      "kind": "bug",
+      "area": "observe",
+      "title": "agents keep sending `observe` short queries it refuses (\"crate\", \"score\", \"all entities\")",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "evals 2026-10-23: 3 of the 5 isError results in the dcd9805 dev run, and 1 of the 2 hidden refusals at a497577, are observe 'Query parsing failed' on short noun queries; every agent recovered through brp"
+      },
+      "status": "fixed",
+      "evidence": "v0.7.2: the `query` field schema lists the grammar; tool_list::every_observe_query_example_in_the_schema_is_accepted_by_the_parser",
+      "last_failure": "",
+      "first_seen": "2026-10-23"
     }
   ]
 }
