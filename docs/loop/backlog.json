@@ -20,7 +20,7 @@
       "id": "B-020",
       "kind": "bug",
       "area": "build",
-      "title": "clippy is red on main: 144 warnings left (was 1462); result_large_err is gone",
+      "title": "clippy is red on main: 79 warnings left (was 1462); result_large_err is gone",
       "must_fix": {
         "misleads": false,
         "blocks": true,
@@ -28,7 +28,7 @@
         "evidence": "scripts/ratchet.sh --record at e93da67: 1462 warnings across 50 lints and 79 files; 937 result_large_err, 157 unused_imports, 72 dead_code, 52 unused_variables, 48 field_reassign_with_default"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21 by the ratchet. CI ran `cargo clippy --all-targets --all-features -- -D warnings` and was red. An earlier note said 707 warnings / 452 result_large_err; that came from grepping distinct warning lines and undercounted. The ratchet counts lint occurrences. 2026-10-30: B-052 cleared result_large_err; known_red re-recorded at 186 warnings.",
+      "evidence": "Verified 2026-10-21 by the ratchet. CI ran `cargo clippy --all-targets --all-features -- -D warnings` and was red. An earlier note said 707 warnings / 452 result_large_err; that came from grepping distinct warning lines and undercounted. The ratchet counts lint occurrences. 2026-10-30: B-052 cleared result_large_err; known_red re-recorded at 186 warnings. 2026-10-30 (acbe1c4): 86 -> 79 (state_diff.rs, test_state_diff.rs, query_parser.rs cleaned as touched).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -129,50 +129,18 @@
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-076",
+      "id": "B-080",
       "kind": "change",
-      "area": "observe",
-      "title": "observe::handle still dispatches on serde_json::Value string keys; ObserveState keeps a snapshot history (diff_against_history, clear_history) no field can reach",
+      "area": "dead-code",
+      "title": "src/server/semantic_analyzer.rs (~620 lines) is reachable from no tool since observe dropped the semantic phrases (f49baf1)",
       "must_fix": {
         "misleads": false,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "src/server/mcp_tools.rs builds json!({query, diff}) for observe::handle; the tool contract asks for the handler to take the request struct"
+        "evidence": "rg 'semantic_analyzer' src/: only `pub mod semantic_analyzer` in src/server/mod.rs after f49baf1"
       },
-      "status": "open",
-      "evidence": "In-file edits only, no file deletion needed.",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-077",
-      "kind": "bug",
-      "area": "observe",
-      "title": "observe semantic queries (find stuck entities, show fast moving objects, ...) never send their value thresholds: query_params ignores where_clause, so every entity with the named components comes back while semantic_analysis claims a velocity threshold was applied",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "src/server/brp/mod.rs query_params reads only with/without; src/server/semantic_analyzer.rs:208-247 builds where_clause thresholds (independent review of d148e25)"
-      },
-      "status": "open",
-      "evidence": "Not reproduced against the fixture yet: it has no Velocity component, so the semantic query is refused there. Needs a fixture component or a fake-game test first. The observe description stopped offering semantic queries as filters in d148e25; the query field still lists them as accepted shapes.",
-      "last_failure": "",
-      "first_seen": "2026-10-30"
-    },
-    {
-      "id": "B-078",
-      "kind": "bug",
-      "area": "observe",
-      "title": "observe diff summary reports entities_modified 0 while an entity's component changed: nothing ever produces ChangeType::EntityModified",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "live proof 2026-10-30: summary components_modified 1, entities_modified 0 for the moving mover; src/server/state_diff.rs DiffSummary::from_changes counts only EntityModified"
-      },
-      "status": "open",
-      "evidence": "tests/test_state_diff.rs::test_diff_summary_calculation asserts entities_modified == 0 for three entities with component changes; a fix changes that expectation (justify it in the report). state_diff.rs has 2 test-module clippy warnings to clear when touched.",
+      "status": "blocked",
+      "evidence": "Deleting it is `git rm src/server/semantic_analyzer.rs` plus the `pub mod semantic_analyzer;` line in src/server/mod.rs; needs the owner's OK naming the path (same rule as B-074/B-075). Also drops QueryFilter::where_clause/ComponentFilter/FilterOp's last producer.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }
