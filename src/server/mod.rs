@@ -134,8 +134,6 @@ pub mod query_optimization_guide;
 pub mod bevy_observability_integration;
 
 // Epic 6: Production features - Observability stack
-#[cfg(feature = "observability")]
-pub mod observability;
 
 // Legacy name for the `brp` module, removed hand-rolled `brp_messages` module.
 pub use brp as brp_messages;

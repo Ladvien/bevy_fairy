@@ -20,8 +20,6 @@ use bevy_fairy::server::config::Config;
 use bevy_fairy::server::error::Result;
 use bevy_fairy::server::mcp_server_v2;
 
-#[cfg(feature = "observability")]
-use bevy_fairy::server::observability::ObservabilityService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -119,16 +117,6 @@ async fn run_stdio_mode(config: Config) -> Result<()> {
         let client = brp_client.read().await;
         client.init().await?;
     }
-    
-    // Initialize observability if enabled
-    #[cfg(feature = "observability")]
-    let _observability = if config.observability.metrics_enabled || config.observability.tracing_enabled {
-        let obs_service = ObservabilityService::new(config.clone(), brp_client.clone()).await?;
-        obs_service.start().await?;
-        Some(obs_service)
-    } else {
-        None
-    };
     
     let server = mcp_server_v2::McpServerV2::new(config, brp_client)?;
     server.run_stdio().await
