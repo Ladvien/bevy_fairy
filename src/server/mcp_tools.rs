@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{sync::Arc, future::Future};
 use tokio::sync::RwLock;
-use tracing::{error, info, debug};
+use tracing::{error, debug};
 use schemars::JsonSchema;
 
 use crate::server::brp_client::BrpClient;
