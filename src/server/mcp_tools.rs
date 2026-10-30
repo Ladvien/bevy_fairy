@@ -34,6 +34,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ObserveRequest {
+    /// A phrase in one of the shapes the parser accepts; a bare word such as "score" or "crate" is
+    /// refused. Shapes, each a complete example: `list all entities`, `list components`,
+    /// `show entity 4294967298`, `find entities with component Name`,
+    /// `find entities without component Name`, `find 5 entities with component Name`,
+    /// `find stuck entities`, `show fast moving objects`. For any other read, such as one
+    /// resource, use `brp`.
     pub query: String,
     #[serde(default)]
     pub diff: bool,
