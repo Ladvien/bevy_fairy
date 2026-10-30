@@ -188,40 +188,41 @@ impl Assertion {
             match self {
                 Self::EntityExists {
                     component_types,
-                    count: _,
+                    count,
                 } => {
-                    // Query for entities with specified components
-                    // TODO: Implement actual entity query in BRP
-                    debug!(
-                        "Checking for entities with components: {:?}",
-                        component_types
-                    );
-                    warn!("EntityExists assertion not fully implemented - returning true");
-                    Ok(true)
+                    let entities = query_entities(brp_client).await.map_err(|e| *e)?;
+                    let matching = entities
+                        .iter()
+                        .filter(|entity| {
+                            component_types
+                                .iter()
+                                .all(|name| component_value(entity, name).is_some())
+                        })
+                        .count();
+                    Ok(match count {
+                        Some(exact) => matching == *exact,
+                        None => matching > 0,
+                    })
                 }
                 Self::ComponentEquals {
-                    entity_id: _,
+                    entity_id,
                     component_type,
                     expected_value,
                 } => {
-                    debug!(
-                        "Checking component {} equals {:?}",
-                        component_type, expected_value
-                    );
-                    // TODO: Query entity and compare component value
-                    warn!("ComponentEquals assertion not fully implemented - returning true");
-                    Ok(true)
+                    let entities = query_entities(brp_client).await.map_err(|e| *e)?;
+                    Ok(entities
+                        .iter()
+                        .filter(|entity| entity_id.is_none_or(|id| entity.id == id))
+                        .any(|entity| {
+                            component_value(entity, component_type) == Some(expected_value)
+                        }))
                 }
-                Self::ComponentMatches {
-                    entity_id: _,
-                    component_type,
-                    predicate: _,
-                } => {
-                    debug!("Checking component {} matches predicate", component_type);
-                    // TODO: Query entity and apply predicate
-                    warn!("ComponentMatches assertion not fully implemented - returning true");
-                    Ok(true)
-                }
+                Self::ComponentMatches { .. } => Err(Error::Validation(
+                    "component_matches cannot be evaluated yet: the server has no predicate \
+                     evaluator, and answering true would confirm every hypothesis. Use \
+                     component_equals, or assert on entity_exists."
+                        .to_string(),
+                )),
                 Self::PerformanceWithin { metric, max_value } => {
                     let current = metric.measure(brp_client).await.map_err(Error::from)?;
                     Ok(current <= *max_value)
@@ -323,6 +324,18 @@ impl PerformanceMetric {
             ))),
         }
     }
+}
+
+/// The value of `name` on `entity`. `name` is either the registered path or the short type name
+/// at the end of one (`Health` finds `game::components::Health`).
+fn component_value<'e>(
+    entity: &'e crate::server::brp::EntityData,
+    name: &str,
+) -> Option<&'e serde_json::Value> {
+    entity.components.iter().find_map(|(path, value)| {
+        let short = path.rsplit("::").next().unwrap_or(path);
+        (path == name || short == name).then_some(value)
+    })
 }
 
 /// Ask the game for its entities, so a count comes from the game rather than from a constant.
