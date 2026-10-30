@@ -428,7 +428,7 @@ pub fn handle_guide(In(params): In<Option<Value>>, mut guide: ResMut<Guide>) -> 
 ///
 /// **A watching method**, so the engine owns the waiting. `RemotePlugin` re-runs this every frame in
 /// `RemoteLast` with exclusive `World`, parks the request while it answers `Ok(None)`, and reaps it
-/// if the caller goes away (`bevy_remote-0.19.0/src/lib.rs:1527`). That is a condition-watcher with
+/// if the caller goes away (`bevy_remote-0.20.1/src/lib.rs:1559`). That is a condition-watcher with
 /// lifecycle management already written, tested by the engine, and costing no new dependency — which
 /// is what keeps `tests/leaf.rs` green.
 ///
@@ -574,7 +574,7 @@ impl Default for GuidePlacement {
 
 /// **No camera of its own, and that is deliberate.**
 ///
-/// A `Camera2d` spawned here would be a second camera in somebody else's app, and Bevy 0.19's
+/// A `Camera2d` spawned here would be a second camera in somebody else's app, and Bevy 0.20's
 /// `Single<..>` silently *skips its system* on a non-unique match — so a host with a
 /// `Single<&Camera>` anywhere would stop working the moment this plugin was switched on, with no
 /// error to read. The host repo has paid for that class twice and its answer is on the record: a

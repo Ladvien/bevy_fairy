@@ -84,7 +84,7 @@ cannot be quietly widened by adding a dependency to a feature.
 
 ## BRP handlers run in `RemoteLast` — after everything — and that has bitten input
 
-`DebuggerPlugin::build` registers its methods with `RemotePlugin::with_method_main(..)`, so handlers execute in **`RemoteLast`**, a schedule `RemotePlugin` inserts *after* `Last` (`bevy_remote-0.19.0/src/lib.rs:832-835`). It is the very end of the frame. Bevy's `keyboard_input_system` clears `just_pressed`/`just_released` in the **next** frame's `PreUpdate`.
+`DebuggerPlugin::build` registers its methods with `RemotePlugin::with_method_main(..)`, so handlers execute in **`RemoteLast`**, a schedule `RemotePlugin` inserts *after* `Last` (`bevy_remote-0.20.1/src/lib.rs:832-835`). It is the very end of the frame. Bevy's `keyboard_input_system` clears `just_pressed`/`just_released` in the **next** frame's `PreUpdate`.
 
 A press written there therefore has its `just_pressed` flag cleared before any `Update` system reads it, so **`just_pressed`-based actions could never be triggered by injected input** — the method returned `success: true` and the game did not move. Held `pressed` state survives the clear, which is why some actions appeared to work and others did not. See `src/plugin/input.rs` for how this is handled now; if you change the schedule or the action shape, re-verify against a real game rather than a unit test.
 
@@ -92,7 +92,7 @@ A press written there therefore has its `just_pressed` flag cleared before any `
 
 ## A watching method is how you wait, and the engine already owns it
 
-`with_watching_method_main` (`bevy_remote-0.19.0/src/lib.rs:629`) re-runs a handler **every frame** in `RemoteLast` with exclusive `World`. `Ok(None)` means *not yet* and parks the request in `RemoteWatchingRequests`; `Ok(Some(v))`/`Err` sends a frame to the client and **keeps** the request open; `remove_closed_watching_requests` reaps it when the client goes away. The HTTP transport serves it as a `BrpHttpResponse::Stream` of `application/json` chunks, so `curl -N` consumes it — refused only inside a batch.
+`with_watching_method_main` (`bevy_remote-0.20.1/src/lib.rs:632`) re-runs a handler **every frame** in `RemoteLast` with exclusive `World`. `Ok(None)` means *not yet* and parks the request in `RemoteWatchingRequests`; `Ok(Some(v))`/`Err` sends a frame to the client and **keeps** the request open; `remove_closed_watching_requests` reaps it when the client goes away. The HTTP transport serves it as a `BrpHttpResponse::Stream` of `application/json` chunks, so `curl -N` consumes it — refused only inside a batch.
 
 `bevy_fairy/guide+watch` is the first user of this, and it is why the guide channel needed **zero new dependencies**: a condition-watcher with lifecycle management, already written and tested by the engine.
 
@@ -123,7 +123,7 @@ Two consequences worth knowing before you touch this:
 
 `bevy_fairy/input` accepts `kind: "Cursor"` with `x`/`y` in logical window pixels, or `clear: true`. It writes `DebugCursor`, **not** `Window::set_cursor_position`.
 
-That looks like the obvious call and it is the wrong one, read out of the pinned engine rather than guessed: `Window::set_cursor_position` writes an internal field, and Bevy's windowing backend diffs that field against a per-window cache every frame and asks the platform to **move the physical pointer** (`bevy_winit-0.19.0/src/system.rs:433`). The cache is `pub(crate)`, so a plugin cannot suppress the diff. Writing the window would drag the mouse out from under whoever is at the machine — the precise class of thing this crate exists to avoid, and it would pass `tests/plugin_leaf.rs` while defeating its whole purpose.
+That looks like the obvious call and it is the wrong one, read out of the pinned engine rather than guessed: `Window::set_cursor_position` writes an internal field, and Bevy's windowing backend diffs that field against a per-window cache every frame and asks the platform to **move the physical pointer** (`bevy_winit-0.20.1/src/system.rs:426-430`). The cache is `pub(crate)`, so a plugin cannot suppress the diff. Writing the window would drag the mouse out from under whoever is at the machine — the precise class of thing this crate exists to avoid, and it would pass `tests/plugin_leaf.rs` while defeating its whole purpose.
 
 **Picking does not need that.** `src/plugin/pointer.rs` also writes the `WindowEvent::{CursorMoved, MouseButtonInput, MouseWheel}` messages `bevy_picking`'s `mouse_pick_events` reads (it takes a click's position from the last `CursorMoved`), so `bevy_ui` buttons and `On<PointerClick>` observers fire. With a `DebugCaptureTarget` present it instead writes `PointerInput` located on that image (a window-addressed pointer misses cameras that render to an image), and `x`/`y` are pixels of the image. One route per call, never both: two writers to `PointerId::Mouse` fight over its location. `tests/plugin_pointer.rs` drives a real `bevy_ui` node under `DefaultPlugins` (no winit, no GPU) through `handle_input`. Issue #9.
 
