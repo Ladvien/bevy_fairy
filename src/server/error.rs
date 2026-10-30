@@ -234,7 +234,7 @@ pub enum Error {
     /// Rich error with full context
     #[error("Error: {context}")]
     WithContext {
-        context: ErrorContext,
+        context: Box<ErrorContext>,
         #[source]
         source: Option<Box<Error>>,
     },
