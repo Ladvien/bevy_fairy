@@ -98,10 +98,9 @@ Observe and query Bevy game state in real-time with optional reflection-based co
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `detailed` | boolean | no |  |
-| `diff` | boolean | no |  |
+| `diff` | boolean | no | Compare this read with the previous `diff: true` read of this server session. |
 | `query` | string | yes | A phrase in one of the shapes the parser accepts; a bare word such as "score" or "crate" is refused. Shapes, each a complete example: `list all entities`, `list components`, `show entity 4294967298`, `find entities with component Name`, `find entities without component Name`, `find 5 entities with component Name`, `find stuck entities`, `show fast moving objects`. For any other read, such as one resource, use `brp`. |
-| `reflection` | boolean | no |  |
+| `reflection` | boolean | no | Add `reflection_data`: per-component type information for the first 20 entities returned. |
 
 ## `quit`
 
@@ -115,9 +114,31 @@ Record and replay game state for time-travel debugging. Capture game state at sp
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes |  |
-| `checkpoint_id` | string | no |  |
-| `speed` | number | no |  |
+| `action` | any | yes | What to do. Recording: `record`, `stop`, `status`, `marker`, `save`, `load`, `stats`. Playback: `play`, `pause`, `seek`, `step`, `set_speed`, `playback_status`. Branches: `create_branch`, `list_branches`, `switch_branch`, `add_modification`, `merge_branch`, `compare_branches`, `delete_branch`, `branch_tree`. Each action reads only the arguments named for it below. |
+| `branch_a` | string | no | `compare_branches`: the first branch. |
+| `branch_b` | string | no | `compare_branches`: the second branch. |
+| `branch_id` | string | no | `switch_branch`, `add_modification`, `merge_branch`, `delete_branch`, `branch_tree`: the branch. |
+| `branch_point_frame` | integer | no | `create_branch`: the frame it forks at. Default 0. |
+| `checksums` | boolean | no | `record`: checksum each frame. |
+| `component_filter` | array | no | `record`: record only these component type paths. |
+| `compression` | boolean | no | `record`: compress the recording. |
+| `description` | string | no | `marker`: a free-text note. `add_modification`: what the modification is for. |
+| `direction` | any | no | `step`: `forward` (the default) or `backward`. |
+| `end_frame` | integer | no | `compare_branches`: the frame the comparison stops before. Default 10. |
+| `entity_modification` | any | no | `add_modification`: set one component of one entity. Give this or `entity_removal`. |
+| `entity_removal` | any | no | `add_modification`: remove one entity. Give this or `entity_modification`. |
+| `event_filter` | array | no | `record`: record only these event types. |
+| `filename` | string | no | `save` and `load`: the file, on this machine. `save` defaults to `recording.bevy`. |
+| `frame` | integer | no | `seek`: the frame number to go to. Give this or `marker`. |
+| `frame_number` | integer | no | `add_modification`: the frame the modification applies at. |
+| `marker` | string | no | `seek`: the marker name to go to. Give this or `frame`. |
+| `max_buffer_size` | integer | no | `record`: the most frames kept in memory. |
+| `name` | string | no | `marker` and `create_branch`: the name. `marker` defaults to `marker`; `create_branch` requires it. |
+| `parent_id` | string | no | `create_branch`: the branch this one forks from. |
+| `sample_rate` | number | no | `record`: samples per second. |
+| `speed` | number | no | `set_speed`: the playback speed, required (1.0 is real time). |
+| `start_frame` | integer | no | `compare_branches`: the first frame compared. Default 0. |
+| `strategy` | any | no | `merge_branch`: `take_source` (the default), `take_target` or `manual`. |
 
 ## `run`
 
@@ -134,7 +155,7 @@ Work with the commands recorded in this game session. save writes them to a repl
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `action` | any | yes |  |
+| `action` | any | yes | `save`, `show` or `clear`. |
 | `path` | string | no | Required for `save`: the file to write, on this machine. |
 
 ## `screenshot`

@@ -225,3 +225,43 @@ fn every_observe_query_example_in_the_schema_is_accepted_by_the_parser() {
         .collect();
     assert!(refused.is_empty(), "observe's parser refuses its own advertised examples: {refused:?}");
 }
+
+/// An argument with no description is one an agent has to guess at. `replay` advertised
+/// `action: string` and a `checkpoint_id` no handler reads, while the handlers behind its
+/// 21 actions read 25 other arguments the schema refused (`deny_unknown_fields`): `save` could
+/// never be given a filename and `seek` never a frame.
+#[test]
+fn every_advertised_argument_has_a_description() {
+    let mut bare = Vec::new();
+    for tool in listed_tools() {
+        let Some(props) = tool["inputSchema"]["properties"].as_object() else { continue };
+        for (name, schema) in props {
+            let text = schema["description"].as_str().unwrap_or_default().trim();
+            if text.is_empty() {
+                bare.push(format!("{}.{name}", tool["name"].as_str().unwrap_or_default()));
+            }
+        }
+    }
+    assert!(bare.is_empty(), "arguments with no description: {bare:?}");
+}
+
+/// `replay`'s action is a closed set, and every argument its handlers read can be sent.
+#[test]
+fn replay_advertises_its_actions_and_every_argument_they_read() {
+    let tools = listed_tools();
+    let replay = tools.iter().find(|t| t["name"] == "replay").expect("replay is listed");
+    let schema = replay["inputSchema"].to_string();
+    for action in ["record", "stop", "save", "load", "seek", "step", "set_speed", "merge_branch"] {
+        assert!(schema.contains(&format!("\"{action}\"")), "action {action} is not enumerated: {schema}");
+    }
+    let props = replay["inputSchema"]["properties"].as_object().expect("properties");
+    for field in [
+        "filename", "frame", "marker", "direction", "speed", "name", "description", "sample_rate",
+        "max_buffer_size", "compression", "checksums", "component_filter", "event_filter",
+        "parent_id", "branch_point_frame", "branch_id", "frame_number", "entity_modification",
+        "entity_removal", "strategy", "branch_a", "branch_b", "start_frame", "end_frame",
+    ] {
+        assert!(props.contains_key(field), "replay does not advertise `{field}`");
+    }
+    assert!(!props.contains_key("checkpoint_id"), "no handler reads checkpoint_id");
+}
