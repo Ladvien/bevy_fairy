@@ -1,16 +1,16 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "acbe1c4",
+  "sha": "420019e",
   "server": {
-    "loc": 19632,
+    "loc": 19720,
     "direct_dependencies": 52,
     "public_modules": 26,
-    "mcp_tools": 15,
+    "mcp_tools": 14,
     "release_binary_bytes": 105777312,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
-    "loc": 3535,
+    "loc": 3561,
     "direct_dependencies": 4,
     "closure_packages": 319,
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
@@ -35,7 +35,7 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 6.2,
+    "mean_tool_calls_per_solved_task": 5.2,
     "dev_is_error_results_per_run": [
       5,
       7,
@@ -44,11 +44,11 @@
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
     "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
     "last_dev_run": {
-      "sha": "917874c",
+      "sha": "420019e",
       "success": "6/6",
-      "mean_tool_calls": 6.2,
-      "invalid_calls": 1,
-      "note": "Two runs this pass: acbe1c4 6/6, 6.5 calls, 0 invalid; 917874c 6/6, 6.2 calls, 1 invalid. The one invalid result is synthetic: the provider stream closed before a `status` call ran (odd_crate transcript, `assistant_stop_error`), not a tool refusal. The rise from fa6a556 (5.3) is spinner_stops alone (11 -> 18 -> 16; it has ranged 4-21 across earlier runs); the other five tasks average 4.2 calls on fa6a556 and 4.2 on 917874c."
+      "mean_tool_calls": 5.2,
+      "invalid_calls": 0,
+      "note": "Two runs this pass. 63ed83d: 5 of 6 passed first time (2, 5, 3, 6, 6 calls), `spinner_stops` was an infrastructure failure (the omp session never reached a model, 241 s), and its rerun passed in 18 calls with 3 repeated calls. 420019e (after the review fixes): 6/6, 5.2 calls, 0 invalid (2, 5, 4, 6, 6, 8). The 18-call run is the known spinner_stops spread (4-21 across earlier runs)."
     },
     "last_heldout_run": {
       "sha": "917874c",
@@ -155,7 +155,7 @@
   "fixture": {
     "path": "examples/fixture_game.rs",
     "loc": 162,
-    "ground_truth_tests": 5,
+    "ground_truth_tests": 24,
     "note": "Headless fixture whose state is pub consts. tests/fixture_ground_truth.rs checks the brp and status tools against it; mutants of the brp handler and of the plugin's status handler are each caught."
   }
 }

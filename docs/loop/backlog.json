@@ -143,6 +143,38 @@
       "evidence": "Deleting it is `git rm src/server/semantic_analyzer.rs` plus the `pub mod semantic_analyzer;` line in src/server/mod.rs; needs the owner's OK naming the path (same rule as B-074/B-075). Also drops QueryFilter::where_clause/ComponentFilter/FilterOp's last producer.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-082",
+      "kind": "change",
+      "area": "dead-code",
+      "title": "src/server/tools/replay.rs, playback_system.rs, timeline_branching.rs and recording_system.rs are reachable from no tool since the replay tool was removed (ee3694a)",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "rg 'tools::replay|playback_system|timeline_branching|recording_system' src/: only `pub mod` lines in src/server/mod.rs and src/server/tools/mod.rs, and tests/replay_recording.rs's two RecordingBuffer tests"
+      },
+      "status": "blocked",
+      "evidence": "Deleting them is `git rm` of the four files plus their `pub mod` lines; needs the owner's OK naming each path (same rule as B-074/B-075/B-080). tests/replay_recording.rs keeps two RecordingBuffer tests that would go with them.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-087",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "PhysicsDetector and PerformanceDetector severity is always 1.0: severity = (value / threshold).min(1.0) is computed only when value > threshold, so the ratio is already above 1 and the min clamps it to exactly 1.0; min_severity cannot separate their detections",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/anomaly_detector.rs: PhysicsDetector `(z_score.abs() / self.config.z_score_threshold).min(1.0)` inside `if z_score.abs() > threshold`; PerformanceDetector `(growth_rate / entity_growth_threshold).min(1.0)` inside `if growth_rate > threshold`. Found by the independent review of the #13 fix; follows from the code, not yet reproduced: write the failing test first (feed 20 entities per sample at threshold 10 and 11, expect different severities)."
+      },
+      "status": "open",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
