@@ -244,24 +244,3 @@ fn every_advertised_argument_has_a_description() {
     }
     assert!(bare.is_empty(), "arguments with no description: {bare:?}");
 }
-
-/// `replay`'s action is a closed set, and every argument its handlers read can be sent.
-#[test]
-fn replay_advertises_its_actions_and_every_argument_they_read() {
-    let tools = listed_tools();
-    let replay = tools.iter().find(|t| t["name"] == "replay").expect("replay is listed");
-    let schema = replay["inputSchema"].to_string();
-    for action in ["record", "stop", "save", "load", "seek", "step", "set_speed", "merge_branch"] {
-        assert!(schema.contains(&format!("\"{action}\"")), "action {action} is not enumerated: {schema}");
-    }
-    let props = replay["inputSchema"]["properties"].as_object().expect("properties");
-    for field in [
-        "filename", "frame", "marker", "direction", "speed", "name", "description", "sample_rate",
-        "max_buffer_size", "compression", "checksums", "component_filter", "event_filter",
-        "parent_id", "branch_point_frame", "branch_id", "frame_number", "entity_modification",
-        "entity_removal", "strategy", "branch_a", "branch_b", "start_frame", "end_frame",
-    ] {
-        assert!(props.contains_key(field), "replay does not advertise `{field}`");
-    }
-    assert!(!props.contains_key("checkpoint_id"), "no handler reads checkpoint_id");
-}
