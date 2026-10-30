@@ -10,7 +10,6 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -19,7 +18,6 @@ use crate::server::brp_command_handler::{CommandHandlerRegistry, CoreBrpHandler,
 use crate::server::config::Config;
 use crate::server::debug_command_processor::DebugCommandRouter;
 use crate::server::error::{Error, Result};
-use crate::server::resource_manager::ResourceManager;
 
 /// Request timeout for a single BRP call.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -34,7 +32,6 @@ pub struct BrpClient {
     url: String,
     connected: Arc<AtomicBool>,
     retry_count: u32,
-    resource_manager: Option<Arc<RwLock<ResourceManager>>>,
     request_id: Arc<AtomicU64>,
     command_registry: Arc<CommandHandlerRegistry>,
     debug_router: Option<Arc<DebugCommandRouter>>,
@@ -47,7 +44,6 @@ impl std::fmt::Debug for BrpClient {
             .field("url", &self.url)
             .field("connected", &self.is_connected())
             .field("retry_count", &self.retry_count)
-            .field("has_resource_manager", &self.resource_manager.is_some())
             .field("has_debug_router", &self.debug_router.is_some())
             .finish()
     }
@@ -61,7 +57,6 @@ impl Clone for BrpClient {
             url: self.url.clone(),
             connected: self.connected.clone(),
             retry_count: self.retry_count,
-            resource_manager: self.resource_manager.clone(),
             request_id: self.request_id.clone(),
             command_registry: self.command_registry.clone(),
             debug_router: self.debug_router.clone(),
@@ -86,7 +81,6 @@ impl BrpClient {
             ),
             connected: Arc::new(AtomicBool::new(false)),
             retry_count: 0,
-            resource_manager: None,
             request_id: Arc::new(AtomicU64::new(1)),
             command_registry,
             debug_router: None,
@@ -99,11 +93,6 @@ impl BrpClient {
         let core_handler = Arc::new(CoreBrpHandler);
         self.command_registry.register(core_handler).await;
         Ok(())
-    }
-
-    pub fn with_resource_manager(mut self, resource_manager: Arc<RwLock<ResourceManager>>) -> Self {
-        self.resource_manager = Some(resource_manager);
-        self
     }
 
     /// Set the debug command router for handling debug commands
