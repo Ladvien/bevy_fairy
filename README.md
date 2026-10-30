@@ -277,7 +277,7 @@ reports ready. Scenes record commands, not raw input: keys, text and clicks sent
 | `bevy_fairy/commands` | `plugin` | The commands the game registered, with params and examples |
 | `bevy_fairy/input` | `plugin` | Inject keyboard, text, mouse, scroll and cursor input |
 | `bevy_fairy/scene` | `plugin` | Show or clear the recorded commands |
-| `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed; the request is re-applied every frame and the reply says whether it `held` (a built-in command). A host that owns `Time<Virtual>` adds `.host_owns_clock()` and reads `ClockRequest` |
+| `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed (above 0, at most 1000); the request is re-applied every frame and the reply says whether it `held`, and whether the engine cut the last frame to the clock's `max_delta` (`clamped_by_max_delta`) (a built-in command). A host that owns `Time<Virtual>` adds `.host_owns_clock()` and reads `ClockRequest` |
 | `bevy_fairy/ring` | `plugin` | Record the newest N frames (1-600) of a `world.query` result inside the game, with an optional trigger that freezes the buffer on the frame it matches; `dump` returns the samples with frame numbers (a built-in command, called with `run`) |
 | `bevy_fairy/quit` | `plugin` | Ask the game to exit |
 | `bevy_fairy/ui_text` | `plugin-ui-text` | The `bevy_ui` text the player can read, with each node's rect (a built-in command, called with `run`) |
