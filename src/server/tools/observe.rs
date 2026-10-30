@@ -183,8 +183,8 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     let state = get_observe_state();
     let state_guard = state.read().await;
 
-    let brp_request = match state_guard.parser.parse(query) {
-        Ok(request) => request,
+    let (brp_request, limit) = match state_guard.parser.parse(query) {
+        Ok(parsed) => (parsed.request, parsed.limit),
         Err(e) => {
             warn!("Query parsing failed: {}", e);
             return Ok(json!({
@@ -287,11 +287,22 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     };
 
     // Process response and handle diff mode
-    let (result_json, count, diff_result) = match brp_response.payload {
+    let (result_json, count, matched, diff_result) = match brp_response.payload {
         BrpPayload::Result(mut value) => {
             if asks_for_every_component {
                 drop_not_present_errors(&mut value);
             }
+            // `world.query` has no limit, so `find N entities` cuts the rows here, before the
+            // count and the diff see them. `matched` says how many there were, so a cut answer
+            // never reads as the whole set.
+            let matched = match (limit, value.as_array_mut()) {
+                (Some(limit), Some(rows)) => {
+                    let matched = rows.len();
+                    rows.truncate(limit);
+                    Some((limit, matched))
+                }
+                _ => None,
+            };
             // Decode the method-specific payload into EntityData where possible
             let decoded_entities = entity_data_from_query_result(&value)
                 .or_else(|| {
@@ -333,7 +344,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 None
             };
 
-            (value, count, diff_result)
+            (value, count, matched, diff_result)
         }
         BrpPayload::Error(error) => {
             warn!("BRP returned error: {}", error.message);
@@ -363,6 +374,10 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         }
     });
     response["metadata"][count.0] = json!(count.1);
+    if let Some((limit, matched)) = matched {
+        response["metadata"]["limit"] = json!(limit);
+        response["metadata"]["matched"] = json!(matched);
+    }
 
     // Add diff information if available
     if let Some(diff_result) = diff_result {

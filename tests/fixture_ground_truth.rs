@@ -580,6 +580,33 @@ async fn observe_refuses_a_component_name_the_game_does_not_register() {
     assert!(!failed, "the registered path is accepted: {text}");
 }
 
+/// `find N entities with component Y` parsed N and dropped it, so `find 2 entities` answered all
+/// six of the fixture's crates under an `entity_count` of 6 (B-079). The game's `world.query` has no
+/// limit, so the server cuts the rows, and says how many matched so the cut is visible.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_find_n_entities_returns_n_and_says_how_many_matched() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+
+    let (text, failed) = observe(&tools, "find 2 entities with component fixture_game::Crate").await;
+    assert!(!failed, "{text}");
+    let reply: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+    let rows = reply["result"].as_array().unwrap_or_else(|| panic!("no rows in: {reply}"));
+    assert_eq!(rows.len(), 2, "two were asked for: {reply}");
+    assert!(rows.iter().all(|row| row["components"].get("fixture_game::Crate").is_some()), "{reply}");
+    assert_eq!(reply["metadata"]["entity_count"], 2, "{reply}");
+    assert_eq!(reply["metadata"]["limit"], 2, "{reply}");
+    assert_eq!(reply["metadata"]["matched"], CRATE_WEIGHTS.len(), "the fixture spawned every crate: {reply}");
+
+    // A limit above the match count cuts nothing.
+    let (text, failed) = observe(&tools, "find 50 entities with component fixture_game::Crate").await;
+    assert!(!failed, "{text}");
+    let reply: Value = serde_json::from_str(&text).expect("observe answers JSON");
+    assert_eq!(reply["result"].as_array().map(Vec::len), Some(CRATE_WEIGHTS.len()), "{reply}");
+    assert_eq!(reply["metadata"]["matched"], CRATE_WEIGHTS.len(), "{reply}");
+}
+
 /// `observe` with `reflection: true` answered type questions the server never put to the game. Every
 /// component came back `is_reflected: false`, `type_category: "Value"` with no `fields`, and each
 /// value's type was guessed from its JSON: the fixture's `Crate` is a reflected struct whose `weight`
