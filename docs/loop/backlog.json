@@ -299,8 +299,8 @@
         "common_no_workaround": false,
         "evidence": "README.md 'Internal Debug Commands' section; docs/tools/README.md intro and quick-start"
       },
-      "status": "open",
-      "evidence": "The stress_test prune (B-034) touched these files and left the rest; docs_drift does not check tool names in prose.",
+      "status": "fixed",
+      "evidence": "2026-10-30: deleted docs/tools, docs/api, docs/api-reference.md, docs/troubleshooting (fiction); docs_drift now checks callTool examples and relative links",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

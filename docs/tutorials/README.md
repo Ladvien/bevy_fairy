@@ -490,7 +490,7 @@ Use multiple debugging approaches together for comprehensive analysis.
 
 ## Troubleshooting Tutorials
 
-If a tutorial step fails, refer to the [Troubleshooting Guide](../troubleshooting/README.md) for detailed solutions to common issues.
+If a tutorial step fails, check the argument names against the [Tool Reference](../mcp-tools.md) or open an issue.
 
 ### Quick Fixes
 

@@ -372,9 +372,8 @@ Create `.claude/config.json` in your project:
 ## What's Next?
 
 - **[Bevy Setup Guide](bevy-setup.md)**: Configure your Bevy game
-- **[Tool Usage Examples](../tools/)**: Learn specific debugging techniques
-- **[Advanced Configuration](../api-reference.md)**: Full configuration reference
+- **[Tool Reference](../mcp-tools.md)**: every tool and argument, generated from the server
 
 ---
 
-*Need help? Check the [troubleshooting guide](../troubleshooting.md) or open an issue.*
+*Need help? Open an issue.*

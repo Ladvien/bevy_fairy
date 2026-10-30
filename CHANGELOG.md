@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- `docs/tools/`, `docs/api/`, `docs/api-reference.md` and `docs/troubleshooting/`: hand-written tool
+  references whose examples sent arguments the tools refuse (`experiment_type`, `detection_type`) and
+  called tools that do not exist (`orchestrate`, `resource_metrics`, `performance_dashboard`). The
+  generated `docs/mcp-tools.md` is the reference.
+
+### Added
+
+- Docs-drift tests: every tool-call example (`callTool` with a name and an argument object) in a doc names a registered tool and arguments it
+  takes, and every relative markdown link resolves.
+
 ## 0.7.2 - 2026-10-30
 
 ### Changed

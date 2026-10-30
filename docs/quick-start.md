@@ -124,9 +124,7 @@ Now that you're connected, explore these advanced features:
 ## 📚 Full Documentation
 
 - **[Installation Guide](installation/)**
-- **[Tool Reference](tools/)**
-- **[Configuration](api-reference.md)**
-- **[Troubleshooting](troubleshooting.md)**
+- **[Tool Reference](mcp-tools.md)**: every tool and argument, generated from the server
 
 ---
 
