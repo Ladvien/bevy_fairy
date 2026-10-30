@@ -438,6 +438,22 @@
       "evidence": "2026-10-30: scene.rs module docs and README state that bevy_fairy/input is not recorded and replay is command-level.",
       "last_failure": "",
       "first_seen": "2026-10-21"
+    },
+    {
+      "id": "B-023",
+      "kind": "change",
+      "area": "release",
+      "title": "crates.io has bevy_debugger_mcp 0.1.8; the working tree is 0.2.0 and has never been published",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "crates.io API: max_version 0.1.8. Cargo.toml: version 0.2.0"
+      },
+      "status": "fixed",
+      "evidence": "bevy_fairy v0.8.0 published 2026-10-30 (cargo info bevy_fairy; tag v0.8.0)",
+      "last_failure": "",
+      "first_seen": "2026-10-21"
     }
   ]
 }

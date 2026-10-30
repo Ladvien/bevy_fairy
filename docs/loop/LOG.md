@@ -44,3 +44,4 @@
 - 2026-10-30 request-args: B-024 fixed (three tools build handler args by serialising the request struct, not a hand-written field list); ratchet ok; no release (6 h rule) — [report](iterations/2026-10-30-request-args.md)
 - 2026-10-30 ring-buffer: bevy_fairy/ring built-in command (per-frame query ring with trigger); workspace tests + ratchet ok — v0.8.0 — [report](iterations/2026-10-30-ring-buffer.md)
 - 2026-10-30 dead-modules: deleted unreachable replay_actor + resource_manager (1421 lines); ratchet ok (baseline lowered), workspace tests green; no release (6 h rule) — [report](iterations/2026-10-30-dead-modules.md)
+- 2026-10-30 triage: host load 24, no open bug or consumer issue (#1/#2 stale, answered); archived B-023 (published as bevy_fairy v0.8.0); no code change, no release

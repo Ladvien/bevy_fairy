@@ -177,22 +177,6 @@
       "first_seen": "2026-10-21"
     },
     {
-      "id": "B-023",
-      "kind": "change",
-      "area": "release",
-      "title": "crates.io has bevy_debugger_mcp 0.1.8; the working tree is 0.2.0 and has never been published",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "crates.io API: max_version 0.1.8. Cargo.toml: version 0.2.0"
-      },
-      "status": "open",
-      "evidence": "Verified 2026-10-21. The plugin crate bevy_debugger_bevy has never been published; that first publish needs the human's OK.",
-      "last_failure": "",
-      "first_seen": "2026-10-21"
-    },
-    {
       "id": "B-024",
       "kind": "bug",
       "area": "tooling",
