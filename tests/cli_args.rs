@@ -77,3 +77,18 @@ fn the_legacy_stdio_spellings_installers_wrote_are_still_accepted() {
         );
     }
 }
+
+/// `--tcp` / `--server` bound a port, accepted a connection and dropped it without reading a
+/// byte, so an agent that followed `--help` held a port open and got nothing. The flags are
+/// gone; stdio is the only transport, and a removed flag is refused by name like any typo.
+#[test]
+fn the_tcp_flags_that_never_served_anything_are_refused() {
+    for flag in ["--tcp", "--server"] {
+        let out = bevy_fairy(&[flag]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "`{flag}` must be a usage error; stderr: {stderr}");
+        assert!(stderr.contains(flag), "the error must name `{flag}`; got: {stderr}");
+    }
+    let help = String::from_utf8_lossy(&bevy_fairy(&["--help"]).stdout).into_owned();
+    assert!(!help.contains("--tcp") && !help.contains("TCP"), "--help still advertises TCP: {help}");
+}

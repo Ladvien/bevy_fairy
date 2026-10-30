@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — 2026-10-29
+
+### Removed
+
+- **Breaking:** the `--tcp` / `--server` flags of `bevy-fairy`. They bound a port, accepted a
+  connection and dropped it without reading a byte; nothing could ever be served on it. They are
+  now refused as unknown arguments (exit 2). stdio is the only transport. Migration: register the
+  server in an MCP client as `bevy-fairy --stdio`.
+
+### Changed
+
+- Started from a terminal with no `--stdio`, the binary exits 2 with a usage message instead of
+  falling into the dead TCP mode. Logs always go to stderr.
+
 ## 0.3.5 — 2026-10-29
 
 ### Added

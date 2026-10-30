@@ -81,7 +81,7 @@ This takes a game you already have and an agent that speaks MCP, such as Claude 
 # Cargo.toml
 [dependencies]
 bevy = "0.20"
-bevy_fairy = { version = "0.3", default-features = false, features = ["plugin"] }
+bevy_fairy = { version = "0.4", default-features = false, features = ["plugin"] }
 ```
 
 ```rust
@@ -110,7 +110,7 @@ curl -s localhost:15702 -d '{"jsonrpc":"2.0","id":1,"method":"bevy_fairy/status"
 ```sh
 cargo install bevy_fairy --no-default-features --features server
 bevy-fairy --version
-# bevy-fairy 0.3.0
+# bevy-fairy 0.4.0
 ```
 
 **3. Register it with your agent.** For Claude Code, from your project directory:
