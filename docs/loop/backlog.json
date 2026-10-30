@@ -379,8 +379,8 @@
         "common_no_workaround": false,
         "evidence": "evals 2026-10-23 spinner_stops: 52 calls with 31 repeats at a497577, 37 calls with 16 repeats at dcd9805; mover_speed 4-7 repeats"
       },
-      "status": "open",
-      "evidence": "The plugin already serves streaming `+watch` methods (bevy_remote's watching requests); the server cannot read them (B-041). Capability change, priority 4, measured by spinner_stops and mover_speed tool calls.",
+      "status": "fixed",
+      "evidence": "watch tool shipped in v0.3.5; fixture_ground_truth::watch_* tests; dev spinner_stops 19 calls (was 37-52), mover_speed 5",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },
