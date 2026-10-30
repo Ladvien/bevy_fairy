@@ -123,8 +123,8 @@
         "common_no_workaround": true,
         "evidence": "cargo test -p bevy_debugger_mcp output: 4 ignored, one is test_profiling_history"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21 by running the suite: 463 passed, 0 failed, 4 ignored.",
+      "status": "fixed",
+      "evidence": "2026-10-30: root cause was get_system_history stamping samples with frame.start_time.elapsed() (age, falls over time) instead of a wall-clock time; fixed, test un-ignored and passes.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },

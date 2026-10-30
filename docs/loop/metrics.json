@@ -227,8 +227,7 @@
     "failing_or_ignored_tests": [
       "src/server/brp_command_handler.rs - server::brp_command_handler::BrpCommandHandler (line 63)|ignored",
       "src/server/query_optimization_guide.rs - server::query_optimization_guide (line 40)|ignored",
-      "src/server/query_optimization_guide.rs - server::query_optimization_guide (line 60)|ignored",
-      "test_profiling_history|ignored, Frame history implementation needs refactoring"
+      "src/server/query_optimization_guide.rs - server::query_optimization_guide (line 60)|ignored"
     ]
   },
   "fixture": {
