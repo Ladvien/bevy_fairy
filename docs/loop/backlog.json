@@ -203,8 +203,8 @@
         "common_no_workaround": false,
         "evidence": "src/mcp_tools.rs request structs vs src/experiment_system.rs Action/Assertion"
       },
-      "status": "open",
-      "evidence": "The four tools now carry the handler's own types, so the advertised schema is generated from the type the handler parses. The wrapper structs still exist alongside them and are the second place a field could be added and missed.",
+      "status": "fixed",
+      "evidence": "experiment/hypothesis/detect_anomaly now serialise the request struct into the handler arguments (request_args in src/server/mcp_tools.rs); no hand-written field list remains. tests/tool_contract.rs and tests/docs_drift.rs pass.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },

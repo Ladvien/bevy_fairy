@@ -41,3 +41,4 @@
 - 2026-10-30 anomaly-monitoring: B-069 fixed (start/stop_monitoring pretended to monitor; removed); ratchet ok, workspace tests green; no release (6 h rule) — [report](iterations/2026-10-30-anomaly-monitoring.md)
 - 2026-10-30 anomaly-configure: B-070 fixed (configure kept defaults over current config, ignored bad values; status shows config); ratchet ok, workspace tests green; no release (6 h rule) — [report](iterations/2026-10-30-anomaly-configure.md)
 - 2026-10-30 orchestration-removal: deleted unreachable tool orchestrator (1170 lines, placeholder hooks, unbounded cache); ratchet ok, workspace tests green; no release (6 h rule) — [report](iterations/2026-10-30-orchestration-removal.md)
+- 2026-10-30 request-args: B-024 fixed (three tools build handler args by serialising the request struct, not a hand-written field list); ratchet ok; no release (6 h rule) — [report](iterations/2026-10-30-request-args.md)
