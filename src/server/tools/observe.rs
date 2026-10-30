@@ -51,18 +51,13 @@ impl ObserveState {
         })
     }
 
-    /// Add a new snapshot and maintain history
-    pub fn add_snapshot(&mut self, entities: Vec<EntityData>) -> StateSnapshot {
-        let snapshot = self.diff_engine.create_snapshot(entities);
-
-        // Add to history
+    /// Keep `snapshot` as the latest read, the one the next `diff` read is compared with.
+    pub fn add_snapshot(&mut self, snapshot: StateSnapshot) {
         self.snapshots_history.push(snapshot.clone());
         if self.snapshots_history.len() > self.max_history_size {
             self.snapshots_history.remove(0);
         }
-
-        self.last_snapshot = Some(snapshot.clone());
-        snapshot
+        self.last_snapshot = Some(snapshot);
     }
 
     /// Get diff against last snapshot
@@ -165,30 +160,10 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         .and_then(|d| d.as_bool())
         .unwrap_or(false);
 
-    let diff_target = arguments
-        .get("diff_target")
-        .and_then(|t| t.as_str())
-        .unwrap_or("last"); // "last", "history:N", "clear"
-
-    info!(
-        "Processing observe query: {} (diff_mode: {}, diff_target: {})",
-        query, diff_mode, diff_target
-    );
+    info!("Processing observe query: {} (diff_mode: {})", query, diff_mode);
 
     let start_time = Instant::now();
     let state = get_observe_state();
-
-    // Handle diff clear command
-    if diff_mode && diff_target == "clear" {
-        let mut state_guard = state.write().await;
-        state_guard.clear_history();
-        return Ok(json!({
-            "message": "Diff history cleared",
-            "diff_mode": true,
-            "action": "clear"
-        }));
-    }
-
     let state_guard = state.read().await;
 
 
@@ -326,26 +301,14 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
             let count = count_of(&value, decoded_entities.len());
 
-            // Handle diff mode for entity queries
+            // Compare with the previous `diff` read first, then keep this read as the next one's
+            // baseline. Keeping it first compared every read with itself: "no changes", always.
             let diff_result = if diff_mode {
                 let mut state_guard = state.write().await;
-                let current_snapshot = state_guard.add_snapshot(decoded_entities);
-
-                if diff_target.starts_with("history:") {
-                    // Parse history index with bounds checking
-                    if let Ok(index) = diff_target[8..].parse::<usize>() {
-                        if index < state_guard.snapshots_history.len() {
-                            state_guard.diff_against_history(&current_snapshot, index)
-                        } else {
-                            None // Index out of bounds
-                        }
-                    } else {
-                        None // Invalid index format
-                    }
-                } else {
-                    // Default to diff against last
-                    state_guard.diff_against_last(&current_snapshot)
-                }
+                let current_snapshot = state_guard.create_snapshot(decoded_entities);
+                let diff = state_guard.diff_against_last(&current_snapshot);
+                state_guard.add_snapshot(current_snapshot);
+                diff
             } else {
                 None
             };
@@ -377,7 +340,6 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
             "execution_time_ms": execution_time,
             "read_at": chrono::Utc::now().to_rfc3339(),
             "diff_mode": diff_mode,
-            "diff_target": diff_target,
         }
     });
     response["metadata"][count.0] = json!(count.1);

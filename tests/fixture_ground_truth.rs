@@ -607,6 +607,50 @@ async fn observe_reports_no_type_information_it_did_not_read_from_the_game() {
     }
 }
 
+/// The mover's entity id, read from the game.
+async fn mover_id(tools: &BevyDebuggerTools) -> u64 {
+    let (text, failed) = observe(tools, "find entities with component fixture_game::Mover").await;
+    assert!(!failed, "{text}");
+    let reply: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+    reply["result"][0]["entity"].as_u64().unwrap_or_else(|| panic!("no mover in: {text}"))
+}
+
+/// Call `observe` with `diff: true`, as an agent does, and return the parsed reply.
+async fn observe_diff(tools: &BevyDebuggerTools, query: &str) -> Value {
+    let request = ObserveRequest { query: query.to_string(), diff: true };
+    let result = tools.observe(Parameters(request)).await.expect("observe returns a result");
+    let text = text_of(&result);
+    assert!(result.is_error != Some(true), "{text}");
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"))
+}
+
+/// `diff: true` compares a read with the previous `diff: true` read. It compared each read with
+/// itself -- the new read became "the previous one" before the comparison ran -- and answered "No
+/// changes" while the mover moved. The mover moves along +x, so two reads of its `Transform` half a
+/// second apart differ, and the change is the mover's: a `world.get_components` reply does not name
+/// its entity, and the snapshot was once keyed on entity 0 (B-062).
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_diff_reports_the_mover_moving_between_two_reads() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    let mover = mover_id(&tools).await;
+
+    let transform = "bevy_transform::components::transform::Transform";
+    let query = format!("show entity {mover} components {transform}");
+    observe_diff(&tools, &query).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let second = observe_diff(&tools, &query).await;
+
+    let changes = second["diff"]["changes"].as_array().unwrap_or_else(|| panic!("no diff in: {second}"));
+    assert!(
+        changes.iter().any(|c| c["entity_id"] == mover && c["component_type"] == transform),
+        "the mover moved {} between the reads, so its Transform changed: {second}",
+        fixture_game::MOVER_SPEED * 0.5
+    );
+    assert!(changes.iter().all(|c| c["entity_id"] == mover), "only the mover was read: {second}");
+}
+
 /// A semantic query is built from short names (`Transform`). The game registers full paths, so
 /// the query used to be refused outright (B-065). A short name that ends exactly one registered
 /// path is now resolved, and the answer says which path was used.
