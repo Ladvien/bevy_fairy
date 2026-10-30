@@ -42,21 +42,14 @@ The debugger understands Bevy's ECS architecture:
 - **Resources**: Global game state
 - **Systems**: Logic that operates on components
 
-### 2. Semantic Understanding
-
-The debugger can interpret natural language queries about your game:
-- "Find the player" → Looks for entities with Player components
-- "Fast moving objects" → Entities with high velocity
-- "Enemies near walls" → Spatial queries with semantic understanding
-
-### 3. State Diffing
+### 2. State Diffing
 
 Sophisticated comparison of game states:
 - Component-level differences
 - Fuzzy matching for floating-point values
-- Semantic grouping of related changes
+- Changes grouped by component
 
-### 4. Time-Travel Debugging
+### 3. Time-Travel Debugging
 
 Record and replay capabilities:
 - Frame-by-frame state capture
@@ -246,27 +239,6 @@ Retry failed operation:
   
 Clear old failures:
   - dead_letter_queue.clear(older_than="1h")
-```
-
-### Semantic Query System
-
-Natural language queries that understand game concepts:
-
-```yaml
-Spatial Queries:
-  - "Entities within 50 units of player"
-  - "Objects above y=100"
-  - "Enemies facing the player"
-
-State Queries:
-  - "Damaged enemies" (Health < MaxHealth)
-  - "Moving platforms" (Platform + Velocity)
-  - "Active projectiles"
-
-Behavioral Queries:
-  - "Entities that haven't moved in 5 seconds"
-  - "Objects oscillating rapidly"
-  - "Entities with conflicting states"
 ```
 
 ## Performance Optimization
@@ -570,7 +542,6 @@ The bevy-fairy provides a powerful toolkit for debugging Bevy games. By combinin
 Remember:
 - Start with observation to understand the problem
 - Use checkpoints liberally to enable safe experimentation
-- Leverage the semantic understanding for natural queries
 - Chain tools together for complex debugging workflows
 - Generate reports for documentation and future reference
 

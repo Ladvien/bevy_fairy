@@ -207,17 +207,6 @@ pub async fn handle(request: &ObserveRequest, brp_client: Arc<RwLock<BrpClient>>
             if asks_for_every_component {
                 drop_not_present_errors(&mut value);
             }
-            // `world.query` has no limit, so `find N entities` cuts the rows here, before the
-            // count and the diff see them. `matched` says how many there were, so a cut answer
-            // never reads as the whole set.
-            let matched = match (limit, value.as_array_mut()) {
-                (Some(limit), Some(rows)) => {
-                    let matched = rows.len();
-                    rows.truncate(limit);
-                    Some((limit, matched))
-                }
-                _ => None,
-            };
             // Decode the method-specific payload into EntityData where possible
             let decoded_entities = entity_data_from_query_result(&value)
                 .or_else(|| {
@@ -244,7 +233,21 @@ pub async fn handle(request: &ObserveRequest, brp_client: Arc<RwLock<BrpClient>>
                 })
                 .unwrap_or_default();
 
-            let count = count_of(&value, decoded_entities.len());
+            // `world.query` has no limit, so `find N entities` cuts the returned rows. The diff
+            // below still runs on every match: the game answers in table order, a despawn moves
+            // another row into the freed slot, and a diff of the cut alone reported an entity that
+            // only moved into the cut as spawned. `matched` says how many there were, so a cut
+            // answer never reads as the whole set.
+            let matched = match (limit, value.as_array_mut()) {
+                (Some(limit), Some(rows)) => {
+                    let matched = rows.len();
+                    rows.truncate(limit);
+                    Some((limit, matched))
+                }
+                _ => None,
+            };
+            let returned = matched.map_or(decoded_entities.len(), |(limit, _)| decoded_entities.len().min(limit));
+            let count = count_of(&value, returned);
 
             // Compare with the previous `diff` read of the same query first, then keep this read as
             // the next one's baseline. Keeping it first compared every read with itself: "no
@@ -316,6 +319,11 @@ pub async fn handle(request: &ObserveRequest, brp_client: Arc<RwLock<BrpClient>>
             "message": "No earlier `diff` read of this exact query to compare with. This read is the \
                         baseline: repeat the same query with `diff: true` to see what changed.",
         });
+    }
+    if let (Some((_, matched)), Some(diff)) = (matched, response.get_mut("diff")) {
+        diff["compares"] = json!(format!(
+            "all {matched} matched entities, not only the rows in `result`"
+        ));
     }
 
     Ok(response)

@@ -642,6 +642,10 @@ async fn mover_id(tools: &BevyDebuggerTools) -> u64 {
     reply["result"][0]["entity"].as_u64().unwrap_or_else(|| panic!("no mover in: {text}"))
 }
 
+/// `observe` keeps one process-wide "previous `diff` read", so the tests that diff take turns: a
+/// diff read by one test in between another's two reads would make the second one a new baseline.
+static OBSERVE_DIFF_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Call `observe` with `diff: true`, as an agent does, and return the parsed reply.
 async fn observe_diff(tools: &BevyDebuggerTools, query: &str) -> Value {
     let request = ObserveRequest { query: query.to_string(), diff: true };
@@ -658,6 +662,7 @@ async fn observe_diff(tools: &BevyDebuggerTools, query: &str) -> Value {
 /// its entity, and the snapshot was once keyed on entity 0 (B-062).
 #[tokio::test(flavor = "multi_thread")]
 async fn observe_diff_reports_the_mover_moving_between_two_reads() {
+    let _turn = OBSERVE_DIFF_TURN.lock().await;
     let port = start_fixture();
     let tools = tools_for(port);
     wait_until_ready(&tools).await;
@@ -691,6 +696,29 @@ async fn observe_diff_reports_the_mover_moving_between_two_reads() {
         assert_eq!(switched["diff"]["baseline"], true, "a new query starts a new baseline: {switched}");
         assert!(switched["diff"].get("changes").is_none(), "nothing is compared across queries: {switched}");
     }
+}
+
+/// `find N` cuts the returned rows, but a diff must compare every match. The game answers
+/// `world.query` in table order and a despawn moves the last row into the freed slot, so a diff of
+/// the cut alone reported a crate that had been there all along as spawned (review of 1032672).
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_diff_with_a_limit_reports_only_what_the_game_changed() {
+    let _turn = OBSERVE_DIFF_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let query = "find 2 entities with component fixture_game::Crate";
+    let first = observe_diff(&tools, query).await;
+    assert_eq!(first["diff"]["baseline"], true, "{first}");
+    let shown = first["result"][0]["entity"].as_u64().unwrap_or_else(|| panic!("no crate row in: {first}"));
+    brp(&tools, json!({"method": "world.despawn_entity", "params": {"entity": shown}})).await;
+
+    let second = observe_diff(&tools, query).await;
+    let summary = &second["diff"]["summary"];
+    assert_eq!(summary["entities_removed"], 1, "one crate was despawned: {second}");
+    assert_eq!(summary["entities_added"], 0, "no crate was spawned: {second}");
+    assert_eq!(second["metadata"]["matched"], CRATE_WEIGHTS.len() - 1, "{second}");
+    assert_eq!(second["result"].as_array().map(Vec::len), Some(2), "the rows are still cut to 2: {second}");
 }
 
 /// `show entity N` shows that entity: the mover has a `Transform` and a `fixture_game::Mover`. It
