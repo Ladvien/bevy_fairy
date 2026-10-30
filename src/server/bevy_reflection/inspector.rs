@@ -332,6 +332,7 @@ impl BevyReflectionInspector {
     }
 
     /// Find custom inspector for a type
+    #[cfg(feature = "bevy-reflection")]
     async fn find_inspector_for_type(&self, type_path: &str) -> Option<String> {
         let inspectors = self.custom_inspectors.read().await;
         for inspector in inspectors.values() {
