@@ -164,7 +164,7 @@
       "id": "B-021",
       "kind": "change",
       "area": "capture",
-      "title": "no burst capture and no frame ring buffer: only single frames are available",
+      "title": "no frame ring buffer (burst capture shipped 2026-10-30; always-on buffer with trigger dump remains)",
       "must_fix": {
         "misleads": false,
         "blocks": false,
@@ -172,7 +172,7 @@
         "evidence": "crates/bevy_debugger_bevy/src/screenshot.rs keeps the last 8 single captures; nothing in the plugin or server captures a sequence"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21. The `RingBuffer` in src/anomaly_detector.rs is for anomaly data, not frames.",
+      "evidence": "burst: tests/agent_tools.rs::burst_labels_every_cell_with_the_frame_the_game_reported",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },

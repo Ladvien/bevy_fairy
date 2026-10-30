@@ -4,6 +4,11 @@
 
 ### Added
 
+- `burst` tool: a reference frame plus 1-7 captures at 0.5-10 fps (default 4) as one contact sheet (2 rows x 4 columns at most). Each cell is
+  labelled with the game frame the plugin reported for it and the milliseconds since the sequence began, so a sprite that stops
+  moving or a flash is visible in one image; a cell with no frame reported is labelled `F-`. Saves `sheet.png` and `ref.png`
+  (and every frame with `full_frames`). Fails, saving nothing, when any capture fails or the frame size changes. The server now
+  depends on `image` (already a plugin dependency) for it.
 - `screenshot` and `bevy_fairy/capture` report provenance: `source` (the one actually read, `offscreen` or `window`),
   `frame_requested` and `frame_captured` (the plugin's frame count, comparable with `status`'s `frame`). A game whose
   plugin predates this is reported as "source and frame unavailable" rather than shown without them. `Provenance` is a
@@ -11,6 +16,7 @@
 
 ### Fixed
 
+- `screenshot` answered a missing `width` or `height` from the plugin as `0x0`; it is now an error.
 - `replay` advertised `action` (an open string), `checkpoint_id` (read by no handler) and `speed` (always sent as 1.0, so
   `set_speed` without a speed silently set 1x), while its 21 actions read 25 arguments the schema refused: `save` could never be
   given a `filename`, `seek` a `frame`, `add_modification` anything. `action` is now an enum, every argument its handlers read is

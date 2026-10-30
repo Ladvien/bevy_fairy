@@ -265,7 +265,7 @@ reports ready. Scenes record commands, not raw input: keys, text and clicks sent
 
 ## Reference
 
-- **Tools:** 13 MCP tools. [`docs/mcp-tools.md`](https://github.com/Ladvien/bevy_fairy/blob/main/docs/mcp-tools.md)
+- **Tools:** 15 MCP tools. [`docs/mcp-tools.md`](https://github.com/Ladvien/bevy_fairy/blob/main/docs/mcp-tools.md)
   has every description and argument, generated from the server's own `tools/list`.
 - **API:** the plugin's types are documented on [docs.rs](https://docs.rs/bevy_fairy).
 

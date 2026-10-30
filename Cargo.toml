@@ -164,6 +164,7 @@ server = [
     "dep:tower",
     "dep:tower-http",
     "dep:axum",
+    "dep:image",
 ]
 
 # The Bevy plugin, the half a game links. `bevy` is `default-features = false` and picks up

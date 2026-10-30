@@ -5,7 +5,7 @@
     "loc": 21861,
     "direct_dependencies": 52,
     "public_modules": 26,
-    "mcp_tools": 14,
+    "mcp_tools": 15,
     "release_binary_bytes": 99925248,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
