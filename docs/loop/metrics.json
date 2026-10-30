@@ -115,12 +115,10 @@
     },
     "clippy_by_lint": {
       "clippy::assertions_on_constants": 1,
-      "clippy::cloned_ref_to_slice_refs": 2,
       "clippy::collapsible_match": 2,
       "clippy::field_reassign_with_default": 20,
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
-      "clippy::manual_range_contains": 3,
       "clippy::needless_borrows_for_generic_args": 8,
       "clippy::new_without_default": 2,
       "clippy::should_implement_trait": 2,
@@ -132,7 +130,6 @@
       "unused_variables": 16
     },
     "clippy_by_file": {
-      "src/server/anomaly_detector.rs": 5,
       "src/server/brp_validation.rs": 1,
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,

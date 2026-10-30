@@ -1059,3 +1059,50 @@ async fn no_tool_says_it_plays_a_recording_back_without_the_game_seeing_it() {
          between x = {x_when_recording_began} and x = {x_when_recording_stopped}"
     );
 }
+
+/// `detect_anomaly` keeps one process-wide set of detectors, so the tests that read it take turns.
+static ANOMALY_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn detect_anomaly(tools: &BevyDebuggerTools, request: Value) -> Value {
+    let params: bevy_fairy::server::mcp_tools::AnomalyRequest =
+        serde_json::from_value(request).expect("the request deserialises");
+    let result = tools
+        .detect_anomaly(Parameters(params))
+        .await
+        .expect("the detect_anomaly tool returns a result");
+    let text = text_of(&result);
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("detect_anomaly returned non-JSON ({e}): {text}"))
+}
+
+/// `detect` returned `anomalies: []` and `entities_analyzed: N` for a game in which no detector
+/// found anything to read, which an agent takes for a clean bill of health. The fixture has no
+/// `Velocity` and no `Health`/`Alive`, and a constant number of entities, so the truth is that the
+/// physics and consistency detectors evaluated nothing and the performance detector holds exactly
+/// as many samples as `detect` has been called.
+#[tokio::test(flavor = "multi_thread")]
+async fn detect_anomaly_reports_what_the_detectors_could_not_read_in_the_fixture() {
+    let _turn = ANOMALY_TURN.lock().await;
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    let everything = brp(&tools, json!({"method": "world.query", "params": {"data": {"components": []}}})).await;
+    let entities_in_the_game = everything.as_array().expect("world.query returns rows").len() as u64;
+
+    let mut held = Vec::new();
+    for call in 1..=2u64 {
+        let reply = detect_anomaly(&tools, json!({"action": "detect"})).await;
+        assert_eq!(reply["summary"]["entities_read"], entities_in_the_game, "{reply}");
+        assert_eq!(reply["anomalies"], json!([]), "the fixture is steady: {reply}");
+        let detectors = reply["detectors"].as_array().expect("coverage per detector");
+        let named = |name: &str| detectors.iter().find(|d| d["detector"] == name).unwrap_or_else(|| panic!("{name}: {reply}"));
+        for name in ["PhysicsDetector", "ConsistencyDetector"] {
+            assert_eq!(named(name)["examined"], 0, "the fixture has nothing {name} reads: {reply}");
+            assert!(named(name)["status"].as_str().unwrap().starts_with("not evaluated"), "{reply}");
+        }
+        let performance = named("PerformanceDetector")["status"].as_str().unwrap().to_string();
+        assert!(performance.contains(&format!("{call} of the 10 samples")), "call {call}: {performance}");
+        held.push(performance);
+        assert!(reply["note"].as_str().unwrap().contains("says nothing about the game"), "{reply}");
+    }
+    assert_ne!(held[0], held[1], "each call adds one sample");
+}
