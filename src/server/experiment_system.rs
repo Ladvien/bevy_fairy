@@ -54,6 +54,9 @@ pub struct ActionResult {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rollback_available: Option<bool>,
+    /// How to undo this action; kept for `undo`, never sent to the caller.
+    #[serde(skip)]
+    reverse: Option<Action>,
 }
 
 impl ActionResult {
@@ -65,6 +68,7 @@ impl ActionResult {
             entity_id: None,
             error: None,
             rollback_available: None,
+            reverse: None,
         }
     }
 
@@ -76,6 +80,7 @@ impl ActionResult {
             entity_id: Some(entity_id),
             error: None,
             rollback_available: None,
+            reverse: None,
         }
     }
 
@@ -87,6 +92,7 @@ impl ActionResult {
             entity_id: None,
             error: Some(error),
             rollback_available: None,
+            reverse: None,
         }
     }
 }
@@ -166,9 +172,30 @@ impl ActionExecutor {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ActionResult>> + Send + 'a>>
     {
         Box::pin(async move {
+            let result = self.dispatch(action, brp_client).await;
+
+            // Add to history if successful and not in a transaction
+            if let Ok(action_result) = &result {
+                if action_result.success && self.transaction_stack.is_empty() {
+                    self.add_to_history(action.clone(), action_result.clone());
+                }
+            }
+
+            result
+        })
+    }
+
+    /// Run one action and report whether it can be reversed, without touching history.
+    fn dispatch<'a>(
+        &'a mut self,
+        action: &'a Action,
+        brp_client: &'a mut BrpClient,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ActionResult>> + Send + 'a>>
+    {
+        Box::pin(async move {
             debug!("Executing action: {:?}", action);
 
-            let result = match action {
+            let mut result = match action {
                 Action::Spawn {
                     components,
                     archetype,
@@ -189,13 +216,12 @@ impl ActionExecutor {
                 }
             };
 
-            // Add to history if successful and not in a transaction
-            if let Ok(ref action_result) = result {
-                if action_result.success && self.transaction_stack.is_empty() {
-                    self.add_to_history(action.clone(), action_result.clone());
+            // `rollback_available` is derived from what `undo` will actually run.
+            if let Ok(r) = &mut result {
+                if r.success && !matches!(action, Action::Batch { .. }) {
+                    r.rollback_available = Some(self.create_reverse_action(action, r).is_some());
                 }
             }
-
             result
         })
     }
@@ -304,8 +330,14 @@ impl ActionExecutor {
                         entity_id,
                     );
 
-                    if original_values.is_some() {
-                        result.rollback_available = Some(true);
+                    // Only claim a reverse when every component this set had an original value.
+                    if let Some(originals) = original_values {
+                        if originals.len() == components.len() {
+                            result.reverse = Some(Action::Modify {
+                                entity_id,
+                                components: originals,
+                            });
+                        }
                     }
 
                     Ok(result)
@@ -324,12 +356,7 @@ impl ActionExecutor {
     ) -> Result<ActionResult> {
         info!("Deleting entity {}", entity_id);
 
-        // Store entity data for rollback if enabled
-        let entity_data = if self.enable_rollback {
-            self.get_entity_data(entity_id, brp_client).await?
-        } else {
-            None
-        };
+        // A despawn cannot be undone: the entity returns as a different one, so nothing is recorded.
 
         // Create BRP delete request (world.despawn_entity)
         let request = BrpRequest {
@@ -342,16 +369,10 @@ impl ActionExecutor {
         match brp_client.send_request(&request).await {
             Ok(response) => match response.payload {
                 BrpPayload::Result(_) => {
-                    let mut result = ActionResult::success(
+                    Ok(ActionResult::success(
                         "delete",
                         format!("Successfully deleted entity {entity_id}"),
-                    );
-
-                    if entity_data.is_some() {
-                        result.rollback_available = Some(true);
-                    }
-
-                    Ok(result)
+                    ))
                 }
                 BrpPayload::Error(err) => Ok(ActionResult::failure("delete", err.message)),
             },
@@ -388,13 +409,17 @@ impl ActionExecutor {
             // Check if rollback needed
             if transaction.should_rollback() {
                 warn!("Transaction failed, rolling back {} actions", actions.len());
-                self.rollback_transaction(&transaction, brp_client).await?;
+                let not_reversed = self.rollback_transaction(&transaction, brp_client).await?;
 
                 self.transaction_stack.pop();
-                return Ok(ActionResult::failure(
-                    "batch",
-                    "Transaction rolled back due to failures".to_string(),
-                ));
+                let message = if not_reversed == 0 {
+                    "Transaction rolled back due to failures".to_string()
+                } else {
+                    format!(
+                        "Transaction failed; {not_reversed} successful action(s) could not be reversed and are still applied in the game"
+                    )
+                };
+                return Ok(ActionResult::failure("batch", message));
             }
 
             self.transaction_stack.pop();
@@ -443,37 +468,33 @@ impl ActionExecutor {
         &mut self,
         transaction: &Transaction,
         brp_client: &mut BrpClient,
-    ) -> Result<()> {
+    ) -> Result<usize> {
+        let mut not_reversed = 0;
         for (action, result) in transaction.actions.iter().zip(&transaction.results).rev() {
             if result.success {
-                if let Some(reverse_action) = self.create_reverse_action(action, result) {
-                    let _ = self.execute_action(&reverse_action, brp_client).await;
+                match self.create_reverse_action(action, result) {
+                    Some(reverse_action) => {
+                        let reversed = self.dispatch(&reverse_action, brp_client).await;
+                        if !matches!(&reversed, Ok(r) if r.success) {
+                            not_reversed += 1;
+                        }
+                    }
+                    None => not_reversed += 1,
                 }
             }
         }
-        Ok(())
+        Ok(not_reversed)
     }
 
-    /// Create reverse action for rollback
+    /// The action that undoes a successful `action`, recorded by the executor when it ran.
     fn create_reverse_action(&self, action: &Action, result: &ActionResult) -> Option<Action> {
         match action {
-            Action::Spawn { .. } => {
-                // Reverse of spawn is delete
-                result.entity_id.map(|id| Action::Delete { entity_id: id })
-            }
-            Action::Modify { .. } => {
-                // For proper rollback, we'd need the original values stored
-                // This would require enhancing the ActionResult to include original state
-                // For now, we can't properly reverse a modify without the original values
-                None
-            }
-            Action::Delete { .. } => {
-                // For proper rollback, we'd need the original entity data
-                // This would require enhancing the ActionResult to include deleted entity data
-                // For now, we can't properly reverse a delete without the original data
-                None
-            }
-            Action::Batch { .. } => None,
+            // The reverse of a spawn is deleting the entity the game reported.
+            Action::Spawn { .. } => result.entity_id.map(|id| Action::Delete { entity_id: id }),
+            // A modify records the original values it overwrote, when it could read them all.
+            Action::Modify { .. } => result.reverse.clone(),
+            // A despawned entity comes back as a different entity; nothing here can restore it.
+            Action::Delete { .. } | Action::Batch { .. } => None,
         }
     }
 
@@ -499,31 +520,46 @@ impl ActionExecutor {
 
     /// Undo last action
     pub async fn undo(&mut self, brp_client: &mut BrpClient) -> Result<ActionResult> {
-        if let Some(entry) = self.undo_stack.pop_back() {
-            if let Some(reverse_action) = &entry.reverse_action {
-                let result = self.execute_action(reverse_action, brp_client).await?;
-                self.redo_stack.push_back(entry);
-                Ok(result)
-            } else {
-                Ok(ActionResult::failure(
-                    "undo",
-                    "No reverse action available".to_string(),
-                ))
-            }
+        let Some(entry) = self.undo_stack.pop_back() else {
+            return Ok(ActionResult::failure("undo", "Nothing to undo".to_string()));
+        };
+        let Some(reverse_action) = entry.reverse_action.clone() else {
+            // The entry stays in history: a refused undo must not erase what happened.
+            let what = entry.result.action_type.clone();
+            self.undo_stack.push_back(entry);
+            return Ok(ActionResult::failure(
+                "undo",
+                format!("`{what}` cannot be undone: nothing recorded how to reverse it (a delete cannot be put back, a modify can only be reversed when every component it set existed before)"),
+            ));
+        };
+        let result = self.dispatch(&reverse_action, brp_client).await?;
+        if result.success {
+            self.redo_stack.push_back(entry);
         } else {
-            Ok(ActionResult::failure("undo", "Nothing to undo".to_string()))
+            self.undo_stack.push_back(entry);
         }
+        Ok(result)
     }
 
     /// Redo last undone action
     pub async fn redo(&mut self, brp_client: &mut BrpClient) -> Result<ActionResult> {
-        if let Some(entry) = self.redo_stack.pop_back() {
-            let result = self.execute_action(&entry.action, brp_client).await?;
-            self.undo_stack.push_back(entry);
-            Ok(result)
+        let Some(entry) = self.redo_stack.pop_back() else {
+            return Ok(ActionResult::failure("redo", "Nothing to redo".to_string()));
+        };
+        let result = self.dispatch(&entry.action, brp_client).await?;
+        if result.success {
+            // Redoing a spawn makes a different entity, so the entry is rebuilt from this run.
+            let reverse_action = self.create_reverse_action(&entry.action, &result);
+            self.undo_stack.push_back(HistoryEntry {
+                action: entry.action,
+                result: result.clone(),
+                reverse_action,
+                timestamp: chrono::Utc::now(),
+            });
         } else {
-            Ok(ActionResult::failure("redo", "Nothing to redo".to_string()))
+            self.redo_stack.push_back(entry);
         }
+        Ok(result)
     }
 
     /// Get history
@@ -669,7 +705,8 @@ impl ActionExecutor {
         brp_client: &mut BrpClient,
     ) -> Result<Option<Vec<ComponentSpec>>> {
         // Query entity to get current values
-        let entity_data = self.get_entity_data(entity_id, brp_client).await?;
+        let names = components.iter().map(|c| c.type_id.as_str()).collect();
+        let entity_data = self.get_entity_data(entity_id, names, brp_client).await?;
 
         Ok(entity_data.map(|entity_data| {
             let mut original_values = Vec::new();
@@ -687,10 +724,11 @@ impl ActionExecutor {
         }))
     }
 
-    /// Get entity data for rollback
+    /// Read the named components of an entity; a component it does not have is simply absent.
     async fn get_entity_data(
         &self,
         entity_id: EntityId,
+        component_names: Vec<&str>,
         brp_client: &mut BrpClient,
     ) -> Result<Option<EntityData>> {
         let request = BrpRequest {
@@ -698,7 +736,7 @@ impl ActionExecutor {
             id: None,
             params: Some(serde_json::json!({
                 "entity": entity_id,
-                "components": [],
+                "components": component_names,
                 "strict": false
             })),
         };
