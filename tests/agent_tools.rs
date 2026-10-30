@@ -12,7 +12,7 @@ use base64::Engine as _;
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
-    BevyDebuggerTools, BrpCallRequest, BurstRequest, NoArgs, RunRequest, SceneAction, SceneRequest, ScreenshotRequest,
+    BevyDebuggerTools, BrpCallRequest, BurstRequest, NoArgs, ObserveRequest, RunRequest, SceneAction, SceneRequest, ScreenshotRequest,
 };
 use rmcp::handler::server::tool::Parameters;
 use rmcp::model::CallToolResult;
@@ -117,6 +117,7 @@ fn dispatch(game: &mut FakeGame, method: &str, params: &Value) -> Result<Value, 
             }
             _ => Err((-32602, "bevy_fairy/scene takes action get or clear".to_string())),
         },
+        "world.get_components" => Ok(json!({"components": {"bevy_transform::components::transform::Transform": {"translation": [1.0, 2.0, 3.0]}}})),
         "bevy_fairy/quit" => Ok(json!({"quitting": true})),
         other => Err((-32601, format!("method not found: {other}"))),
     }
@@ -427,4 +428,27 @@ async fn burst_refuses_out_of_range_arguments_before_capturing() {
         assert!(text_of(&result).contains("Example:"), "{}", text_of(&result));
     }
     assert_eq!(game.lock().expect("fake game lock").delivered, 0, "nothing was captured");
+}
+
+/// `world.get_components` replies do not name the entity; `observe` used to key the reflection (and
+/// its diff snapshot) on entity 0 whatever the caller asked about.
+#[tokio::test]
+async fn observe_reflection_names_the_entity_that_was_asked_about() {
+    let port = start_fake_game(game_with(true, 0)).await;
+    let config = Config { bevy_brp_host: "127.0.0.1".to_string(), bevy_brp_port: port, ..Config::default() };
+    let mut client = BrpClient::new(&config);
+    client.connect_with_retry().await.expect("the fake game answers the BRP handshake");
+    let tools = BevyDebuggerTools::new(Arc::new(RwLock::new(client)));
+    let result = tools
+        .observe(Parameters(ObserveRequest {
+            query: "show entity 4242".to_string(),
+            diff: false,
+            reflection: true,
+        }))
+        .await
+        .expect("observe answers");
+    let text = text_of(&result);
+    let reply: Value = serde_json::from_str(&text).unwrap_or_else(|_| panic!("json reply: {text}"));
+    let reflection = &reply["result"]["reflection_data"];
+    assert_eq!(reflection[0]["entity_id"], 4242, "reply: {text}");
 }

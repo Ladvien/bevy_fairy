@@ -463,6 +463,22 @@
       "evidence": "tests/tool_list.rs::replay_advertises_its_actions_and_every_argument_they_read, every_advertised_argument_has_a_description",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-062",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe keyed a single-entity read (show entity N) on entity 0: reflection_data.entity_id and diff snapshots named the wrong entity",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/tools/observe.rs unwrap_or(0) on a reply that never carries the entity"
+      },
+      "status": "fixed",
+      "evidence": "tests/agent_tools.rs::observe_reflection_names_the_entity_that_was_asked_about (failed with entity_id 0 before)",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }

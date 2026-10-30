@@ -292,13 +292,20 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
             // Decode the method-specific payload into EntityData where possible
             let decoded_entities = entity_data_from_query_result(&value)
                 .or_else(|| {
-                    // world.get_components result: {"components": {...}} (entity unknown here)
+                    // world.get_components result: {"components": {...}}; the reply does not name
+                    // the entity, the request did. Without an id there is nothing honest to key a
+                    // snapshot or a reflection on, so decode nothing rather than call it entity 0.
+                    let entity = brp_request
+                        .params
+                        .as_ref()
+                        .and_then(|p| p.get("entity"))
+                        .and_then(|e| e.as_u64())?;
                     value
                         .get("components")
                         .and_then(|c| c.as_object())
                         .map(|map| {
                             vec![EntityData {
-                                id: value.get("entity").and_then(|e| e.as_u64()).unwrap_or(0),
+                                id: entity,
                                 components: map
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.clone()))
