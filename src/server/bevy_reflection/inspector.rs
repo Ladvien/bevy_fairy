@@ -36,7 +36,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info};
 
 use crate::server::error::{Error, Result};
 
@@ -351,7 +351,7 @@ impl BevyReflectionInspector {
         let mut errors = Vec::new();
 
         // Try custom inspector first
-        if let Some(inspector_name) = &metadata.fields.get(0).and_then(|f| f.inspector_name.as_ref()) {
+        if let Some(inspector_name) = &metadata.fields.first().and_then(|f| f.inspector_name.as_ref()) {
             let inspectors = self.custom_inspectors.read().await;
             if let Some(inspector) = inspectors.get(inspector_name.as_str()) {
                 match inspector.inspect(component_value, component_type) {
@@ -392,7 +392,7 @@ impl BevyReflectionInspector {
             Value::Object(obj) => {
                 let mut children = Vec::new();
                 for (key, val) in obj {
-                    let child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
+                    let _child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
                     children.push(InspectedValue {
                         name: key.clone(),
                         raw_value: val.clone(),
@@ -415,7 +415,7 @@ impl BevyReflectionInspector {
             Value::Array(arr) => {
                 let mut children = Vec::new();
                 for (i, val) in arr.iter().enumerate() {
-                    let child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
+                    let _child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
                     children.push(InspectedValue {
                         name: format!("[{}]", i),
                         raw_value: val.clone(),

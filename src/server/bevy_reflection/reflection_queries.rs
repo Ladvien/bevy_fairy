@@ -17,14 +17,14 @@
 use ::serde::{Deserialize, Serialize};
 #[cfg(not(feature = "bevy-reflection"))]
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::server::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata, TypeCategory};
-use crate::server::bevy_reflection::type_registry_tools::{TypeRegistryManager, TypeQuery};
+use crate::server::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata};
+use crate::server::bevy_reflection::type_registry_tools::TypeRegistryManager;
 use crate::server::brp_messages::{BrpRequest, EntityData, ComponentValue};
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
@@ -449,8 +449,8 @@ impl ReflectionQueryEngine {
         entity: &EntityData,
     ) -> ComponentRelationships {
         let mut dependents = Vec::new();
-        let mut dependencies = Vec::new();
-        let mut conflicts = Vec::new();
+        let dependencies = Vec::new();
+        let conflicts = Vec::new();
 
         // Analyze common Bevy component relationships
         match component_type {
@@ -466,12 +466,11 @@ impl ReflectionQueryEngine {
                     }
                 }
             }
-            "bevy_hierarchy::components::parent::Parent" => {
+            "bevy_hierarchy::components::parent::Parent"
                 // Parent conflicts with being a root entity in some contexts
-                if entity.components.contains_key("bevy_hierarchy::components::children::Children") {
+                if entity.components.contains_key("bevy_hierarchy::components::children::Children") => {
                     // Entity can be both parent and child
                 }
-            }
             _ => {}
         }
 
