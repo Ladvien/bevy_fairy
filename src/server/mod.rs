@@ -78,7 +78,6 @@ pub mod semantic_analyzer;
 // Experimentation and testing
 pub mod experiment_system;
 pub mod hypothesis_system;
-pub mod stress_test_system;
 
 // State management
 pub mod recording_system;

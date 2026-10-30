@@ -932,37 +932,6 @@ impl WorkflowDSL {
 
         pipeline
     }
-
-    /// Create a debug pipeline for performance issues
-    pub fn debug_performance() -> ToolPipeline {
-        let mut pipeline = ToolPipeline::new("debug_performance".to_string());
-        pipeline.description =
-            Some("Debug performance issues with stress testing and anomaly detection".to_string());
-
-        pipeline.add_step(PipelineStep {
-            name: "stress_test".to_string(),
-            tool: "stress".to_string(),
-            arguments: json!({"type": "cpu_load", "duration": 30}),
-            condition: None,
-            retry_config: None,
-            timeout: Some(Duration::from_secs(45)),
-        });
-
-        pipeline.add_step(PipelineStep {
-            name: "anomaly_detection".to_string(),
-            tool: "anomaly".to_string(),
-            arguments: json!({"analyze": "@stress_test.metrics"}),
-            condition: Some(StepCondition {
-                condition_type: ConditionType::OnSuccess,
-                reference: "stress_test".to_string(),
-                expected_value: None,
-            }),
-            retry_config: Some(RetryConfig::default()),
-            timeout: Some(Duration::from_secs(30)),
-        });
-
-        pipeline
-    }
 }
 
 #[cfg(test)]

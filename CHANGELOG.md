@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 - 2026-10-30
+
+### Removed
+
+- **Breaking:** `server::stress_test_system`, `server::tools::stress`, the `stress-testing` Cargo
+  feature, and the `debug_performance` pipeline template (its only step called the `stress` tool).
+  Nothing reached them: `stress_test` left `tools/list` in 0.3.x and the legacy server that called
+  them was deleted in 0.4.0. No MCP tool, flag or behaviour changes. (The `hypothesis` tool's
+  `stress_test` action is separate and stays.)
+
 ## 0.6.1 - 2026-10-30
 
 ### Fixed

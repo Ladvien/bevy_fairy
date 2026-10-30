@@ -76,7 +76,7 @@
         "evidence": "src/lib.rs:158-276 exports them; brp_client_v2, brp_client_refactored, tools/replay_v2.rs are unused"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains.",
+      "evidence": "Verified 2026-10-21 by reading the tool router and the module exports. 2026-10-30: two duplicate BRP clients (v2, refactored) deleted; the rest remains. 2026-10-30: stress modules deleted (B-038).",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -299,8 +299,8 @@
         "common_no_workaround": false,
         "evidence": "stress_test left tools/list in B-034; the only other caller is the legacy McpServer behind --tcp, which drops every connection (B-012)"
       },
-      "status": "open",
-      "evidence": "A pure deletion, natural to do with the --tcp/legacy-server deletion.",
+      "status": "fixed",
+      "evidence": "2026-10-30: stress.rs, stress_test_system.rs, registrations, debug_performance pipeline and `stress-testing` feature deleted; workspace tests + ratchet green.",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

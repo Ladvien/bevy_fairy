@@ -52,21 +52,6 @@ impl ToolExecutor for HypothesisExecutor {
     }
 }
 
-/// Tool executor for the stress tool
-pub struct StressExecutor;
-
-#[async_trait]
-impl ToolExecutor for StressExecutor {
-    async fn execute(
-        &self,
-        arguments: Value,
-        brp_client: Arc<RwLock<BrpClient>>,
-        _context: &mut ToolContext,
-    ) -> Result<Value> {
-        crate::server::tools::stress::handle(arguments, brp_client).await
-    }
-}
-
 /// Tool executor for the replay tool
 pub struct ReplayExecutor;
 
@@ -107,7 +92,6 @@ pub fn create_orchestrator(
     orchestrator.register_tool("observe".to_string(), Arc::new(ObserveExecutor));
     orchestrator.register_tool("experiment".to_string(), Arc::new(ExperimentExecutor));
     orchestrator.register_tool("hypothesis".to_string(), Arc::new(HypothesisExecutor));
-    orchestrator.register_tool("stress".to_string(), Arc::new(StressExecutor));
     orchestrator.register_tool("replay".to_string(), Arc::new(ReplayExecutor));
     orchestrator.register_tool("anomaly".to_string(), Arc::new(AnomalyExecutor));
 
@@ -115,8 +99,6 @@ pub fn create_orchestrator(
     orchestrator.register_pipeline_template(
         crate::server::tool_orchestration::WorkflowDSL::observe_experiment_replay(),
     );
-    orchestrator
-        .register_pipeline_template(crate::server::tool_orchestration::WorkflowDSL::debug_performance());
 
     orchestrator
 }

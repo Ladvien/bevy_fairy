@@ -7,4 +7,3 @@ pub mod observe_optimized;
 pub mod orchestration;
 pub mod replay;
 pub mod replay_v2;
-pub mod stress;

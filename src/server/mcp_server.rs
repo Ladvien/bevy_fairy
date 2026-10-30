@@ -29,7 +29,7 @@ use crate::server::diagnostics::{create_bug_report, DiagnosticCollector};
 use crate::server::error::{Error, ErrorContext, ErrorSeverity, Result};
 use crate::server::resource_manager::{ResourceConfig, ResourceManager};
 use crate::server::tool_orchestration::{ToolContext, ToolOrchestrator, ToolPipeline};
-use crate::server::tools::{anomaly, experiment, hypothesis, observe, orchestration, replay, stress};
+use crate::server::tools::{anomaly, experiment, hypothesis, observe, orchestration, replay};
 use crate::server::lazy_init::{LazyComponents, preload_critical_components};
 use crate::server::command_cache::{CommandCache, CacheConfig, CacheKey};
 use crate::server::response_pool::{ResponsePool, ResponsePoolConfig};
@@ -226,7 +226,6 @@ impl McpServer {
                     "experiment" => experiment::handle(arguments, Arc::clone(&brp_client_ref)).await,
                     "screenshot" => self.handle_screenshot(arguments).await,
                     "hypothesis" => hypothesis::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "stress" => stress::handle(arguments, Arc::clone(&brp_client_ref)).await,
                     "replay" => replay::handle(arguments, Arc::clone(&brp_client_ref)).await,
                     "anomaly" => anomaly::handle(arguments, Arc::clone(&brp_client_ref)).await,
                     "orchestrate" => self.handle_orchestration(arguments).await,
@@ -350,7 +349,6 @@ impl McpServer {
                 "observe_experiment_replay" => {
                     crate::server::tool_orchestration::WorkflowDSL::observe_experiment_replay()
                 }
-                "debug_performance" => crate::server::tool_orchestration::WorkflowDSL::debug_performance(),
                 _ => {
                     return Err(Error::Validation(format!(
                         "Unknown pipeline template: {template_name}"
@@ -388,7 +386,6 @@ impl McpServer {
                     "observe",
                     "experiment",
                     "hypothesis",
-                    "stress",
                     "replay",
                     "anomaly",
                 ]
@@ -918,7 +915,7 @@ impl McpServer {
                 "diagnostic_report" | "anomaly" | "debug" => true,
                 
                 // Non-cacheable tools (stateful or time-sensitive operations)
-                "experiment" | "screenshot" | "hypothesis" | "stress" | "replay" |
+                "experiment" | "screenshot" | "hypothesis" | "replay" |
                 "orchestrate" | "pipeline" | "performance_dashboard" | 
                 "dead_letter_queue" | "checkpoint" | "bug_report" => false,
                 

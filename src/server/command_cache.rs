@@ -472,7 +472,6 @@ fn get_active_feature_flags() -> String {
         ("session-management", cfg!(feature = "session-management")),
         ("issue-detection", cfg!(feature = "issue-detection")),
         ("memory-profiling", cfg!(feature = "memory-profiling")),
-        ("stress-testing", cfg!(feature = "stress-testing")),
         ("time-travel", cfg!(feature = "time-travel")),
         ("orchestration", cfg!(feature = "orchestration")),
         ("optimizations", cfg!(feature = "optimizations")),
