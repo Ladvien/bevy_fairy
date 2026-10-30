@@ -45,9 +45,6 @@ pub struct ObserveRequest {
     /// Compare this read with the previous `diff: true` read of this server session.
     #[serde(default)]
     pub diff: bool,
-    /// Add `reflection_data`: per-component type information for the first 20 entities returned.
-    #[serde(default)]
-    pub reflection: bool,
 }
 
 /// What `guide` accepts. One tool, four verbs, because they are four things you do to one script
@@ -850,15 +847,14 @@ pub const COLLABORATION_PROTOCOL: &str =
 
 #[tool_router]
 impl BevyDebuggerTools {
-    /// Observe and query Bevy game state
-    #[tool(description = "Observe and query Bevy game state in real-time with optional reflection-based component inspection. Use this to inspect entities, components, resources, and game state. Enable 'reflection' parameter for deep component analysis including field inspection, type information, and custom inspectors for complex types like Option<T>, Vec<T>, HashMap<K,V>. Perfect for debugging entity spawning, component updates, and understanding your ECS architecture.")]
+    /// Read the game's entities with a phrase query
+    #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, the registered component types, or a semantic query such as stuck entities or fast-moving objects. `diff` compares a read with the previous `diff` read. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
     pub async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> Result<CallToolResult, McpError> {
         debug!("Executing observe query: {}", req.query);
         
         let arguments = serde_json::json!({
             "query": req.query,
             "diff": req.diff,
-            "reflection": req.reflection,
         });
         
         match observe::handle(arguments, self.brp_client.clone()).await {

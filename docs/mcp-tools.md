@@ -107,13 +107,12 @@ Test a claim about your game against the running game. `action` picks the operat
 
 ## `observe`
 
-Observe and query Bevy game state in real-time with optional reflection-based component inspection. Use this to inspect entities, components, resources, and game state. Enable 'reflection' parameter for deep component analysis including field inspection, type information, and custom inspectors for complex types like Option<T>, Vec<T>, HashMap<K,V>. Perfect for debugging entity spawning, component updates, and understanding your ECS architecture.
+Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, the registered component types, or a semantic query such as stuck entities or fast-moving objects. `diff` compares a read with the previous `diff` read. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `diff` | boolean | no | Compare this read with the previous `diff: true` read of this server session. |
 | `query` | string | yes | A phrase in one of the shapes the parser accepts; a bare word such as "score" or "crate" is refused. Shapes, each a complete example: `list all entities`, `list components`, `show entity 4294967298`, `find entities with component bevy_ecs::name::Name`, `find entities without component bevy_ecs::name::Name`, `find 5 entities with component bevy_ecs::name::Name`, `find stuck entities`, `show fast moving objects`. Component names are full type paths; a name the game does not register is an error that lists the registered paths ending in it. The metadata carries entity_count (component_type_count for the list-components query) and read_at. For any other read, such as one resource, use `brp`. |
-| `reflection` | boolean | no | Add `reflection_data`: per-component type information for the first 20 entities returned. |
 
 ## `quit`
 

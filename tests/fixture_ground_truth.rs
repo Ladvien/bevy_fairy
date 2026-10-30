@@ -528,7 +528,7 @@ async fn the_params_examples_in_the_brp_schema_are_accepted_by_the_game() {
 
 /// Call `observe` the way an agent does and return the raw text and the error flag.
 async fn observe(tools: &BevyDebuggerTools, query: &str) -> (String, bool) {
-    let request = ObserveRequest { query: query.to_string(), diff: false, reflection: false };
+    let request = ObserveRequest { query: query.to_string(), diff: false };
     let result = tools.observe(Parameters(request)).await.expect("observe returns a result");
     (text_of(&result), result.is_error == Some(true))
 }
@@ -578,6 +578,33 @@ async fn observe_refuses_a_component_name_the_game_does_not_register() {
 
     let (text, failed) = observe(&tools, "find entities with component fixture_game::Crate").await;
     assert!(!failed, "the registered path is accepted: {text}");
+}
+
+/// `observe` with `reflection: true` answered type questions the server never put to the game. Every
+/// component came back `is_reflected: false`, `type_category: "Value"` with no `fields`, and each
+/// value's type was guessed from its JSON: the fixture's `Crate` is a reflected struct whose `weight`
+/// is an `f32`, and it was reported as an unreflected value holding an `f64`. The server has no type
+/// registry of its own, so the honest answer is no answer: the field is refused the way an agent's
+/// call with an unknown field is, and the game's own types are a `brp` `registry.schema` call away.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_reports_no_type_information_it_did_not_read_from_the_game() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+
+    let arguments = json!({"query": "find entities with component fixture_game::Crate", "reflection": true});
+    match serde_json::from_value::<ObserveRequest>(arguments) {
+        Err(refusal) => assert!(refusal.to_string().contains("reflection"), "the refusal names the field: {refusal}"),
+        Ok(request) => {
+            let result = tools.observe(Parameters(request)).await.expect("observe returns a result");
+            let reply: Value = serde_json::from_str(&text_of(&result)).expect("observe answers JSON");
+            // Compact, so the claims below are matched whatever the reply's layout.
+            let reflection = serde_json::to_string(&reply["result"]["reflection_data"]).expect("re-serialise");
+            assert!(!reflection.contains(r#""is_reflected":false"#), "Crate is a reflected component: {reflection}");
+            assert!(!reflection.contains(r#""type_category":"Value""#), "Crate is a struct: {reflection}");
+            assert!(!reflection.contains(r#""f64""#), "Crate.weight is an f32: {reflection}");
+        }
+    }
 }
 
 /// A semantic query is built from short names (`Transform`). The game registers full paths, so

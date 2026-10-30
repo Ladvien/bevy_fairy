@@ -12,13 +12,11 @@ use crate::server::brp_messages::{
 use crate::server::error::Result;
 use crate::server::query_parser::{QueryParser, RegexQueryParser};
 use crate::server::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
-use crate::server::bevy_reflection::BevyReflectionInspector;
 
 /// Shared state for the observe tool
 pub struct ObserveState {
     parser: RegexQueryParser,
     diff_engine: StateDiff,
-    reflection_inspector: BevyReflectionInspector,
     last_snapshot: Option<StateSnapshot>,
     snapshots_history: Vec<StateSnapshot>, // Keep last N snapshots for windowed diffs
     max_history_size: usize,
@@ -33,7 +31,6 @@ impl ObserveState {
         Ok(Self {
             parser: RegexQueryParser::new()?,
             diff_engine: StateDiff::new(),
-            reflection_inspector: BevyReflectionInspector::new(),
             last_snapshot: None,
             snapshots_history: Vec::new(),
             max_history_size: 10, // Keep last 10 snapshots
@@ -48,7 +45,6 @@ impl ObserveState {
         Ok(Self {
             parser: RegexQueryParser::new()?,
             diff_engine: StateDiff::with_config(fuzzy_config, game_rules),
-            reflection_inspector: BevyReflectionInspector::new(),
             last_snapshot: None,
             snapshots_history: Vec::new(),
             max_history_size: 10,
@@ -174,14 +170,9 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         .and_then(|t| t.as_str())
         .unwrap_or("last"); // "last", "history:N", "clear"
 
-    let use_reflection = arguments
-        .get("reflection")
-        .and_then(|r| r.as_bool())
-        .unwrap_or(false);
-
     info!(
-        "Processing observe query: {} (diff_mode: {}, diff_target: {}, reflection: {})",
-        query, diff_mode, diff_target, use_reflection
+        "Processing observe query: {} (diff_mode: {}, diff_target: {})",
+        query, diff_mode, diff_target
     );
 
     let start_time = Instant::now();
@@ -312,7 +303,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 .or_else(|| {
                     // world.get_components result: {"components": {...}}; the reply does not name
                     // the entity, the request did. Without an id there is nothing honest to key a
-                    // snapshot or a reflection on, so decode nothing rather than call it entity 0.
+                    // diff snapshot on, so decode nothing rather than call it entity 0.
                     let entity = brp_request
                         .params
                         .as_ref()
@@ -335,53 +326,10 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
             let count = count_of(&value, decoded_entities.len());
 
-            let mut result_json = value.clone();
-
-            // Add reflection inspection if requested
-            if use_reflection {
-                let mut reflection_data = Vec::new();
-                let state_guard = state.read().await;
-
-                for entity in decoded_entities.iter().take(20) { // Limit reflection to first 20 entities for performance
-                    let mut entity_reflection = serde_json::Map::new();
-                    entity_reflection.insert("entity_id".to_string(), json!(entity.id));
-
-                    let mut component_reflections = serde_json::Map::new();
-                    for (component_type, component_value) in &entity.components {
-                        match state_guard.reflection_inspector.inspect_component(component_type, component_value).await {
-                            Ok(inspection) => {
-                                component_reflections.insert(component_type.clone(), json!(inspection));
-                            }
-                            Err(e) => {
-                                warn!("Reflection inspection failed for {} on entity {}: {}", component_type, entity.id, e);
-                                component_reflections.insert(component_type.clone(), json!({
-                                    "error": e.to_string(),
-                                    "type_name": component_type
-                                }));
-                            }
-                        }
-                    }
-
-                    entity_reflection.insert("component_reflections".to_string(), json!(component_reflections));
-                    reflection_data.push(json!(entity_reflection));
-                }
-
-                // Add reflection data to result
-                if let Some(result_obj) = result_json.as_object_mut() {
-                    result_obj.insert("reflection_data".to_string(), json!(reflection_data));
-                } else {
-                    // Result is an array of entities; wrap reflection alongside
-                    result_json = json!({
-                        "entities": result_json,
-                        "reflection_data": reflection_data,
-                    });
-                }
-            }
-
             // Handle diff mode for entity queries
             let diff_result = if diff_mode {
                 let mut state_guard = state.write().await;
-                let current_snapshot = state_guard.add_snapshot(decoded_entities.clone());
+                let current_snapshot = state_guard.add_snapshot(decoded_entities);
 
                 if diff_target.starts_with("history:") {
                     // Parse history index with bounds checking
@@ -402,7 +350,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 None
             };
 
-            (result_json, count, diff_result)
+            (value, count, diff_result)
         }
         BrpPayload::Error(error) => {
             warn!("BRP returned error: {}", error.message);
@@ -430,7 +378,6 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
             "read_at": chrono::Utc::now().to_rfc3339(),
             "diff_mode": diff_mode,
             "diff_target": diff_target,
-            "reflection_enabled": use_reflection,
         }
     });
     response["metadata"][count.0] = json!(count.1);
