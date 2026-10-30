@@ -190,67 +190,87 @@ async fn handle_detect(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
     }))
 }
 
-/// Configure anomaly detection system
+/// Read an optional numeric argument. Absent is `Ok(None)`; present but not a positive finite
+/// number is an error naming the field, so a typo'd value is refused rather than ignored.
+fn positive_arg(arguments: &Value, key: &str) -> std::result::Result<Option<f64>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => match v.as_f64() {
+            Some(n) if n.is_finite() && n > 0.0 => Ok(Some(n)),
+            _ => Err(format!("{key} must be a positive number, got {v}")),
+        },
+    }
+}
+
+/// Configure anomaly detection system: fields not named keep their current value.
 async fn handle_configure(arguments: Value) -> Result<Value> {
     info!("Configuring anomaly detection system");
 
-    let mut config = AnomalyConfig::default();
-
-    // Update configuration from arguments
-    if let Some(window_size) = arguments.get("window_size").and_then(|w| w.as_u64()) {
-        config.window_size = window_size as usize;
-    }
-
-    if let Some(z_threshold) = arguments.get("z_score_threshold").and_then(|z| z.as_f64()) {
-        config.z_score_threshold = z_threshold as f32;
-    }
-
-    if let Some(iqr_multiplier) = arguments.get("iqr_multiplier").and_then(|i| i.as_f64()) {
-        config.iqr_multiplier = iqr_multiplier as f32;
-    }
-
-    if let Some(min_samples) = arguments.get("min_samples").and_then(|m| m.as_u64()) {
-        config.min_samples = min_samples as usize;
-    }
-
-    if let Some(perf_threshold) = arguments
-        .get("performance_threshold")
-        .and_then(|p| p.as_f64())
-    {
-        config.performance_threshold = perf_threshold as f32;
-    }
-
-    if let Some(entity_growth) = arguments
-        .get("entity_growth_threshold")
-        .and_then(|e| e.as_f64())
-    {
-        config.entity_growth_threshold = entity_growth as f32;
-    }
-
-    // Apply configuration
     let state = get_anomaly_state();
     let mut state_guard = state.write().await;
+    let mut config = state_guard.detection_system.config().clone();
+
+    let parsed = (|| -> std::result::Result<(), String> {
+        if let Some(n) = positive_arg(&arguments, "window_size")? {
+            config.window_size = n as usize;
+        }
+        if let Some(n) = positive_arg(&arguments, "z_score_threshold")? {
+            config.z_score_threshold = n as f32;
+        }
+        if let Some(n) = positive_arg(&arguments, "iqr_multiplier")? {
+            config.iqr_multiplier = n as f32;
+        }
+        if let Some(n) = positive_arg(&arguments, "min_samples")? {
+            config.min_samples = n as usize;
+        }
+        if let Some(n) = positive_arg(&arguments, "performance_threshold")? {
+            config.performance_threshold = n as f32;
+        }
+        if let Some(n) = positive_arg(&arguments, "entity_growth_threshold")? {
+            config.entity_growth_threshold = n as f32;
+        }
+        Ok(())
+    })();
+    if let Err(message) = parsed {
+        return Ok(json!({
+            "error": "Invalid configuration",
+            "message": message,
+            "example": {"action": "configure", "window_size": 50, "z_score_threshold": 2.5}
+        }));
+    }
+
     state_guard.detection_system.update_config(config.clone());
 
     info!("Anomaly detection configuration updated");
 
     Ok(json!({
         "message": "Configuration updated successfully",
-        "config": {
-            "window_size": config.window_size,
-            "z_score_threshold": config.z_score_threshold,
-            "iqr_multiplier": config.iqr_multiplier,
-            "min_samples": config.min_samples,
-            "performance_threshold": config.performance_threshold,
-            "entity_growth_threshold": config.entity_growth_threshold,
-            "whitelist_count": config.whitelist.len()
-        }
+        "config": config_json(&config)
     }))
+}
+
+fn config_json(config: &AnomalyConfig) -> Value {
+    json!({
+        "window_size": config.window_size,
+        "z_score_threshold": config.z_score_threshold,
+        "iqr_multiplier": config.iqr_multiplier,
+        "min_samples": config.min_samples,
+        "performance_threshold": config.performance_threshold,
+        "entity_growth_threshold": config.entity_growth_threshold,
+        "whitelist_count": config.whitelist.len()
+    })
 }
 
 /// List the detectors and the anomaly types they can report
 async fn handle_status() -> Result<Value> {
+    let config = get_anomaly_state()
+        .read()
+        .await
+        .detection_system
+        .config()
+        .clone();
     Ok(json!({
+        "config": config_json(&config),
         "detectors": [
             "PhysicsDetector",
             "PerformanceDetector",
@@ -318,6 +338,29 @@ mod tests {
         let result = handle_configure(args).await.unwrap();
         assert_eq!(result["config"]["window_size"], 50);
         assert_eq!(result["config"]["z_score_threshold"], 2.5);
+    }
+
+    /// Two configure calls, each naming one field: the second must not reset the first.
+    /// (Global state is shared with other tests, which only touch other fields.)
+    #[tokio::test]
+    async fn configure_keeps_fields_it_was_not_given() {
+        handle_configure(json!({"min_samples": 37})).await.unwrap();
+        let second = handle_configure(json!({"entity_growth_threshold": 42.0}))
+            .await
+            .unwrap();
+        assert_eq!(second["config"]["entity_growth_threshold"], 42.0, "{second}");
+        assert_eq!(second["config"]["min_samples"], 37, "reset to default: {second}");
+        let status = handle_status().await.unwrap();
+        assert_eq!(status["config"]["min_samples"], 37, "{status}");
+    }
+
+    #[tokio::test]
+    async fn configure_refuses_a_value_it_cannot_apply() {
+        for bad in [json!("50"), json!(-1), json!(0), json!(true)] {
+            let r = handle_configure(json!({"window_size": bad})).await.unwrap();
+            assert_eq!(r["error"], "Invalid configuration", "{bad}: {r}");
+            assert!(r["message"].as_str().unwrap().contains("window_size"), "{r}");
+        }
     }
 
     #[tokio::test]

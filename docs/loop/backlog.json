@@ -596,8 +596,8 @@
         "common_no_workaround": false,
         "evidence": "anomaly.rs handle_configure starts from AnomalyConfig::default()"
       },
-      "status": "open",
-      "evidence": "",
+      "status": "fixed",
+      "evidence": "tools/anomaly.rs::configure_keeps_fields_it_was_not_given, configure_refuses_a_value_it_cannot_apply; status now reports config in force",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }

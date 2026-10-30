@@ -595,6 +595,12 @@ impl AnomalyDetectionSystem {
             .any(|pattern| pattern.anomaly_type == anomaly.anomaly_type)
     }
 
+    /// The configuration currently in force
+    #[must_use]
+    pub fn config(&self) -> &AnomalyConfig {
+        &self.config
+    }
+
     /// Update configuration for all detectors
     pub fn update_config(&mut self, config: AnomalyConfig) {
         for detector in &mut self.detectors {
