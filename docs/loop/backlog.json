@@ -143,6 +143,38 @@
       "evidence": "Deleting it is `git rm src/server/semantic_analyzer.rs` plus the `pub mod semantic_analyzer;` line in src/server/mod.rs; needs the owner's OK naming the path (same rule as B-074/B-075). Also drops QueryFilter::where_clause/ComponentFilter/FilterOp's last producer.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-082",
+      "kind": "change",
+      "area": "dead-code",
+      "title": "src/server/tools/replay.rs, playback_system.rs, timeline_branching.rs and recording_system.rs are reachable from no tool since the replay tool was removed (ee3694a)",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "rg 'tools::replay|playback_system|timeline_branching|recording_system' src/: only `pub mod` lines in src/server/mod.rs and src/server/tools/mod.rs, and tests/replay_recording.rs's two RecordingBuffer tests"
+      },
+      "status": "blocked",
+      "evidence": "Deleting them is `git rm` of the four files plus their `pub mod` lines; needs the owner's OK naming each path (same rule as B-074/B-075/B-080). tests/replay_recording.rs keeps two RecordingBuffer tests that would go with them.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-086",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly configure accepts a window_size below min_samples (or below 2), so a detector can never reach min_samples, never reports, and status still echoes the config as in force",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "[INFERENCE] from src/server/anomaly_detector.rs: PerformanceDetector::detect needs entity_counts.len() >= min_samples.max(2) and the buffer holds at most window_size; PhysicsDetector likewise with its history. Not reproduced: write the failing test first (configure window_size 5 with min_samples 10, feed a 20-per-sample leak, expect an error from configure naming both fields, not silence)."
+      },
+      "status": "unconfirmed",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
