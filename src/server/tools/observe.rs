@@ -18,6 +18,8 @@ pub struct ObserveState {
     parser: RegexQueryParser,
     diff_engine: StateDiff,
     last_snapshot: Option<StateSnapshot>,
+    /// The query `last_snapshot` answered. A read of another query is not comparable with it.
+    last_query: Option<String>,
     snapshots_history: Vec<StateSnapshot>, // Keep last N snapshots for windowed diffs
     max_history_size: usize,
 }
@@ -32,6 +34,7 @@ impl ObserveState {
             parser: RegexQueryParser::new()?,
             diff_engine: StateDiff::new(),
             last_snapshot: None,
+            last_query: None,
             snapshots_history: Vec::new(),
             max_history_size: 10, // Keep last 10 snapshots
         })
@@ -46,18 +49,21 @@ impl ObserveState {
             parser: RegexQueryParser::new()?,
             diff_engine: StateDiff::with_config(fuzzy_config, game_rules),
             last_snapshot: None,
+            last_query: None,
             snapshots_history: Vec::new(),
             max_history_size: 10,
         })
     }
 
-    /// Keep `snapshot` as the latest read, the one the next `diff` read is compared with.
-    pub fn add_snapshot(&mut self, snapshot: StateSnapshot) {
+    /// Keep `snapshot`, the answer to `query`, as the read the next `diff` read of the same query
+    /// is compared with.
+    pub fn add_snapshot(&mut self, query: &str, snapshot: StateSnapshot) {
         self.snapshots_history.push(snapshot.clone());
         if self.snapshots_history.len() > self.max_history_size {
             self.snapshots_history.remove(0);
         }
         self.last_snapshot = Some(snapshot);
+        self.last_query = Some(query.to_string());
     }
 
     /// Get diff against last snapshot
@@ -65,6 +71,16 @@ impl ObserveState {
         self.last_snapshot
             .as_ref()
             .map(|last| self.diff_engine.diff_snapshots(last, current_snapshot))
+    }
+
+    /// Diff against the last snapshot only when it answered the same `query`. Two queries cover
+    /// different entities and components, so comparing them would report what the queries left out
+    /// as entities and components the game added or removed.
+    pub fn diff_against_last_read_of(&self, query: &str, current_snapshot: &StateSnapshot) -> Option<StateDiffResult> {
+        if self.last_query.as_deref() != Some(query) {
+            return None;
+        }
+        self.diff_against_last(current_snapshot)
     }
 
     /// Get diff against specific snapshot by index (0 = oldest in history)
@@ -89,6 +105,7 @@ impl ObserveState {
     pub fn clear_history(&mut self) {
         self.snapshots_history.clear();
         self.last_snapshot = None;
+        self.last_query = None;
     }
 
     /// Get the current history size
@@ -326,13 +343,14 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
             let count = count_of(&value, decoded_entities.len());
 
-            // Compare with the previous `diff` read first, then keep this read as the next one's
-            // baseline. Keeping it first compared every read with itself: "no changes", always.
+            // Compare with the previous `diff` read of the same query first, then keep this read as
+            // the next one's baseline. Keeping it first compared every read with itself: "no
+            // changes", always.
             let diff_result = if diff_mode {
                 let mut state_guard = state.write().await;
                 let current_snapshot = state_guard.create_snapshot(decoded_entities);
-                let diff = state_guard.diff_against_last(&current_snapshot);
-                state_guard.add_snapshot(current_snapshot);
+                let diff = state_guard.diff_against_last_read_of(query, &current_snapshot);
+                state_guard.add_snapshot(query, current_snapshot);
                 diff
             } else {
                 None
@@ -391,6 +409,12 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
             "after_timestamp": diff_result.after_snapshot.timestamp.to_rfc3339(),
             "colored_output": diff_result.format_colored(),
             "unexpected_changes_count": diff_result.unexpected_changes().len(),
+        });
+    } else if diff_mode {
+        response["diff"] = json!({
+            "baseline": true,
+            "message": "No earlier `diff` read of this exact query to compare with. This read is the \
+                        baseline: repeat the same query with `diff: true` to see what changed.",
         });
     }
 
