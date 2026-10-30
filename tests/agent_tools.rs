@@ -12,7 +12,7 @@ use base64::Engine as _;
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
-    BevyDebuggerTools, BrpCallRequest, NoArgs, RunRequest, SceneAction, SceneRequest, ScreenshotRequest,
+    BevyDebuggerTools, BrpCallRequest, BurstRequest, NoArgs, RunRequest, SceneAction, SceneRequest, ScreenshotRequest,
 };
 use rmcp::handler::server::tool::Parameters;
 use rmcp::model::CallToolResult;
@@ -31,6 +31,8 @@ struct FakeGame {
     /// How many `bevy_fairy/capture` polls answer `pending` before the capture is `done`.
     pending_polls: u32,
     polls_seen: u32,
+    /// Captures delivered so far; each one is on a later game frame than the last.
+    delivered: u64,
     /// The commands the game has recorded, as `bevy_fairy/scene get` returns them.
     steps: Vec<Value>,
 }
@@ -100,8 +102,10 @@ fn dispatch(game: &mut FakeGame, method: &str, params: &Value) -> Result<Value, 
                 game.polls_seen += 1;
                 Ok(json!({"status": "pending"}))
             } else {
+                let frame = 40 + 10 * game.delivered;
+                game.delivered += 1;
                 Ok(json!({"status": "done", "width": 1, "height": 1, "png_base64": PNG_1X1_BASE64,
-                    "source": "window", "frame_requested": 40, "frame_captured": 43}))
+                    "source": "window", "frame_requested": frame, "frame_captured": frame + 3}))
             }
         }
         "bevy_fairy/scene" => match params.get("action").and_then(Value::as_str) {
@@ -366,4 +370,61 @@ async fn every_tool_says_no_game_answers_when_nothing_listens() {
     }
     assert!(!shot_path.exists(), "screenshot must not write a file when no game answers");
     assert!(!scene_path.exists(), "scene save must not write a file when no game answers");
+}
+
+#[tokio::test]
+async fn burst_labels_every_cell_with_the_frame_the_game_reported() {
+    let game = game_with(true, 0);
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    let started = Instant::now();
+    let result = tools
+        .burst(Parameters(BurstRequest {
+            frames: Some(3),
+            fps: Some(10.0),
+            source: None,
+            save_dir: Some(dir.path().join("b").to_string_lossy().into_owned()),
+            full_frames: Some(true),
+            inline: Some(true),
+        }))
+        .await
+        .expect("burst returns a result");
+    let elapsed = started.elapsed();
+
+    assert_ne!(result.is_error, Some(true), "{}", text_of(&result));
+    let text = text_of(&result);
+    // The fake delivers on frames 43, 53, 63, 73: the reference and three frames.
+    assert!(text.contains(" ms, source window, requested at frame 40, delivered at frame 43"), "{text}");
+    assert!(text.contains("frame 3: +"), "{text}");
+    assert!(text.contains("delivered at frame 73"), "{text}");
+    assert!(text.ends_with("4 distinct game frames across 4 captures"), "{text}");
+    assert!(elapsed >= Duration::from_millis(300), "3 frames at 10 fps take at least 300 ms, took {elapsed:?}");
+    assert_eq!(game.lock().expect("fake game lock").delivered, 4, "one reference and three frames");
+    assert_eq!(result.content.len(), 2, "the sheet is returned inline when asked");
+
+    // 4 cells of 1x1 frames: one row of 4, each cell a label strip over a 1x1 picture.
+    let sheet = image::open(dir.path().join("b").join("sheet.png")).expect("sheet.png is a PNG");
+    assert_eq!(sheet.width(), 4);
+    assert!(dir.path().join("b").join("ref.png").exists());
+    for n in 1..=3 {
+        assert!(dir.path().join("b").join(format!("frame-{n}.png")).exists(), "frame-{n}.png with full_frames");
+    }
+}
+
+#[tokio::test]
+async fn burst_refuses_out_of_range_arguments_before_capturing() {
+    let game = game_with(true, 0);
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    for (frames, fps) in [(Some(8), None), (Some(0), None), (None, Some(11.0)), (None, Some(0.1))] {
+        let result = tools
+            .burst(Parameters(BurstRequest { frames, fps, source: None, save_dir: None, full_frames: None, inline: None }))
+            .await
+            .expect("burst returns a result");
+        assert_eq!(result.is_error, Some(true), "{frames:?} {fps:?}");
+        assert!(text_of(&result).contains("Example:"), "{}", text_of(&result));
+    }
+    assert_eq!(game.lock().expect("fake game lock").delivered, 0, "nothing was captured");
 }

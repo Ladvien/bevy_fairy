@@ -27,6 +27,7 @@ pub mod prelude {
 pub mod error;
 pub mod config;
 pub mod circuit_breaker;
+pub mod contact_sheet;
 
 // Communication
 pub mod brp;

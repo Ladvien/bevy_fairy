@@ -568,12 +568,114 @@ fn default_capture_path() -> PathBuf {
     dir.join(format!("capture-{unix_ms}.png"))
 }
 
+fn default_burst_dir() -> PathBuf {
+    let dir = std::env::var_os("BEVY_FAIRY_CAPTURE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("debug_captures"));
+    let unix_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
+    dir.join(format!("burst-{unix_ms}"))
+}
+
 fn truncate_for_error(value: &Value) -> String {
     let text = value.to_string();
     if text.len() <= 300 {
         text
     } else {
         format!("{}…", text.chars().take(300).collect::<String>())
+    }
+}
+
+/// `burst`: a short sequence of captures as one labelled contact sheet.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BurstRequest {
+    /// Frames to capture after the reference, 1 to 7. Default 4.
+    #[serde(default)]
+    pub frames: Option<u32>,
+    /// Requested captures per second, 0.5 to 10. Default 4. The real spacing is in the labels.
+    #[serde(default)]
+    pub fps: Option<f32>,
+    /// `offscreen` (the default) renders the game's own image and leaves out UI. `window` captures
+    /// the game window, UI included.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Directory to write sheet.png and ref.png into. Default: a new `burst-<unix_ms>` directory
+    /// under `$BEVY_FAIRY_CAPTURE_DIR`, or `./debug_captures/` when that variable is unset.
+    #[serde(default)]
+    pub save_dir: Option<String>,
+    /// Also save every frame at full resolution as frame-<n>.png. Default false.
+    #[serde(default)]
+    pub full_frames: Option<bool>,
+    /// Also return the contact sheet inline, so the agent sees it in the reply.
+    #[serde(default)]
+    pub inline: Option<bool>,
+}
+
+/// One finished capture as the plugin delivered it.
+struct Captured {
+    width: u64,
+    height: u64,
+    png_base64: String,
+    png: Vec<u8>,
+    source: Option<String>,
+    frame_requested: Option<u64>,
+    frame_captured: Option<u64>,
+}
+
+impl Captured {
+    /// What the plugin said about the capture, or that it said nothing.
+    fn provenance(&self) -> String {
+        match (&self.source, self.frame_requested, self.frame_captured) {
+            (Some(source), Some(requested), Some(taken)) => {
+                format!("source {source}, requested at frame {requested}, delivered at frame {taken}")
+            }
+            _ => "source and frame unavailable: this game's plugin does not report them".to_string(),
+        }
+    }
+}
+
+impl BevyDebuggerTools {
+    /// Ask the game for one capture and wait for it (15 s at most).
+    async fn capture_once(&self, params: serde_json::Map<String, Value>) -> Result<Captured, String> {
+        let started = self.call_game(SCREENSHOT_METHOD, Some(Value::Object(params))).await?;
+        let Some(id) = started.get("id").and_then(Value::as_u64) else {
+            return Err(format!("{SCREENSHOT_METHOD} did not return a capture id: {started}"));
+        };
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let state = loop {
+            let state = self.call_game(CAPTURE_METHOD, Some(serde_json::json!({"id": id}))).await?;
+            match state.get("status").and_then(Value::as_str) {
+                Some("done") => break state,
+                Some("failed") => {
+                    return Err(state.get("error").and_then(Value::as_str).unwrap_or("the capture failed").to_string());
+                }
+                Some("pending") => {}
+                _ => return Err(format!("{CAPTURE_METHOD} returned an unexpected reply: {state}")),
+            }
+            if Instant::now() >= deadline {
+                return Err(format!("capture {id} still pending after 15 s"));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+        let dimension = |key: &str| {
+            state.get(key).and_then(Value::as_u64).ok_or_else(|| format!("{CAPTURE_METHOD} returned no {key}"))
+        };
+        let (width, height) = (dimension("width")?, dimension("height")?);
+        let Some(png_base64) = state.get("png_base64").and_then(Value::as_str).map(str::to_owned) else {
+            return Err(format!("{CAPTURE_METHOD} returned no png_base64"));
+        };
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(&png_base64)
+            .map_err(|e| format!("the capture was not valid base64: {e}"))?;
+        Ok(Captured {
+            width,
+            height,
+            png_base64,
+            png,
+            source: state.get("source").and_then(Value::as_str).map(str::to_owned),
+            frame_requested: state.get("frame_requested").and_then(Value::as_u64),
+            frame_captured: state.get("frame_captured").and_then(Value::as_u64),
+        })
     }
 }
 
@@ -979,61 +1081,105 @@ impl BevyDebuggerTools {
         if let Some(zoom) = req.zoom {
             params.insert("zoom".to_string(), Value::from(zoom));
         }
-        let started = match self.call_game(SCREENSHOT_METHOD, Some(Value::Object(params))).await {
-            Ok(value) => value,
+        let captured = match self.capture_once(params).await {
+            Ok(captured) => captured,
             Err(text) => return tool_err(text),
         };
-        let Some(id) = started.get("id").and_then(Value::as_u64) else {
-            return tool_err(format!("{SCREENSHOT_METHOD} did not return a capture id: {started}"));
-        };
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let captured = loop {
-            let state = match self.call_game(CAPTURE_METHOD, Some(serde_json::json!({"id": id}))).await {
-                Ok(value) => value,
-                Err(text) => return tool_err(text),
-            };
-            let status = state.get("status").and_then(Value::as_str).map(str::to_owned);
-            match status.as_deref() {
-                Some("done") => break state,
-                Some("failed") => {
-                    let why = state.get("error").and_then(Value::as_str).unwrap_or("the capture failed");
-                    return tool_err(why);
-                }
-                Some("pending") => {}
-                _ => return tool_err(format!("{CAPTURE_METHOD} returned an unexpected reply: {state}")),
-            }
-            if Instant::now() >= deadline {
-                return tool_err(format!("capture {id} still pending after 15 s"));
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        };
-        let width = captured.get("width").and_then(Value::as_u64).unwrap_or_default();
-        let height = captured.get("height").and_then(Value::as_u64).unwrap_or_default();
-        let Some(png_base64) = captured.get("png_base64").and_then(Value::as_str).map(str::to_owned) else {
-            return tool_err(format!("{CAPTURE_METHOD} returned no png_base64"));
-        };
-        let png = match base64::engine::general_purpose::STANDARD.decode(&png_base64) {
-            Ok(bytes) => bytes,
-            Err(e) => return tool_err(format!("the capture was not valid base64: {e}")),
-        };
+        let (width, height, png_base64, png) = (captured.width, captured.height, captured.png_base64.clone(), &captured.png);
         let path = req.save_to.map(PathBuf::from).unwrap_or_else(default_capture_path);
-        if let Err(e) = write_file_creating_dirs(&path, &png) {
+        if let Err(e) = write_file_creating_dirs(&path, png) {
             return tool_err(format!("could not write {}: {e}", path.display()));
         }
         let absolute = std::path::absolute(&path).unwrap_or_else(|_| path.clone());
-        let provenance = match (
-            captured.get("source").and_then(Value::as_str),
-            captured.get("frame_requested").and_then(Value::as_u64),
-            captured.get("frame_captured").and_then(Value::as_u64),
-        ) {
-            (Some(source), Some(requested), Some(taken)) => {
-                format!("source {source}, requested at frame {requested}, delivered at frame {taken}")
-            }
-            _ => "source and frame unavailable: this game's plugin does not report them".to_string(),
-        };
+        let provenance = captured.provenance();
         let mut content = vec![Content::text(format!("saved {} ({width}x{height}); {provenance}", absolute.display()))];
         if req.inline.unwrap_or(false) {
             content.push(Content::image(png_base64.to_string(), "image/png"));
+        }
+        Ok(CallToolResult::success(content))
+    }
+
+    /// Capture a short sequence as a labelled contact sheet
+    #[tool(description = "Capture a short sequence of frames and return it as one contact sheet (a PNG, at most 2 rows x 4 columns), so a change over time can be seen: a sprite that stops moving, a flash, a transition. The first cell is a reference frame taken just before the sequence (labelled REF); the rest are `frames` captures at `fps` (default 4, 0.5-10), 1-7 frames. Every cell is labelled with the game frame the capture was delivered on (F<frame>) and the milliseconds since the reference was requested (+<ms>MS), both as reported, so two cells with the same F<frame> are the same game frame (the game is slower than `fps`). Each frame needs a round trip to the game, so the real spacing can exceed 1/fps: read the labels, not the request. Saves sheet.png and ref.png in a new directory (or full-resolution frame-<n>.png files too with full_frames true) and returns their paths. The default offscreen source leaves out UI; source 'window' includes it. Fails, saving nothing, when any capture fails or the frame size changes mid-sequence.")]
+    pub async fn burst(&self, Parameters(req): Parameters<BurstRequest>) -> Result<CallToolResult, McpError> {
+        let frames = req.frames.unwrap_or(4);
+        if !(1..=7).contains(&frames) {
+            return tool_err(format!("`frames` must be between 1 and 7 (the reference takes the eighth cell), got {frames}. Example: {{\"frames\": 6, \"fps\": 4}}"));
+        }
+        let fps = req.fps.unwrap_or(4.0);
+        if !(0.5..=10.0).contains(&fps) {
+            return tool_err(format!("`fps` must be between 0.5 and 10, got {fps}. Example: {{\"frames\": 6, \"fps\": 4}}"));
+        }
+        let mut params = serde_json::Map::new();
+        if let Some(source) = &req.source {
+            params.insert("source".to_string(), Value::from(source.clone()));
+        }
+        let interval = Duration::from_secs_f64(1.0 / f64::from(fps));
+        let started = Instant::now();
+        let mut shots: Vec<(Captured, u128)> = Vec::with_capacity(frames as usize + 1);
+        for n in 0..=frames {
+            if n > 0 {
+                tokio::time::sleep_until((started + interval.mul_f64(f64::from(n))).into()).await;
+            }
+            match self.capture_once(params.clone()).await {
+                Ok(captured) => shots.push((captured, started.elapsed().as_millis())),
+                Err(text) => return tool_err(format!("burst stopped at capture {n} of {frames}, nothing saved: {text}")),
+            }
+        }
+
+        let mut cells = Vec::with_capacity(shots.len());
+        for (n, (shot, at_ms)) in shots.iter().enumerate() {
+            let image = match image::load_from_memory_with_format(&shot.png, image::ImageFormat::Png) {
+                Ok(image) => image.to_rgba8(),
+                Err(e) => return tool_err(format!("capture {n} was not a readable PNG: {e}")),
+            };
+            let frame = shot.frame_captured.map_or_else(|| "-".to_string(), |f| f.to_string());
+            let label = if n == 0 { format!("REF F{frame}") } else { format!("F{frame} +{at_ms}MS") };
+            cells.push(crate::server::contact_sheet::Cell { image, label });
+        }
+        let sheet = match crate::server::contact_sheet::compose(&cells) {
+            Ok(sheet) => sheet,
+            Err(text) => return tool_err(format!("{text}; nothing saved")),
+        };
+        let mut sheet_png = Vec::new();
+        if let Err(e) = sheet.write_to(&mut std::io::Cursor::new(&mut sheet_png), image::ImageFormat::Png) {
+            return tool_err(format!("could not encode the contact sheet: {e}"));
+        }
+
+        let dir = req.save_dir.map(PathBuf::from).unwrap_or_else(default_burst_dir);
+        let mut files: Vec<(PathBuf, &[u8])> = vec![(dir.join("sheet.png"), &sheet_png), (dir.join("ref.png"), &shots[0].0.png)];
+        let frame_names: Vec<PathBuf> = (1..shots.len()).map(|n| dir.join(format!("frame-{n}.png"))).collect();
+        if req.full_frames.unwrap_or(false) {
+            for (name, (shot, _)) in frame_names.iter().zip(shots.iter().skip(1)) {
+                files.push((name.clone(), &shot.png));
+            }
+        }
+        for (path, bytes) in &files {
+            if let Err(e) = write_file_creating_dirs(path, bytes) {
+                return tool_err(format!("could not write {}: {e}", path.display()));
+            }
+        }
+
+        let absolute = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+        let mut lines = vec![format!(
+            "saved contact sheet {} ({}x{}) and reference {}",
+            absolute(&files[0].0).display(),
+            sheet.width(),
+            sheet.height(),
+            absolute(&files[1].0).display()
+        )];
+        if req.full_frames.unwrap_or(false) {
+            lines.push(format!("full-resolution frames: {}", frame_names.iter().map(|p| absolute(p).display().to_string()).collect::<Vec<_>>().join(", ")));
+        }
+        for (n, (shot, at_ms)) in shots.iter().enumerate() {
+            let name = if n == 0 { "ref".to_string() } else { format!("frame {n}") };
+            lines.push(format!("{name}: +{at_ms} ms, {}", shot.provenance()));
+        }
+        let distinct: std::collections::BTreeSet<u64> = shots.iter().filter_map(|(s, _)| s.frame_captured).collect();
+        lines.push(format!("{} distinct game frames across {} captures", distinct.len(), shots.len()));
+        let mut content = vec![Content::text(lines.join("\n"))];
+        if req.inline.unwrap_or(false) {
+            content.push(Content::image(base64::engine::general_purpose::STANDARD.encode(&sheet_png), "image/png"));
         }
         Ok(CallToolResult::success(content))
     }
