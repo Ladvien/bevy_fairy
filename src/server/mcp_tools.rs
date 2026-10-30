@@ -507,7 +507,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Observe tool error: {}", e);
-                Err(McpError::internal_error(format!("Observe tool error: {}", e), None))
+                tool_err(format!("Observe tool error: {}", e))
             }
         }
     }
@@ -537,7 +537,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Guide tool error: {}", e);
-                Err(McpError::internal_error(format!("Guide tool error: {}", e), None))
+                tool_err(format!("Guide tool error: {}", e))
             }
         }
     }
@@ -556,7 +556,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Experiment tool error: {}", e);
-                Err(McpError::internal_error(format!("Experiment tool error: {}", e), None))
+                tool_err(format!("Experiment tool error: {}", e))
             }
         }
     }
@@ -587,7 +587,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Hypothesis tool error: {}", e);
-                Err(McpError::internal_error(format!("Hypothesis tool error: {}", e), None))
+                tool_err(format!("Hypothesis tool error: {}", e))
             }
         }
     }
@@ -613,7 +613,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Anomaly detection error: {}", e);
-                Err(McpError::internal_error(format!("Anomaly detection error: {}", e), None))
+                tool_err(format!("Anomaly detection error: {}", e))
             }
         }
     }
@@ -633,7 +633,7 @@ impl BevyDebuggerTools {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Replay tool error: {}", e);
-                Err(McpError::internal_error(format!("Replay tool error: {}", e), None))
+                tool_err(format!("Replay tool error: {}", e))
             }
         }
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4 — 2026-10-29
+
+### Fixed
+
+- Handler failures from `observe`, `guide`, `experiment`, `hypothesis`, `detect_anomaly` and `replay`
+  now come back as `isError` tool results carrying the message, not JSON-RPC internal errors that
+  MCP clients may hide from the model.
+- `experiment` with `action: "execute"` and no `actions` used to succeed with zero results (the
+  request struct defaults `actions` to `[]`). It now refuses, says nothing was run, and shows the shape.
+
 ## 0.3.3 — 2026-10-29
 
 ### Fixed

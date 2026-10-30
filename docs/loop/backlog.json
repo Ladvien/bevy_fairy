@@ -411,8 +411,8 @@
         "common_no_workaround": false,
         "evidence": "src/server/mcp_tools.rs: every wrapper maps `Err(e)` to `McpError::internal_error`; src/server/tools/guide.rs returns `Error::Validation` for an app refusal. Found by the 2026-10-23 review"
       },
-      "status": "open",
-      "evidence": "Still an error signal, so not a lie, but MCP clients may hide protocol errors from the model while they always show isError results. Map Validation to tool_err.",
+      "status": "fixed",
+      "evidence": "tests/tool_contract.rs::a_handler_error_comes_back_as_a_tool_error_the_model_can_read; also found execute with empty actions succeeded with 0 results",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

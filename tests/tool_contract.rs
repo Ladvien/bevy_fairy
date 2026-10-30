@@ -293,3 +293,23 @@ async fn an_unreadable_answer_is_not_reported_as_no_game() {
     );
     assert!(text.contains("fake.unreadable"), "the error should name the method; text: {text}");
 }
+
+/// A handler that returns `Err` (here `experiment execute` with no `actions`) is a failed call the
+/// model must see. It used to leave as a JSON-RPC protocol error, which MCP clients may hide from
+/// the model, while an `isError` result is always shown (B-048).
+#[tokio::test]
+async fn a_handler_error_comes_back_as_a_tool_error_the_model_can_read() {
+    let game: SharedGame = Arc::new(Mutex::new(FakeGame::default()));
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    connect(&tools).await;
+
+    let result = tools
+        .experiment(request::<bevy_fairy::server::mcp_tools::ExperimentRequest>(json!({"action": "execute"})))
+        .await
+        .expect("a handler error is a tool result, not a protocol error");
+
+    let text = text_of(&result);
+    assert_eq!(result.is_error, Some(true), "text: {text}");
+    assert!(text.contains("actions"), "the error should name the missing parameter; text: {text}");
+}
