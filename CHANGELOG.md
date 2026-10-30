@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Breaking
+
+- `server::error::Error::WithContext { context }` now holds `Box<ErrorContext>`. It was 150+ bytes inline, which made every
+  `Result<T, Error>` in the server a `clippy::result_large_err` site (485 of them); `Error` is now small enough that none remain.
+
 ### Removed
 
 - `server::tools::replay_v2`, `server::tools::observe_optimized`, `server::query_optimization`, `server::parallel_query_executor`,

@@ -148,7 +148,7 @@
       "id": "B-020",
       "kind": "bug",
       "area": "build",
-      "title": "clippy is red on main: 1462 warnings, dominated by 937 `result_large_err`",
+      "title": "clippy is red on main: 186 warnings left (was 1462); result_large_err is gone",
       "must_fix": {
         "misleads": false,
         "blocks": true,
@@ -156,7 +156,7 @@
         "evidence": "scripts/ratchet.sh --record at e93da67: 1462 warnings across 50 lints and 79 files; 937 result_large_err, 157 unused_imports, 72 dead_code, 52 unused_variables, 48 field_reassign_with_default"
       },
       "status": "open",
-      "evidence": "Verified 2026-10-21 by the ratchet. CI ran `cargo clippy --all-targets --all-features -- -D warnings` and was red. An earlier note said 707 warnings / 452 result_large_err; that came from grepping distinct warning lines and undercounted. The ratchet counts lint occurrences.",
+      "evidence": "Verified 2026-10-21 by the ratchet. CI ran `cargo clippy --all-targets --all-features -- -D warnings` and was red. An earlier note said 707 warnings / 452 result_large_err; that came from grepping distinct warning lines and undercounted. The ratchet counts lint occurrences. 2026-10-30: B-052 cleared result_large_err; known_red re-recorded at 186 warnings.",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
@@ -411,8 +411,8 @@
         "common_no_workaround": false,
         "evidence": "71adcb4 boxed guide::handle's error to clear one result_large_err and was reverted (8d73f17): `bevy_fairy::server::tools::guide::handle` is public and 0.2.0 was published with `-> Result<Value>`"
       },
-      "status": "open",
-      "evidence": "",
+      "status": "fixed",
+      "evidence": "ErrorContext boxed in Error::WithContext; clippy::result_large_err 485 -> 0 (default features, all targets); ratchet OK; workspace tests --all-features green",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },
