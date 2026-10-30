@@ -1,6 +1,6 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "dead-tools",
+  "sha": "ring-buffer",
   "server": {
     "loc": 21861,
     "direct_dependencies": 52,
@@ -10,7 +10,7 @@
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
-    "loc": 3260,
+    "loc": 3535,
     "direct_dependencies": 4,
     "closure_packages": 319,
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
