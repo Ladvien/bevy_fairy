@@ -33,7 +33,7 @@ No arguments.
 
 ## `detect_anomaly`
 
-Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (compared with that entity's own recent speeds), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity is how far past its threshold a reading is, from 0 to 1. A detection is a lead to check, not a verdict.
+Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (compared with that entity's own recent speeds), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity is how far past its threshold a reading is, from 0 to 1. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
@@ -105,7 +105,7 @@ Test a claim about your game against the running game. `action` picks the operat
 
 ## `observe`
 
-Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.
+Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. The reply says which game frames the read lies between ("frame" to "frame_until", the counter before and after; the game serves each request on a frame of its own), or "frame_unavailable" with the reason when the game does not serve the plugin's status method. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
