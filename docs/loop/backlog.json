@@ -543,6 +543,15 @@
       "evidence": "replay::tests::record_refuses_a_sample_rate_that_cannot_be_a_period, recorder_polls_at_the_requested_rate_not_a_fixed_33_ms",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-067",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "entity_exists / component_equals / component_matches assertions returned true without querying the game",
+      "status": "fixed",
+      "evidence": "tests/hypothesis_assertions.rs (4 of 5 failed before, all pass after)",
+      "first_seen": "2026-10-30"
     }
   ]
 }

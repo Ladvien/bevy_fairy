@@ -16,6 +16,10 @@
 
 ### Fixed
 
+- `hypothesis` (`test`): `entity_exists` and `component_equals` conditions always evaluated true without asking the game, so every such
+  hypothesis was reported confirmed. They now query the game (`count` on `entity_exists` is an exact match; `component_equals` with no
+  `entity_id` holds when any entity has the value; short names match the end of a registered path). `component_matches` is refused
+  with an error, since the server has no predicate evaluator.
 - `observe` semantic queries (`find memory leaks`, `find stuck entities`, ...) were refused after the unregistered-name check because they
   are built from short names (`Transform`). A short name that ends exactly one registered path is now rewritten and listed in
   `metadata.resolved_component_names`; unknown or ambiguous names are still refused.
