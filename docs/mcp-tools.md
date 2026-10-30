@@ -148,7 +148,7 @@ Record and replay game state for time-travel debugging. Capture game state at sp
 | `max_buffer_size` | integer | no | `record`: the most frames kept in memory. |
 | `name` | string | no | `marker` and `create_branch`: the name. `marker` defaults to `marker`; `create_branch` requires it. |
 | `parent_id` | string | no | `create_branch`: the branch this one forks from. |
-| `sample_rate` | number | no | `record`: samples per second. |
+| `sample_rate` | number | no | `record`: samples per second, above 0 (default 30). Each sample is a BRP round trip, so the rate reached is lower when the game answers slower; `stop` reports the frames and seconds actually recorded. |
 | `speed` | number | no | `set_speed`: the playback speed, required (1.0 is real time). |
 | `start_frame` | integer | no | `compare_branches`: the first frame compared. Default 0. |
 | `strategy` | any | no | `merge_branch`: `take_source` (the default), `take_target` or `manual`. |

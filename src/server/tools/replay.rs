@@ -96,7 +96,16 @@ async fn handle_record(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
     }
 
     // Parse configuration
-    let config = parse_recording_config(&arguments);
+    let config = match parse_recording_config(&arguments) {
+        Ok(config) => config,
+        Err(message) => {
+            return Ok(json!({
+                "error": "invalid sample_rate",
+                "message": message,
+                "example": {"action": "record", "sample_rate": 10.0},
+            }));
+        }
+    };
     let sample_rate = config.sample_rate;
     let max_buffer_size = config.max_buffer_size;
     let compression = config.compression;
@@ -121,6 +130,7 @@ async fn handle_record(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
     let buffer_clone = get_recording_state().buffer.clone();
     let brp_clone = brp_client.clone();
 
+    let poll_interval = poll_interval(sample_rate);
     tokio::spawn(async move {
         loop {
             {
@@ -135,8 +145,7 @@ async fn handle_record(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
                 }
             }
 
-            // Sleep based on sample rate
-            tokio::time::sleep(tokio::time::Duration::from_millis(33)).await;
+            tokio::time::sleep(poll_interval).await;
         }
     });
 
@@ -379,10 +388,17 @@ async fn handle_stats(_arguments: Value, _brp_client: Arc<RwLock<BrpClient>>) ->
 }
 
 /// Parse recording configuration from arguments
-fn parse_recording_config(arguments: &Value) -> RecordingConfig {
+fn parse_recording_config(arguments: &Value) -> std::result::Result<RecordingConfig, String> {
     let mut config = RecordingConfig::default();
 
     if let Some(rate) = arguments.get("sample_rate").and_then(|r| r.as_f64()) {
+        // 1 / rate becomes the minimum gap between frames; zero, negative or non-finite rates
+        // used to panic the recorder task, which left `status` saying "recording" with no frames.
+        if !rate.is_finite() || rate <= 0.0 {
+            return Err(format!(
+                "sample_rate is {rate}; it must be a positive number of samples per second"
+            ));
+        }
         config.sample_rate = rate as f32;
     }
 
@@ -416,7 +432,13 @@ fn parse_recording_config(arguments: &Value) -> RecordingConfig {
         );
     }
 
-    config
+    Ok(config)
+}
+
+/// How long the recorder task sleeps between polls: one sample period, never under 1 ms. The
+/// task used to sleep a fixed 33 ms, so any requested rate above 30 was silently recorded at 30.
+fn poll_interval(sample_rate: f32) -> std::time::Duration {
+    std::time::Duration::from_secs_f32((1.0 / sample_rate).max(0.001))
 }
 
 /// Handle play action - start or resume playback
@@ -1021,7 +1043,7 @@ mod tests {
             "event_filter": ["Collision"]
         });
 
-        let config = parse_recording_config(&args);
+        let config = parse_recording_config(&args).unwrap();
 
         assert_eq!(config.sample_rate, 60.0);
         assert_eq!(config.max_buffer_size, 5000);
@@ -1034,11 +1056,28 @@ mod tests {
     #[test]
     fn test_parse_recording_config_defaults() {
         let args = json!({});
-        let config = parse_recording_config(&args);
+        let config = parse_recording_config(&args).unwrap();
 
         assert_eq!(config.sample_rate, 30.0);
         assert_eq!(config.max_buffer_size, 10000);
         assert!(config.compression);
         assert!(config.checksums);
+    }
+
+    #[test]
+    fn record_refuses_a_sample_rate_that_cannot_be_a_period() {
+        for bad in [json!(0.0), json!(-5.0)] {
+            let err = parse_recording_config(&json!({ "sample_rate": bad })).unwrap_err();
+            assert!(err.contains("sample_rate"), "{err}");
+        }
+    }
+
+    #[test]
+    fn recorder_polls_at_the_requested_rate_not_a_fixed_33_ms() {
+        let sixty = poll_interval(60.0).as_secs_f32();
+        assert!((sixty - 1.0 / 60.0).abs() < 1e-4, "{sixty}");
+        let two = poll_interval(2.0).as_secs_f32();
+        assert!((two - 0.5).abs() < 1e-4, "{two}");
+        assert!(poll_interval(1.0e9) >= std::time::Duration::from_millis(1));
     }
 }
