@@ -651,6 +651,38 @@ async fn observe_diff_reports_the_mover_moving_between_two_reads() {
     assert!(changes.iter().all(|c| c["entity_id"] == mover), "only the mover was read: {second}");
 }
 
+/// `show entity N` shows that entity: the mover has a `Transform` and a `fixture_game::Mover`. It
+/// asked `world.get_components` for no components and answered `{"components": {}}` with an
+/// entity_count of 1, so every entity read as one with no components at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_show_entity_lists_the_entitys_components() {
+    let port = start_fixture();
+    let tools = tools_for(port);
+    wait_until_ready(&tools).await;
+    let mover = mover_id(&tools).await;
+
+    let (text, failed) = observe(&tools, &format!("show entity {mover}")).await;
+    assert!(!failed, "{text}");
+    let reply: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+    let components = &reply["result"]["components"];
+    assert!(components.get("fixture_game::Mover").is_some(), "the mover's own component: {text}");
+    assert!(
+        components.get("bevy_transform::components::transform::Transform").is_some(),
+        "the mover's Transform: {text}"
+    );
+    // Every registered component is asked for, so the ones the mover lacks must not come back as
+    // errors about the mover.
+    let not_present = i64::from(bevy_remote::error_codes::COMPONENT_NOT_PRESENT);
+    let errors = reply["result"]["errors"].as_object().unwrap_or_else(|| panic!("no errors map: {text}"));
+    assert!(errors.values().all(|e| e["code"].as_i64() != Some(not_present)), "noise about absent components: {text}");
+
+    // An entity the game does not have is an error, not an entity with nothing on it. The fixture
+    // spawns a dozen entities; index 999999 is none of them.
+    let absent = (1u64 << 32) | 999_999;
+    let (text, failed) = observe(&tools, &format!("show entity {absent}")).await;
+    assert!(failed, "an entity the game does not have must be an error: {text}");
+}
+
 /// A semantic query is built from short names (`Transform`). The game registers full paths, so
 /// the query used to be refused outright (B-065). A short name that ends exactly one registered
 /// path is now resolved, and the answer says which path was used.

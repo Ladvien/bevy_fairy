@@ -255,6 +255,28 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         }
     }
 
+    // `show entity N` names no components, and `world.get_components` answers an empty list with
+    // an empty map, so every entity read as having none. Ask for every component the game can
+    // read instead. `world.list_components` for one entity is no help here: it answers Rust type
+    // names, which are not the reflected paths `world.get_components` takes when a type sets its
+    // own `type_path`. The ones the entity lacks come back as "not present" and are dropped below.
+    let asks_for_every_component = names_no_components(&brp_request);
+    if asks_for_every_component {
+        let registered = match registered_components(&brp_client).await {
+            Ok(registered) => registered,
+            Err(message) => {
+                return Ok(json!({
+                    "error": "could not list the game's components",
+                    "message": message,
+                    "query": query
+                }));
+            }
+        };
+        if let Some(params) = brp_request.params.as_mut() {
+            params["components"] = json!(registered);
+        }
+    }
+
     let brp_response = {
         let mut client = brp_client.write().await;
         match client.send_request(&brp_request).await {
@@ -272,7 +294,10 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
     // Process response and handle diff mode
     let (result_json, count, diff_result) = match brp_response.payload {
-        BrpPayload::Result(value) => {
+        BrpPayload::Result(mut value) => {
+            if asks_for_every_component {
+                drop_not_present_errors(&mut value);
+            }
             // Decode the method-specific payload into EntityData where possible
             let decoded_entities = entity_data_from_query_result(&value)
                 .or_else(|| {
@@ -447,6 +472,28 @@ fn registered_paths_ending_with(name: &str, registered: &[String]) -> Vec<String
         .filter(|path| path.as_str() == name || path.ends_with(&suffix))
         .cloned()
         .collect()
+}
+
+/// Whether `request` is a `world.get_components` that names no components.
+fn names_no_components(request: &BrpRequest) -> bool {
+    request.method == crate::server::brp::builtin_methods::BRP_GET_COMPONENTS_METHOD
+        && request
+            .params
+            .as_ref()
+            .and_then(|params| params.get("components"))
+            .and_then(Value::as_array)
+            .is_none_or(|names| names.is_empty())
+}
+
+/// Drop the "not present" errors `world.get_components` answers for each component it was asked
+/// for that the entity does not have. Asked for every registered component, they say nothing
+/// about the entity; any other error (a component that could not be serialised) is the game's
+/// answer and stays.
+fn drop_not_present_errors(value: &mut Value) {
+    let not_present = i64::from(bevy_remote::error_codes::COMPONENT_NOT_PRESENT);
+    if let Some(errors) = value.get_mut("errors").and_then(Value::as_object_mut) {
+        errors.retain(|_, error| error.get("code").and_then(Value::as_i64) != Some(not_present));
+    }
 }
 
 /// Every component type path the game has registered.
