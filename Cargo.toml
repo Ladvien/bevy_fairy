@@ -216,7 +216,6 @@ bevy-reflection = ["dep:bevy", "bevy/default"]
 session-management = []
 issue-detection = []
 memory-profiling = []
-stress-testing = []
 time-travel = []
 orchestration = []
 
