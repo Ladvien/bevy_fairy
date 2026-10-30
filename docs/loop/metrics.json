@@ -63,7 +63,7 @@
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
-    "recorded_at_sha": "2ef35e7",
+    "recorded_at_sha": "1a4db7d",
     "features": {
       "server": 0,
       "plugin": 0,
@@ -95,8 +95,7 @@
     "clippy_by_lint": {
       "clippy::assertions_on_constants": 1,
       "clippy::cloned_ref_to_slice_refs": 2,
-      "clippy::collapsible_match": 4,
-      "clippy::explicit_counter_loop": 2,
+      "clippy::collapsible_match": 2,
       "clippy::field_reassign_with_default": 24,
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
@@ -108,18 +107,14 @@
       "clippy::single_component_path_imports": 1,
       "clippy::useless_vec": 2,
       "clippy::vec_init_then_push": 2,
-      "dead_code": 22,
-      "unused_assignments": 2,
-      "unused_imports": 19,
+      "dead_code": 16,
+      "unused_imports": 6,
       "unused_must_use": 1,
-      "unused_mut": 5,
+      "unused_mut": 1,
       "unused_variables": 16
     },
     "clippy_by_file": {
       "src/server/anomaly_detector.rs": 11,
-      "src/server/bevy_reflection/inspector.rs": 2,
-      "src/server/bevy_reflection/reflection_queries.rs": 17,
-      "src/server/bevy_reflection/type_registry_tools.rs": 10,
       "src/server/brp_validation.rs": 1,
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,

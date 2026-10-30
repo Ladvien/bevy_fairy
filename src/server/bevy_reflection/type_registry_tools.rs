@@ -22,15 +22,18 @@ use bevy::reflect::*;
 use ::serde::{Deserialize, Serialize};
 #[cfg(not(feature = "bevy-reflection"))]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bevy-reflection")]
 use serde_json::{json, Value};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::server::bevy_reflection::inspector::{ReflectionMetadata, FieldMetadata, TypeCategory};
-use crate::server::error::{Error, Result};
+use crate::server::bevy_reflection::inspector::{ReflectionMetadata, TypeCategory};
+#[cfg(feature = "bevy-reflection")]
+use crate::server::bevy_reflection::inspector::FieldMetadata;
+use crate::server::error::Result;
 
 /// TypeRegistry manager for dynamic component type discovery
 #[derive(Clone)]
@@ -339,9 +342,10 @@ impl TypeRegistryManager {
     }
 
     /// Find aliases for a type name
+    #[cfg(feature = "bevy-reflection")]
     async fn find_type_aliases(&self, type_name: &str) -> Vec<String> {
         let mut aliases = Vec::new();
-        
+
         // Extract short name from full path
         if let Some(short_name) = type_name.split("::").last() {
             if short_name != type_name {

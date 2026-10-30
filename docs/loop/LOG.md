@@ -46,3 +46,4 @@
 - 2026-10-30 dead-modules: deleted unreachable replay_actor + resource_manager (1421 lines); ratchet ok (baseline lowered), workspace tests green; no release (6 h rule) — [report](iterations/2026-10-30-dead-modules.md)
 - 2026-10-30 triage: host load 24, no open bug or consumer issue (#1/#2 stale, answered); archived B-023 (published as bevy_fairy v0.8.0); no code change, no release
 - 2026-10-30 clippy-sweep: cleared clippy warnings in bevy_reflection/inspector.rs, baseline lowered; ratchet + workspace tests ok; no release (6 h rule) — [report](iterations/2026-10-30-clippy-sweep.md)
+- 2026-10-30 clippy-sweep-2: cleared warnings in bevy_reflection/{reflection_queries,type_registry_tools}.rs (bevy-reflection-only fns gated by cfg, not deleted); ratchet ok, baseline lowered; host load 18; no release (6 h rule) — no report
