@@ -188,3 +188,27 @@ fn render_tool_reference(tools: &[Value]) -> String {
     }
     out
 }
+
+/// `observe` refuses any query its parser does not recognise, so an agent can only succeed if the
+/// schema shows it the shapes. Three of five `isError` results in the 2026-10-23 evals were bare
+/// nouns ("score", "crate"). Every example the `query` field advertises must be accepted by the
+/// parser the handler uses.
+#[test]
+fn every_observe_query_example_in_the_schema_is_accepted_by_the_parser() {
+    use bevy_fairy::server::query_parser::{QueryParser, RegexQueryParser};
+
+    let tools = listed_tools();
+    let observe = tools.iter().find(|t| t["name"] == "observe").expect("observe is listed");
+    let description = observe["inputSchema"]["properties"]["query"]["description"]
+        .as_str()
+        .expect("the `query` field carries a description");
+    let examples: Vec<&str> = description.split('`').skip(1).step_by(2).collect();
+    assert!(examples.len() >= 5, "the `query` description gives no examples: {description}");
+    let parser = RegexQueryParser::new().expect("the parser builds");
+    let refused: Vec<&str> = examples
+        .iter()
+        .copied()
+        .filter(|example| *example != "brp" && parser.parse(example).is_err())
+        .collect();
+    assert!(refused.is_empty(), "observe's parser refuses its own advertised examples: {refused:?}");
+}
