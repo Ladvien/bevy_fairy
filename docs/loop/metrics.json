@@ -1,8 +1,8 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "fa6a556",
+  "sha": "acbe1c4",
   "server": {
-    "loc": 19788,
+    "loc": 19632,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 15,
@@ -35,7 +35,7 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 5.3,
+    "mean_tool_calls_per_solved_task": 6.2,
     "dev_is_error_results_per_run": [
       5,
       7,
@@ -44,11 +44,22 @@
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
     "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
     "last_dev_run": {
-      "sha": "fa6a556",
+      "sha": "917874c",
       "success": "6/6",
-      "mean_tool_calls": 5.3,
+      "mean_tool_calls": 6.2,
       "invalid_calls": 1,
-      "note": "one run; previous dev run 37fb141: 6/6, 6.3 calls, 0 invalid. The one invalid call is `show fast moving objects` refused because the fixture registers no Velocity (B-064 behaviour since d373c74; at 37fb141 it answered [] instead)"
+      "note": "Two runs this pass: acbe1c4 6/6, 6.5 calls, 0 invalid; 917874c 6/6, 6.2 calls, 1 invalid. The one invalid result is synthetic: the provider stream closed before a `status` call ran (odd_crate transcript, `assistant_stop_error`), not a tool refusal. The rise from fa6a556 (5.3) is spinner_stops alone (11 -> 18 -> 16; it has ranged 4-21 across earlier runs); the other five tasks average 4.2 calls on fa6a556 and 4.2 on 917874c."
+    },
+    "last_heldout_run": {
+      "sha": "917874c",
+      "success": "3/3",
+      "tool_calls": [
+        4,
+        4,
+        5
+      ],
+      "invalid_calls": 0,
+      "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
     }
   },
   "notes": [
@@ -67,7 +78,8 @@
     "2026-10-23: stress_test left tools/list (14 -> 13 tools); server loc 51212 -> 51187. The eval suite exists: dev and held-out success are measured from here on (see evals).",
     "2026-10-23 (13da68e): server loc 51187 -> 51207 for the +watch refusal and the unreadable-answer branch in call_game.",
     "2026-10-30: server loc 51207 -> 47558 (find src/server -name '*.rs' | cat | wc -l): cli.rs (426, never compiled), brp_client_v2.rs (383), brp_client_refactored.rs (278) deleted, plus earlier observability removal; clippy ratchet OK, known_red unchanged.",
-    "2026-10-30 (fa6a556): server loc 19811 -> 19788 (find src/server -name '*.rs' | xargs cat | wc -l) for the observe fixes B-071..B-073: reflection path removed (-~60), show-entity fill-in and query-scoped diff baseline added (+~70). known_red re-recorded: manual_strip 2 -> 0 (observe.rs), vec_init_then_push 1 -> 0 and dead_code 14 -> 12 (anomaly_detector.rs, under-recorded by 42bad35). A `observe_diff...|FAILED` entry the --record run captured while the test was being edited mid-run was removed: the test passes at fa6a556 (fixture_ground_truth 20/20)."
+    "2026-10-30 (fa6a556): server loc 19811 -> 19788 (find src/server -name '*.rs' | xargs cat | wc -l) for the observe fixes B-071..B-073: reflection path removed (-~60), show-entity fill-in and query-scoped diff baseline added (+~70). known_red re-recorded: manual_strip 2 -> 0 (observe.rs), vec_init_then_push 1 -> 0 and dead_code 14 -> 12 (anomaly_detector.rs, under-recorded by 42bad35). A `observe_diff...|FAILED` entry the --record run captured while the test was being edited mid-run was removed: the test passes at fa6a556 (fixture_ground_truth 20/20).",
+    "2026-10-30 (acbe1c4): server loc 19788 -> 19632 (find src/server -name '*.rs' | xargs cat | wc -l): observe's semantic path and unreachable snapshot history removed (B-077, B-076), the find-N limit carried and applied (B-079, +~40). known_red lowered by hand from the same clippy --workspace --all-targets JSON the ratchet reads (86 -> 79): field_reassign_with_default 24 -> 20 and unused_mut 1 -> 0 (state_diff.rs, test_state_diff.rs), dead_code 12 -> 10 (query_parser.rs: the never-read `description` now builds the help text, the semantic field is gone). Tool count unchanged (15)."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
@@ -104,7 +116,7 @@
       "clippy::assertions_on_constants": 1,
       "clippy::cloned_ref_to_slice_refs": 2,
       "clippy::collapsible_match": 2,
-      "clippy::field_reassign_with_default": 24,
+      "clippy::field_reassign_with_default": 20,
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
       "clippy::manual_range_contains": 3,
@@ -113,10 +125,9 @@
       "clippy::should_implement_trait": 2,
       "clippy::single_component_path_imports": 1,
       "clippy::useless_vec": 2,
-      "dead_code": 12,
+      "dead_code": 10,
       "unused_imports": 6,
       "unused_must_use": 1,
-      "unused_mut": 1,
       "unused_variables": 16
     },
     "clippy_by_file": {
@@ -125,10 +136,8 @@
       "src/server/debug_command_processor.rs": 4,
       "src/server/entity_inspector.rs": 5,
       "src/server/playback_system.rs": 2,
-      "src/server/query_parser.rs": 2,
       "src/server/recording_system.rs": 2,
       "src/server/semantic_analyzer.rs": 2,
-      "src/server/state_diff.rs": 2,
       "src/server/timeline_branching.rs": 7,
       "src/server/tools/experiment.rs": 5,
       "tests/brp_validation_tests.rs": 9,
@@ -136,8 +145,7 @@
       "tests/entity_inspector_integration_tests.rs": 22,
       "tests/playback_tests.rs": 2,
       "tests/rmcp_api_compatibility_test.rs": 5,
-      "tests/stdio_integration_test.rs": 4,
-      "tests/test_state_diff.rs": 3
+      "tests/stdio_integration_test.rs": 4
     },
     "failing_or_ignored_tests": [
       "src/server/brp_command_handler.rs - server::brp_command_handler::BrpCommandHandler (line 62)|ignored"
