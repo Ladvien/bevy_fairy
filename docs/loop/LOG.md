@@ -49,3 +49,4 @@
 - 2026-10-30 clippy-sweep-2: cleared warnings in bevy_reflection/{reflection_queries,type_registry_tools}.rs (bevy-reflection-only fns gated by cfg, not deleted); ratchet ok, baseline lowered; host load 18; no release (6 h rule) — no report
 - 2026-10-30 clippy-sweep-3: anomaly_detector.rs dead fields/vec-init cleared (11→8), baseline lowered; ratchet ok, anomaly tests 13 pass; host load 24-38; no release (6 h rule: v0.8.0 tagged 2.4 h ago) — no report
 - 2026-10-30 host-overload: load 33, 6 GB available of 31 (below the 8G scope cap); no bug or issue open (#1/#2 stale); v0.8.0 tagged 2.5 h ago (6 h rule) so no release due; no code change, nothing run — no report
+- 2026-10-30 host-overload-2: load 46 (1 min avg 46, 15 min 37), 13 GB available; no bug or consumer issue open (#1/#2 stale); v0.8.0 tagged 2.6 h ago (6 h rule) so no release due; no code change, nothing run — no report
