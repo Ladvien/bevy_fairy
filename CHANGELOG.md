@@ -4,6 +4,12 @@
 
 ### Removed
 
+- 38 server modules (about 21,000 lines) that nothing the binary runs could reach, and the tests and
+  benches that only exercised them: the legacy `mcp_server` (the live one is `mcp_server_v2`), the
+  session manager, system/memory profilers, issue detector, performance budget, query builder,
+  visual overlays, connection pool, heartbeat, and the caches and pools behind them. None was
+  reachable from a registered tool, and the tool list is unchanged. These were `pub` items of the
+  library; nothing downstream of the binary used them.
 - `docs/tools/`, `docs/api/`, `docs/api-reference.md` and `docs/troubleshooting/`: hand-written tool
   references whose examples sent arguments the tools refuse (`experiment_type`, `detection_type`) and
   called tools that do not exist (`orchestrate`, `resource_metrics`, `performance_dashboard`). The

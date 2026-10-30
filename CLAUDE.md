@@ -39,7 +39,7 @@ had to depend on a crate whose name said it was about the server.
   direct dependencies.
 - **`src/server/`** — the MCP server, and the `bevy-fairy` binary. Behind the `server` feature, which
   is the default. A separate process: speaks MCP over stdio to an agent, BRP over JSON-RPC/HTTP
-  (:15702) to the game. ~52k lines.
+  (:15702) to the game. ~24k lines.
 
 The two halves do **not** depend on each other, and that is a property of the *features*, not of
 the packages. Cargo resolves dependencies per feature, so a game that takes the plugin with
