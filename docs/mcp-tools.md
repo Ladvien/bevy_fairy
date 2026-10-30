@@ -69,20 +69,28 @@ Test a claim about your game against the running game. `action` picks the operat
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes | The operation to run. One of `test`, `quick_test`, `stress_test`, `validate`. |
+| `action` | string | yes | The operation to run. One of `test`, `quick_test` (10 iterations, 10 s), `stress_test` (fuzz variation, 1000 iterations unless `iterations` or `variation_type` say otherwise), `validate` (checks the claim parses; runs nothing). |
 | `actions` | array | no | The actions to try while testing the claim. |
+| `bool_probability` | number | no | For `random`: the probability a varied boolean is true. Default 0.5. |
+| `bool_values` | array | no | For `grid`: the booleans to try. Default true and false. |
 | `description` | string | no | What the claim is, in words. `test` and `quick_test` require it. |
+| `include_empty` | boolean | no | For `boundary`: try empty strings and collections. Default true. |
+| `include_max` | boolean | no | For `boundary`: try the largest values. Default true. |
+| `include_negative` | boolean | no | For `boundary`: try negative values. Default true. |
+| `include_zero` | boolean | no | For `boundary`: try zero. Default true. |
 | `iterations` | integer | no | How many times to run the test. |
-| `numeric_max` | number | no | For `random`: the high end of the numeric range to vary over. |
-| `numeric_min` | number | no | For `random`: the low end of the numeric range to vary over. |
-| `parameter_name` | string | no | For `parameter`: which parameter to vary. |
-| `parameter_values` | array | no | For `parameter`: the values to vary over. |
+| `max_mutations` | integer | no | For `fuzz`: the most mutations applied to one run. Default 3. |
+| `mutation_probability` | number | no | For `fuzz`: the probability each mutation applies. Default 0.5. |
+| `numeric_max` | number | no | For `random`: the high end of the numeric range to vary over. Default 100. |
+| `numeric_min` | number | no | For `random`: the low end of the numeric range to vary over. Default 0. |
+| `numeric_values` | array | no | For `grid`: the numbers to try. Default 0, 50, 100. |
 | `seed` | integer | no | The seed, so a run can be repeated exactly. |
-| `string_pool` | array | no | For `random`: the strings to vary over. |
+| `string_pool` | array | no | For `random`: the strings to vary over. Default none. |
+| `string_values` | array | no | For `grid`: the strings to try. Default `default`. |
 | `success_condition` | any | no | The condition that decides whether the claim held. `test` and `quick_test` require it. |
 | `threshold` | number | no | The confidence a result needs before it counts as confirmed. |
 | `timeout` | integer | no | How long the test may run, in seconds. |
-| `variation_type` | string | no | How to vary the test between iterations. One of `none`, `random`, `parameter`, `scenario`. |
+| `variation_type` | any | no | How to vary the test between iterations. Default `none`. `random` varies within `numeric_min`..`numeric_max`, `string_pool` and `bool_probability`; `grid` walks `numeric_values`, `string_values` and `bool_values`; `boundary` tries edge values chosen by the `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with probability `mutation_probability`. |
 
 ## `observe`
 

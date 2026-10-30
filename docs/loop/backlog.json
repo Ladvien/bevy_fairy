@@ -431,6 +431,38 @@
       "evidence": "gate removed; 19 tests now run and pass (tests/plugin_guide_steps.rs); v0.3.3",
       "last_failure": "protected test file; fixing the cfg is an evaluator change, left for a human pass",
       "first_seen": "2026-10-29"
+    },
+    {
+      "id": "B-060",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "hypothesis schema advertised variation_type values the handler refuses and fields it never reads",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "mcp_tools.rs vs tools/hypothesis.rs parse_variation_strategy"
+      },
+      "status": "fixed",
+      "evidence": "tests/tool_contract.rs::every_advertised_variation_type_runs",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-061",
+      "kind": "bug",
+      "area": "schema",
+      "title": "replay, scene and observe advertise fields with empty descriptions; replay.action is not enumerated",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "docs/mcp-tools.md"
+      },
+      "status": "open",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
