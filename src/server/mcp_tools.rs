@@ -852,13 +852,8 @@ impl BevyDebuggerTools {
     #[tool(description = "Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.")]
     pub async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> Result<CallToolResult, McpError> {
         debug!("Executing observe query: {}", req.query);
-        
-        let arguments = serde_json::json!({
-            "query": req.query,
-            "diff": req.diff,
-        });
-        
-        match observe::handle(arguments, self.brp_client.clone()).await {
+
+        match observe::handle(&req, self.brp_client.clone()).await {
             Ok(result) => handler_result(result),
             Err(e) => {
                 error!("Observe tool error: {}", e);
