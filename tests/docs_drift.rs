@@ -509,6 +509,47 @@ fn every_call_tool_example_names_a_registered_tool_and_its_arguments() {
     assert!(problems.is_empty(), "docs show calls the server would refuse:\n{}", problems.join("\n"));
 }
 
+/// Every tool a doc names as a tool -- a workflow step written `Tool: name`, or prose saying "the
+/// `name` tool" -- is a registered tool. `book/USAGE_GUIDE.md` walked readers through `Tool:
+/// anomaly`, `Tool: stress` and `Tool: diagnostic_report`, none of which the server has, and `Tool:
+/// replay` outlived the tool.
+#[test]
+fn every_tool_a_doc_names_is_registered() {
+    let tools = registered_tools();
+    assert!(tools.len() > 5, "docs/mcp-tools.md lists no tools; the parser is broken");
+    let is_name = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_';
+    let mut unknown = std::collections::BTreeSet::new();
+    for (path, text) in doc_files() {
+        // The changelog records tools that were removed; naming them there is its job.
+        if path == "CHANGELOG.md" {
+            continue;
+        }
+        for (number, line) in text.lines().enumerate() {
+            let mut named = Vec::new();
+            if let Some(rest) = line.trim_start().strip_prefix("Tool:") {
+                named.push(rest.trim().trim_matches('`').split(|c: char| !is_name(c)).next().unwrap_or_default());
+            }
+            let mut rest = line;
+            while let Some(at) = rest.find("` tool") {
+                if let Some(open) = rest[..at].rfind('`') {
+                    named.push(&rest[open + 1..at]);
+                }
+                rest = &rest[at + "` tool".len()..];
+            }
+            for name in named {
+                if !name.is_empty() && name.chars().all(is_name) && !tools.contains_key(name) {
+                    unknown.insert(format!("{path}:{}: `{name}`", number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        unknown.is_empty(),
+        "docs name tools the server does not register (docs/mcp-tools.md lists the ones it does):\n{}",
+        unknown.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
+
 /// A relative markdown link must resolve to a file. `docs/quick-start.md` linked
 /// `troubleshooting.md` and `tools/` for as long as neither existed at that path.
 #[test]
