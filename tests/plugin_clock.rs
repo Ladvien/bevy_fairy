@@ -133,3 +133,63 @@ fn a_request_is_not_called_held_before_a_frame_has_run_under_it() {
     assert!(reply["held"].is_null(), "held claimed with no frame observed: {reply}");
     assert!(reply["unavailable"].is_string(), "{reply}");
 }
+
+/// `Time<Virtual>` multiplies each frame's raw delta by the speed with `Duration::mul_f64`, which
+/// panics when the product does not fit a `Duration`. A speed that does that is refused, and the
+/// clock never sees it (issue #12).
+#[test]
+fn a_speed_the_clock_cannot_represent_is_refused_not_applied() {
+    let mut app = app_with(DebuggerPlugin::default());
+    for bad in [1e30, 1e21, f32::MAX, 1000.5] {
+        let err = call(&mut app, Some(json!({ "speed": bad }))).expect_err("a speed above the bound");
+        assert!(err.message.contains("speed"), "{err:?}");
+    }
+    assert_eq!(app.world().resource::<ClockRequest>().speed, 1.0, "a refused speed was stored");
+    run(&mut app, 3); // before the fix this panicked inside bevy_time's advance_with_raw_delta
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["speed"], 1.0, "{read}");
+}
+
+/// The bound itself is accepted and the game keeps running at it.
+#[test]
+fn the_largest_speed_the_command_accepts_runs() {
+    let mut app = app_with(DebuggerPlugin::default());
+    call(&mut app, Some(json!({ "speed": 1000.0 }))).expect("the bound is allowed");
+    run(&mut app, 3);
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["speed"], 1000.0, "{read}");
+}
+
+/// A speed the engine clamps is not a speed the host overrode. `Time<Virtual>` caps each frame at
+/// `max_delta` (250 ms), so 20x on 16 ms frames advances 250 ms, an effective 15.625x. `held`
+/// said false there, which read as "the host is fighting the clock" when nothing touched it.
+#[test]
+fn a_speed_the_engine_clamps_is_held_and_says_it_was_clamped() {
+    let mut app = app_with(DebuggerPlugin::default());
+    call(&mut app, Some(json!({ "speed": 20.0 }))).expect("answers");
+    run(&mut app, 3);
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["held"], true, "no host system touched the clock: {read}");
+    assert_eq!(read["clamped_by_max_delta"], true, "{read}");
+    assert!((read["effective_speed"].as_f64().unwrap() - 15.625).abs() < 1e-3, "{read}");
+    assert_eq!(read["speed"], 20.0, "the speed in force is the one asked for: {read}");
+
+    // A speed under the clamp is not reported as clamped.
+    call(&mut app, Some(json!({ "speed": 4.0 }))).expect("answers");
+    run(&mut app, 3);
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["held"], true, "{read}");
+    assert_eq!(read["clamped_by_max_delta"], false, "{read}");
+}
+
+/// Clamped is not a licence for `held`: a host that owns the clock and ignores the request is
+/// still not held, because its speed is not the request's.
+#[test]
+fn a_host_that_ignores_a_clamped_speed_is_still_not_held() {
+    let mut app = app_with(DebuggerPlugin::default().host_owns_clock());
+    call(&mut app, Some(json!({ "speed": 20.0 }))).expect("answers");
+    run(&mut app, 3);
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["held"], false, "{read}");
+    assert_eq!(read["clamped_by_max_delta"], false, "the host's 1x speed was not clamped: {read}");
+}

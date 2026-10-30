@@ -49,8 +49,21 @@ impl Default for ClockRequest {
 struct Observation {
     request: ClockRequest,
     delta: std::time::Duration,
+    /// The speed the clock advanced at: `request.speed`, or less when `clamped`.
     effective_speed: f32,
+    /// The speed `Time<Virtual>` held when it advanced, whoever set it.
+    relative_speed: f32,
+    /// The engine cut the frame to `max_delta`, so `effective_speed` is below `relative_speed`.
+    clamped: bool,
 }
+
+/// The largest `speed` the command accepts. `Time<Virtual>` multiplies a frame's raw delta by the
+/// speed with `Duration::mul_f64`, which panics when the product does not fit a `Duration`
+/// (about 1.8e19 s), and the multiplication runs before the `max_delta` clamp: a speed of 1e30
+/// crashed the game on the next frame (issue #12). The engine caps each frame at `max_delta`
+/// (250 ms by default), so any speed above `max_delta / frame time`, about 15 at 60 fps, gives
+/// the same clock; 1000 is far above that and far below the overflow.
+const MAX_SPEED: f32 = 1000.0;
 
 /// Private bookkeeping: whether the host owns the clock, what this crate has overridden (so a
 /// cleared request is undone exactly once), and the last observation.
@@ -74,9 +87,9 @@ pub(crate) fn register(app: &mut App, host_owned: bool) {
         app,
         DebugCommandInfo::new(
             "bevy_fairy/time",
-            "Pause or unpause the game clock (Time<Virtual>) and set its speed multiplier. The request persists and is re-applied every frame against a host that writes the clock. Returns the clock state, `held` (did the clock obey on the last frame; null with `unavailable` until a frame has run) and `host_owned`.",
+            "Pause or unpause the game clock (Time<Virtual>) and set its speed multiplier. The request persists and is re-applied every frame against a host that writes the clock. Returns the clock state, `held` (did the clock obey on the last frame; null with `unavailable` until a frame has run), `clamped_by_max_delta` (true when the engine cut the last frame to the clock's max_delta, 250 ms by default, so `effective_speed` is below `speed` though nothing overrode the request) and `host_owned`.",
         )
-        .params("pause: bool, optional; speed: f32 > 0, optional (1.0 is real time)")
+        .params("pause: bool, optional; speed: f32 in (0, 1000], optional (1.0 is real time)")
         .example(json!({"pause": true})),
         handle_time,
     );
@@ -109,10 +122,15 @@ fn apply_request(
 }
 
 fn observe_clock(request: Res<ClockRequest>, clock: Res<Time<Virtual>>, mut state: ResMut<ClockState>) {
+    let relative_speed = clock.relative_speed();
     state.observed = Some(Observation {
         request: *request,
         delta: clock.delta(),
         effective_speed: clock.effective_speed(),
+        relative_speed,
+        // The engine cuts a frame to exactly `max_delta` and reports the speed that gives; an
+        // unclamped frame advances at the speed it was given.
+        clamped: !clock.is_paused() && clock.delta() == clock.max_delta() && clock.effective_speed() < relative_speed,
     });
 }
 
@@ -123,8 +141,10 @@ fn handle_time(
     mut clock: ResMut<Time<Virtual>>,
 ) -> Result<Value, String> {
     if let Some(speed) = params.speed {
-        if !speed.is_finite() || speed <= 0.0 {
-            return Err("speed must be > 0".to_string());
+        if !speed.is_finite() || speed <= 0.0 || speed > MAX_SPEED {
+            return Err(format!(
+                "speed must be above 0 and at most {MAX_SPEED}, got {speed}. Time<Virtual> overflows past that, and the engine caps a frame at its max_delta anyway. Example: {{\"speed\": 4.0}}"
+            ));
         }
     }
     if let Some(speed) = params.speed {
@@ -147,14 +167,20 @@ fn handle_time(
     });
     match state.observed.filter(|seen| seen.request == *request) {
         Some(seen) => {
+            let near = |speed: f32| (speed - request.speed).abs() <= 1e-3 * request.speed;
             let pause_held = !request.pause || seen.delta.is_zero();
+            // A frame the engine clamped advanced slower than the speed in force, so the request
+            // held when the speed in force is the request's.
             let speed_held = request.pause
                 || request.speed == 1.0
-                || (seen.effective_speed - request.speed).abs() <= 1e-3 * request.speed;
+                || near(seen.effective_speed)
+                || (seen.clamped && near(seen.relative_speed));
             reply["held"] = json!(pause_held && speed_held);
+            reply["clamped_by_max_delta"] = json!(seen.clamped);
         }
         None => {
             reply["held"] = Value::Null;
+            reply["clamped_by_max_delta"] = Value::Null;
             reply["unavailable"] = json!(
                 "no frame has run under this request yet; call bevy_fairy/time with no params to read whether it held"
             );
