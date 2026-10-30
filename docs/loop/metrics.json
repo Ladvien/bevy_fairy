@@ -6,7 +6,7 @@
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
-    "release_binary_bytes": 105777312,
+    "release_binary_bytes": 104828456,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
