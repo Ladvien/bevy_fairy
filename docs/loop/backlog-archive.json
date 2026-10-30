@@ -1055,6 +1055,86 @@
       "evidence": "1032672: QueryParser::parse returns ParsedQuery {request, limit}; observe cuts rows and reports metadata.limit/matched; `find 0` refused. tests/fixture_ground_truth.rs::observe_find_n_entities_returns_n_and_says_how_many_matched failed before (6 rows) and passes after.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-081",
+      "kind": "bug",
+      "area": "replay",
+      "title": "replay play/step/seek answered success (\"Playback started\") while DirectSync::sync_frame, a TODO returning Ok, wrote nothing to the game; branches compared the recording with edits nothing ran; load failed on the file save wrote; issue #11's tiny sample_rate panic lived in the same tool",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "fixture: after record (1 s), stop, play the mover stood at x = 6.57, the recording had seen x 0.53..2.55"
+      },
+      "status": "fixed",
+      "evidence": "ee3694a removed the tool (assumed decision: options were write each frame back with world.insert_components, remove only playback, remove the tool). tests/fixture_ground_truth.rs::no_tool_says_it_plays_a_recording_back_without_the_game_seeing_it failed before and passes after. Issue #11 is closed by the removal: nothing the server runs reaches replay.rs.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-083",
+      "kind": "bug",
+      "area": "observe",
+      "title": "issue #14: observe's component-path classes had no digits or <>, so Mesh3d, Camera3d, avian3d::* and Time<..> paths were 'Unrecognized query pattern', including the path its own error suggests",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": true,
+        "evidence": "live: `find entities with component bevy_mesh::components::Mesh3d` -> {\"error\":\"Query parsing failed\"}; fixture registers Mesh3d, Camera3d, Time<Real>"
+      },
+      "status": "fixed",
+      "evidence": "909161b: PATH/PATH_LIST classes and split_component_list (splits only at commas outside <> and ()). query_parser tests component_paths_with_digits_parse and generic_component_paths_parse_and_only_top_level_commas_separate failed before; tests/fixture_ground_truth.rs::observe_names_a_registered_component_whose_path_has_a_digit failed before (Query parsing failed) and passes after. Manual mutants (PATH without digits, split ignoring depth) are killed.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-084",
+      "kind": "bug",
+      "area": "time",
+      "title": "issue #12: bevy_fairy/time accepted any finite speed (>= ~1.2e21 panics the game in Time<Virtual> advance on the next frame), and held read false when the engine clamped the frame to max_delta, not the host",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "Duration::mul_f64 in bevy_time-0.20.0 virt.rs:250 runs before the max_delta clamp; the request is re-applied every frame; {\"speed\": 20} on 16 ms frames read held:false"
+      },
+      "status": "fixed",
+      "evidence": "0dccbfa: speed in (0, 1000] (MAX_SPEED), clamped_by_max_delta in the reply, held true when the speed in force is the request's. tests/plugin_clock.rs::a_speed_the_clock_cannot_represent_is_refused_not_applied, a_speed_the_engine_clamps_is_held_and_says_it_was_clamped and a_host_that_ignores_a_clamped_speed_is_still_not_held failed before and pass after; mutants (no bound, clamped always false) are killed. Live over MCP: speed 1e30 refused and the game answered status afterwards; speed 20 read held:true, clamped_by_max_delta:true, effective_speed 14.96.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-085",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "issue #13: entity growth 'per sample' was divided by config.window_size, not the samples spanned, and configure never resized the buffers",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "20 entities per sample read as 0.2 under the default window of 100; after configure window_size 10 the rate was 10x the truth over a buffer that still held 100 samples"
+      },
+      "status": "fixed",
+      "evidence": "de9d33c: growth = change / (samples - 1), samples_spanned in metadata, RingBuffer::set_capacity called by both detectors' configure, RingBuffer::new no longer reserves capacity. anomaly_detector tests entity_growth_is_per_sample_spanned_not_per_window_size, configure_resizes_the_window_that_growth_is_measured_over and configure_resizes_the_per_entity_velocity_histories failed before and pass after; mutants (divide by window_size, configure no-op x2) are killed. Live over MCP: 20 spawns per detect -> growth_rate 20.0, samples_spanned 2..5 under window_size 10.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-086",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly configure accepted a window_size below min_samples (or below 2), so a detector could never reach min_samples, never reported, and status still echoed the config as in force (a consequence of the #13 fix, found by the independent review)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "src/server/anomaly_detector.rs: PerformanceDetector::detect needs entity_counts.len() >= min_samples.max(2) and the buffer holds at most window_size"
+      },
+      "status": "fixed",
+      "evidence": "1661e39: handle_configure checks the merged config with check_window_holds_min_samples and refuses with an error naming both fields. tools/anomaly.rs::configure_refuses_a_window_below_min_samples answered success before and is refused after; a_window_smaller_than_the_samples_a_detector_needs_is_refused pins the boundary (window == min_samples ok, 2/1 ok, 5/10, 9/10, 1/1, 0/1 refused).",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
