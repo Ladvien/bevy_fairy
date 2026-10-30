@@ -6,13 +6,13 @@ use tracing::{debug, error, info, warn};
 
 use crate::server::brp_client::BrpClient;
 use crate::server::brp_messages::{
-    component_type_info_from_list_result, entity_data_from_query_result, BrpPayload, BrpResponse,
+    entity_data_from_query_result, BrpPayload,
     EntityData,
 };
-use crate::server::error::{Error, Result};
+use crate::server::error::Result;
 use crate::server::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
 use crate::server::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
-use crate::server::bevy_reflection::{BevyReflectionInspector, ReflectionInspectionResult};
+use crate::server::bevy_reflection::BevyReflectionInspector;
 
 /// Shared state for the observe tool
 pub struct ObserveState {

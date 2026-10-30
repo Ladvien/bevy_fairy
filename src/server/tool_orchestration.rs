@@ -415,7 +415,7 @@ impl ToolOrchestrator {
     ) -> Result<PipelineResult> {
         let start_time = Instant::now();
         let execution_id = ExecutionId::new();
-        let step_results;
+        
 
         // Enforce execution bounds
         if pipeline.steps.len() > 100 {
@@ -447,7 +447,7 @@ impl ToolOrchestrator {
         })
         .await;
 
-        step_results = match pipeline_result {
+        let step_results = match pipeline_result {
             Ok(Ok(results)) => results,
             Ok(Err(e)) => return Err(e),
             Err(_) => {

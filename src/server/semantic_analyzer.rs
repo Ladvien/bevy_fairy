@@ -3,7 +3,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strsim::jaro_winkler;
 
-use crate::server::brp_messages::{BrpRequest, ComponentFilter, ComponentValue, FilterOp, QueryFilter};
+use crate::server::brp_messages::{BrpRequest, ComponentFilter, FilterOp, QueryFilter};
 use crate::server::error::{Error, Result};
 
 /// Game concepts that can be analyzed semantically

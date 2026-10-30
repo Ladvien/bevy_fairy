@@ -230,7 +230,7 @@ impl RecordingBuffer {
         // Store every Nth frame as full frame for seeking. The first frame is already stored
         // above, so it is not stored twice: a recording that starts with one frame should hold one
         // frame, not two copies of it.
-        if self.frame_counter > 0 && self.frame_counter % 30 == 0 {
+        if self.frame_counter > 0 && self.frame_counter.is_multiple_of(30) {
             if self.frames.len() >= self.config.max_buffer_size / 30 {
                 self.frames.pop_front();
             }

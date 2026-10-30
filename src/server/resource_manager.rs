@@ -541,7 +541,7 @@ impl ResourceManager {
         }
     }
 
-    pub async fn acquire_operation_permit(&self) -> Result<tokio::sync::SemaphorePermit> {
+    pub async fn acquire_operation_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>> {
         if self.circuit_breaker.is_open().await {
             return Err(Error::Validation(
                 "Circuit breaker is open - operations temporarily blocked".to_string(),

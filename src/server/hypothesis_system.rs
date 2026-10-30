@@ -352,8 +352,10 @@ async fn query_entities(
 /// Strategy for generating test variations
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum VariationStrategy {
     /// No variations - run base test only
+    #[default]
     None,
     /// Random variations within bounds
     Random {
@@ -381,11 +383,6 @@ pub enum VariationStrategy {
     },
 }
 
-impl Default for VariationStrategy {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 impl VariationStrategy {
     /// Generate variations of base actions
