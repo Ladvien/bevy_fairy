@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
-    BevyDebuggerTools, BrpCallRequest, GuideRequest, NoArgs, ScreenshotRequest,
+    BevyDebuggerTools, BrpCallRequest, GuideRequest, NoArgs, ScreenshotRequest, WatchRequest,
 };
 use fixture_game::{CRATE_WEIGHTS, SCORE_POINTS};
 use rmcp::handler::server::tool::Parameters;
@@ -365,4 +365,122 @@ async fn a_watching_method_through_brp_is_refused_for_what_it_is() {
         text.contains("+watch") && text.contains("world.get_components`"),
         "the refusal must name the watching method and the one-shot method to call instead; got: {text}"
     );
+}
+
+const SPINNER_ANGLE: &str = "/0/components/fixture_game::Spinner/angle";
+const SPINNER_FRAMES: &str = "/0/components/fixture_game::Spinner/frames";
+
+/// Call `watch` the way an agent does and parse its JSON.
+async fn watch(tools: &BevyDebuggerTools, request: Value) -> Result<Value, String> {
+    let params: WatchRequest = serde_json::from_value(request).map_err(|e| format!("schema: {e}"))?;
+    let result = tools.watch(Parameters(params)).await.expect("watch returns a result");
+    let text = text_of(&result);
+    if result.is_error == Some(true) {
+        return Err(text);
+    }
+    Ok(serde_json::from_str(&text).unwrap_or_else(|e| panic!("watch returned non-JSON ({e}): {text}")))
+}
+
+fn spinner_query() -> Value {
+    json!({"data": {"components": ["fixture_game::Spinner"]}})
+}
+
+/// One call to `watch` finds the planted bug: the spinner's angle moves and then freezes at
+/// exactly `SPINNER_STOPS_AFTER_FRAMES` steps. The series must say the value changed, and from
+/// which frame it stopped changing -- the question an agent otherwise answers with dozens of
+/// repeated `brp` polls.
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_reports_where_the_planted_spinner_bug_stops_the_angle() {
+    use fixture_game::{SPINNER_STEP, SPINNER_STOPS_AFTER_FRAMES};
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let report = loop {
+        let report = watch(
+            &tools,
+            json!({"method": "world.query", "params": spinner_query(), "pointer": SPINNER_ANGLE,
+                   "samples": 20, "interval_ms": 200}),
+        )
+        .await
+        .expect("watch succeeds against the fixture");
+        if report["constant_since_frame"].is_u64() {
+            break report;
+        }
+        assert!(Instant::now() < deadline, "the angle never froze: {report}");
+    };
+    let frozen = f64::from(SPINNER_STEP) * f64::from(SPINNER_STOPS_AFTER_FRAMES);
+    let samples = report["samples"].as_array().expect("samples");
+    let last = samples.last().expect("at least one sample");
+    assert!((last["value"].as_f64().unwrap() - frozen).abs() < 1e-3, "frozen angle is {frozen}: {report}");
+    assert!(report["distinct_values"].as_u64().unwrap() >= 1);
+    // The sample at which the angle froze is a frame at or after the frame the fixture stops on.
+    let since = report["constant_since_frame"].as_u64().unwrap();
+    assert!(
+        since >= u64::from(SPINNER_STOPS_AFTER_FRAMES) - 1,
+        "the angle cannot freeze before frame {SPINNER_STOPS_AFTER_FRAMES}; reported {since}: {report}"
+    );
+}
+
+/// Each sample's `frame`..`frame_until` brackets the frame its value was read on. The spinner
+/// counts its own frames, so with the constant offset `c` between the two counters
+/// (`spinner.frames - c` is the frame the value belongs to), every sample must satisfy
+/// `frame <= value - c <= frame_until`. A stale frame read or a frame stamped once per series
+/// breaks that within a few samples at 100 ms spacing. (bevy_remote serves a batch's requests
+/// on separate frames, so the bracket -- not equality -- is the honest claim.)
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_brackets_the_frame_every_sample_was_read_on() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let report = watch(
+        &tools,
+        json!({"method": "world.query", "params": spinner_query(), "pointer": SPINNER_FRAMES,
+               "samples": 12, "interval_ms": 100}),
+    )
+    .await
+    .expect("watch succeeds against the fixture");
+    let samples = report["samples"].as_array().expect("samples");
+    assert_eq!(samples.len(), 12, "{report}");
+    let mut offsets: Vec<i64> = samples
+        .iter()
+        .map(|s| s["value"].as_i64().unwrap() - s["frame"].as_i64().unwrap())
+        .collect();
+    offsets.sort_unstable();
+    let c = offsets[offsets.len() / 2]; // the median offset: the counters' true difference
+    for s in samples {
+        let (from, until) = (s["frame"].as_i64().unwrap(), s["frame_until"].as_i64().unwrap());
+        let belongs_to = s["value"].as_i64().unwrap() - c;
+        assert!(from <= until, "bracket reversed: {s}");
+        assert!(from <= belongs_to && belongs_to <= until, "value of frame {belongs_to} outside [{from}, {until}]: {report}");
+    }
+    let frames: Vec<u64> = samples.iter().map(|s| s["frame"].as_u64().unwrap()).collect();
+    assert!(frames.windows(2).all(|w| w[0] < w[1]), "frames must increase: {frames:?}");
+    assert_eq!(report["changed"], json!(true));
+}
+
+/// Refusals: a pointer that matches nothing is an error, not a series of nulls; a streaming
+/// method and out-of-range counts are refused with the valid range.
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_refuses_what_it_cannot_measure() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let miss = watch(
+        &tools,
+        json!({"method": "world.query", "params": spinner_query(), "pointer": "/0/components/nope", "samples": 2}),
+    )
+    .await
+    .expect_err("a pointer matching nothing is an error");
+    assert!(miss.contains("/0/components/nope"), "names the pointer: {miss}");
+
+    let stream = watch(&tools, json!({"method": "world.get_components+watch"})).await.expect_err("refused");
+    assert!(stream.contains("world.get_components"), "names the one-shot method: {stream}");
+
+    let few = watch(&tools, json!({"method": "world.query", "samples": 1})).await.expect_err("refused");
+    assert!(few.contains("2") && few.contains("100"), "states the valid range: {few}");
+
+    let long = watch(&tools, json!({"method": "world.query", "samples": 100, "interval_ms": 5000}))
+        .await
+        .expect_err("refused");
+    assert!(long.contains("30"), "states the time cap: {long}");
 }
