@@ -6,18 +6,17 @@ use tracing::{debug, error, info, warn};
 
 use crate::server::brp_client::BrpClient;
 use crate::server::brp_messages::{
-    entity_data_from_query_result, BrpPayload,
+    entity_data_from_query_result, BrpPayload, BrpRequest,
     EntityData,
 };
 use crate::server::error::Result;
-use crate::server::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
+use crate::server::query_parser::{QueryParser, RegexQueryParser};
 use crate::server::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
 use crate::server::bevy_reflection::BevyReflectionInspector;
 
 /// Shared state for the observe tool
 pub struct ObserveState {
     parser: RegexQueryParser,
-    cache: QueryCache,
     diff_engine: StateDiff,
     reflection_inspector: BevyReflectionInspector,
     last_snapshot: Option<StateSnapshot>,
@@ -33,7 +32,6 @@ impl ObserveState {
     pub fn new() -> Result<Self> {
         Ok(Self {
             parser: RegexQueryParser::new()?,
-            cache: QueryCache::new(300), // 5 minute TTL
             diff_engine: StateDiff::new(),
             reflection_inspector: BevyReflectionInspector::new(),
             last_snapshot: None,
@@ -49,7 +47,6 @@ impl ObserveState {
     pub fn with_diff_config(fuzzy_config: FuzzyCompareConfig, game_rules: GameRules) -> Result<Self> {
         Ok(Self {
             parser: RegexQueryParser::new()?,
-            cache: QueryCache::new(300),
             diff_engine: StateDiff::with_config(fuzzy_config, game_rules),
             reflection_inspector: BevyReflectionInspector::new(),
             last_snapshot: None,
@@ -203,30 +200,6 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
     let state_guard = state.read().await;
 
-    // Check cache first (skip cache for diff mode to ensure fresh data)
-    if !diff_mode {
-        if let Some((cached_result, entity_count)) = state_guard.cache.get(query) {
-            info!("Cache hit for query: {}", query);
-            let metrics = QueryMetrics {
-                query: query.to_string(),
-                execution_time_ms: start_time.elapsed().as_millis() as u64,
-                entity_count,
-                cache_hit: true,
-                timestamp: chrono::Utc::now(),
-            };
-
-            return Ok(json!({
-                "result": cached_result,
-                "metadata": {
-                    "query": metrics.query,
-                    "execution_time_ms": metrics.execution_time_ms,
-                    "entity_count": metrics.entity_count,
-                    "cache_hit": metrics.cache_hit,
-                    "timestamp": metrics.timestamp.to_rfc3339(),
-                }
-            }));
-        }
-    }
 
     // Try semantic parsing first for richer explanations
     let (brp_request, semantic_info) = match state_guard.parser.parse_semantic(query) {
@@ -271,6 +244,42 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         }));
     }
 
+    // A filter that names a component the game does not register matches nothing, and the
+    // game answers `[]` for it, which reads as "no such entities". Check the names first.
+    let named = filter_names(&brp_request);
+    if !named.is_empty() {
+        let registered = match registered_components(&brp_client).await {
+            Ok(registered) => registered,
+            Err(message) => {
+                return Ok(json!({
+                    "error": "could not check the component names in the query",
+                    "message": message,
+                    "query": query
+                }));
+            }
+        };
+        let unknown: Vec<Value> = named
+            .iter()
+            .filter(|name| !registered.contains(name))
+            .map(|name| {
+                json!({
+                    "name": name,
+                    "registered_paths_ending_with_it": registered_paths_ending_with(name, &registered),
+                })
+            })
+            .collect();
+        if !unknown.is_empty() {
+            return Ok(json!({
+                "error": "component not registered in the game",
+                "message": "the game answers [] to a filter naming a component it does not register, \
+                            which would read as 'no such entities'. Use the full type path.",
+                "unknown": unknown,
+                "query": query,
+                "example": "find entities with component bevy_ecs::name::Name",
+            }));
+        }
+    }
+
     let brp_response = {
         let mut client = brp_client.write().await;
         match client.send_request(&brp_request).await {
@@ -287,7 +296,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     };
 
     // Process response and handle diff mode
-    let (result_json, entity_count, diff_result) = match brp_response.payload {
+    let (result_json, count, diff_result) = match brp_response.payload {
         BrpPayload::Result(value) => {
             // Decode the method-specific payload into EntityData where possible
             let decoded_entities = entity_data_from_query_result(&value)
@@ -315,17 +324,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 })
                 .unwrap_or_default();
 
-            let entity_count = if !decoded_entities.is_empty() {
-                decoded_entities.len()
-            } else if let Some(arr) = value.as_array() {
-                // world.query rows or world.list_components type names
-                arr.len()
-            } else if value.is_object() {
-                // world.get_components for a single entity
-                1
-            } else {
-                0
-            };
+            let count = count_of(&value, decoded_entities.len());
 
             let mut result_json = value.clone();
 
@@ -394,7 +393,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 None
             };
 
-            (result_json, entity_count, diff_result)
+            (result_json, count, diff_result)
         }
         BrpPayload::Error(error) => {
             warn!("BRP returned error: {}", error.message);
@@ -409,40 +408,23 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
     let execution_time = start_time.elapsed().as_millis() as u64;
 
-    // Cache the result (only for non-diff queries)
-    if !diff_mode {
-        let state_guard = state.read().await;
-        state_guard
-            .cache
-            .set(query.to_string(), result_json.clone(), entity_count);
-    }
-
-    let metrics = QueryMetrics {
-        query: query.to_string(),
-        execution_time_ms: execution_time,
-        entity_count,
-        cache_hit: false,
-        timestamp: chrono::Utc::now(),
-    };
-
     info!(
-        "Query '{}' completed in {}ms, {} entities (diff_mode: {})",
-        query, execution_time, entity_count, diff_mode
+        "Query '{}' completed in {}ms, {} {} (diff_mode: {})",
+        query, execution_time, count.1, count.0, diff_mode
     );
 
     let mut response = json!({
         "result": result_json,
         "metadata": {
-            "query": metrics.query,
-            "execution_time_ms": metrics.execution_time_ms,
-            "entity_count": metrics.entity_count,
-            "cache_hit": metrics.cache_hit,
-            "timestamp": metrics.timestamp.to_rfc3339(),
+            "query": query,
+            "execution_time_ms": execution_time,
+            "read_at": chrono::Utc::now().to_rfc3339(),
             "diff_mode": diff_mode,
             "diff_target": diff_target,
             "reflection_enabled": use_reflection,
         }
     });
+    response["metadata"][count.0] = json!(count.1);
 
     // Add diff information if available
     if let Some(diff_result) = diff_result {
@@ -478,19 +460,60 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     Ok(response)
 }
 
-/// Get query cache statistics
-pub async fn get_cache_stats() -> Value {
-    let state = get_observe_state();
-    let state_guard = state.read().await;
-    let stats = state_guard.cache.stats();
-    json!(stats)
+/// How many of what `result` holds. `world.list_components` answers an array of type names,
+/// and calling its length an entity count told an agent a 323-type registry was 323 entities.
+fn count_of(value: &Value, decoded_entities: usize) -> (&'static str, usize) {
+    if decoded_entities > 0 {
+        return ("entity_count", decoded_entities);
+    }
+    match value {
+        Value::Array(items) if !items.is_empty() && items.iter().all(Value::is_string) => {
+            ("component_type_count", items.len())
+        }
+        Value::Array(items) => ("entity_count", items.len()),
+        // world.get_components for a single entity
+        Value::Object(_) => ("entity_count", 1),
+        _ => ("entity_count", 0),
+    }
 }
 
-/// Clear query cache
-pub async fn clear_cache() {
-    let state = get_observe_state();
-    let mut state_guard = state.write().await;
-    *state_guard = ObserveState::new().expect("Default observe state should initialize successfully");
+/// The component names a request's `filter` mentions, `with` first then `without`.
+fn filter_names(request: &BrpRequest) -> Vec<String> {
+    let filter = request.params.as_ref().and_then(|params| params.get("filter"));
+    ["with", "without"]
+        .iter()
+        .filter_map(|key| filter?.get(*key)?.as_array())
+        .flatten()
+        .filter_map(|name| name.as_str().map(String::from))
+        .collect()
+}
+
+/// Registered component paths that are `name`, or end in `::name`.
+fn registered_paths_ending_with(name: &str, registered: &[String]) -> Vec<String> {
+    let suffix = format!("::{name}");
+    registered
+        .iter()
+        .filter(|path| path.as_str() == name || path.ends_with(&suffix))
+        .cloned()
+        .collect()
+}
+
+/// Every component type path the game has registered.
+async fn registered_components(brp_client: &Arc<RwLock<BrpClient>>) -> std::result::Result<Vec<String>, String> {
+    let request = crate::server::query_parser::make_list_components_request();
+    let response = brp_client
+        .write()
+        .await
+        .send_request(&request)
+        .await
+        .map_err(|e| e.to_string())?;
+    match response.payload {
+        BrpPayload::Result(Value::Array(names)) => {
+            Ok(names.iter().filter_map(|n| n.as_str().map(String::from)).collect())
+        }
+        BrpPayload::Result(other) => Err(format!("world.list_components answered {other}")),
+        BrpPayload::Error(error) => Err(error.message),
+    }
 }
 
 #[cfg(test)]
@@ -532,9 +555,29 @@ mod tests {
         assert!(result.get("help").is_some());
     }
 
-    #[tokio::test]
-    async fn test_cache_stats() {
-        let stats = get_cache_stats().await;
-        assert!(stats.get("total_entries").is_some());
+    #[test]
+    fn a_list_of_type_names_is_counted_as_types_not_entities() {
+        let names = json!(["bevy_ecs::name::Name", "fixture_game::Crate"]);
+        assert_eq!(count_of(&names, 0), ("component_type_count", 2));
+        let rows = json!([{"entity": 1, "components": {}}]);
+        assert_eq!(count_of(&rows, 1), ("entity_count", 1));
+        assert_eq!(count_of(&json!([]), 0), ("entity_count", 0));
+    }
+
+    #[test]
+    fn filter_names_are_collected_from_with_and_without() {
+        let request = BrpRequest {
+            method: "world.query".to_string(),
+            id: None,
+            params: Some(json!({"data": {}, "filter": {"with": ["A", "B"], "without": ["C"]}})),
+        };
+        assert_eq!(filter_names(&request), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn a_short_name_is_matched_to_the_registered_path_it_ends() {
+        let registered = vec!["bevy_ecs::name::Name".to_string(), "fixture_game::Crate".to_string()];
+        assert_eq!(registered_paths_ending_with("Crate", &registered), vec!["fixture_game::Crate"]);
+        assert!(registered_paths_ending_with("Cr", &registered).is_empty());
     }
 }
