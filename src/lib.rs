@@ -92,7 +92,7 @@ pub mod server;
 // module is still there for anyone who wants to be explicit.
 #[cfg(feature = "plugin")]
 pub use plugin::{
-    apply_pending_input, cursor_position, handle_input, logical_for, typed, DebugCommandInfo,
+    apply_pending_input, cursor_position, handle_input, ClockRequest, logical_for, typed, DebugCommandInfo,
     DebugCommands, DebugCommandsAppExt, DebugCursor, DebugReady, DebuggerPlugin, InputAction,
     InputCommand, InputKind, PendingInput, SceneLog, ScenePlayback, SceneStep,
 };
