@@ -143,7 +143,7 @@ fn handle_time(
     if let Some(speed) = params.speed {
         if !speed.is_finite() || speed <= 0.0 || speed > MAX_SPEED {
             return Err(format!(
-                "speed must be above 0 and at most {MAX_SPEED}, got {speed}. Time<Virtual> overflows past that, and the engine caps a frame at its max_delta anyway. Example: {{\"speed\": 4.0}}"
+                "speed must be > 0 and at most {MAX_SPEED}, got {speed}. Time<Virtual> overflows past that, and the engine caps a frame at its max_delta anyway. Example: {{\"speed\": 4.0}}"
             ));
         }
     }

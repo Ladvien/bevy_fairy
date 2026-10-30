@@ -57,11 +57,11 @@ fn make_query_request(filter: Option<QueryFilter>) -> BrpRequest {
     }
 }
 
-/// One component's registered type path: letters, digits, `_` and `::`, plus the generic arguments
-/// some paths end in (`bevy_time::time::Time<bevy_time::real::Real>`, `Time<()>`). A digit is part
-/// of the name: `bevy_mesh::components::Mesh3d`, `avian3d::...`. No whitespace, so `A B` is not one
-/// name.
-const PATH: &str = r"[A-Za-z0-9_:<>()]+";
+/// One component's registered type path: letters, digits, `_` and `::`, optionally followed by
+/// generic arguments (`bevy_time::time::Time<bevy_time::real::Real>`, `Time<()>`,
+/// `Pair<a::A, b::B>`). A digit is part of the name: `bevy_mesh::components::Mesh3d`,
+/// `avian3d::...`. Whitespace is allowed only inside the angle brackets.
+const PATH: &str = r"[A-Za-z0-9_:]+(?:<[A-Za-z0-9_:<>(),\s]*>)?";
 
 /// A comma-separated list of [`PATH`]s. Whitespace is allowed, because a list reads `A, B` and a
 /// generic argument list reads `Pair<A, B>`.
@@ -413,6 +413,12 @@ mod tests {
 
         let two = "some::Pair<a::A, b::B>";
         assert_eq!(filter_names(&format!("find entities with component {two}")), [two]);
+        // Every shape that names one component takes a generic path with a space in it.
+        assert_eq!(filter_names(&format!("find entities without component {two}")), [two]);
+        let parser = RegexQueryParser::new().unwrap();
+        let limited = parser.parse(&format!("find 3 entities with component {two}")).expect("a spaced generic after `find N`");
+        assert_eq!(limited.limit, Some(3));
+        assert_eq!(limited.request.params.unwrap()["filter"]["with"], serde_json::json!([two]));
         assert_eq!(
             filter_names(&format!("find entities with {two}, bevy_mesh::components::Mesh3d, {real}")),
             [two, "bevy_mesh::components::Mesh3d", real]
