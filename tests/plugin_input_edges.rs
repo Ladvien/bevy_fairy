@@ -102,6 +102,31 @@ fn spelled(frame: &[Key]) -> String {
         .collect()
 }
 
+/// **Queued is not applied, and the counter says which.** A caller whose injections are never folded
+/// -- the failure the plugin asserts about for a missing `InputPlugin` -- could not tell the two apart,
+/// because `bevy_debugger/input` answers `success: true` at the queue. One tap is a press written on
+/// the first frame and a release written on the second: two, and nothing at all if the system is not
+/// running. Measured in Sanctuary, where this turned "no key arrives" into "the key arrives and is
+/// dropped downstream".
+#[test]
+fn one_tap_reports_two_applied_writes_and_none_waiting() {
+    let mut app = app_correctly_ordered();
+    queue_key(&mut app, KeyCode::KeyQ, InputAction::Tap);
+    app.update();
+    app.update();
+    app.update();
+    let pending = app.world().resource::<PendingInput>();
+    assert_eq!(
+        pending.applied, 2,
+        "a tap writes a press and then a release, and both are counted"
+    );
+    assert_eq!(pending.queued(), 0, "and nothing is left waiting");
+    assert_eq!(
+        pending.applied_this_frame, 0,
+        "the third frame wrote nothing, so this frame's count is zero"
+    );
+}
+
 fn queue_key(app: &mut App, key: KeyCode, action: InputAction) {
     app.world_mut()
         .resource_mut::<PendingInput>()

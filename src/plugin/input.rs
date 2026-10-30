@@ -260,6 +260,19 @@ pub fn cursor_position(window: &Window, injected: &DebugCursor) -> Option<Vec2> 
 #[derive(Resource, Default)]
 pub struct PendingInput {
     queue: Vec<Injected>,
+    /// **How many injections have actually been written**, and this frame's count.
+    ///
+    /// It exists because a caller could not tell "queued" from "applied". `bevy_debugger/input`
+    /// answers `success: true` the moment a well-formed command is pushed onto the queue, so a host
+    /// whose injections are never folded — the failure `DebuggerPlugin`'s assertion names for a
+    /// missing `InputPlugin` — looked exactly like a working one from the client side. Measured in
+    /// Sanctuary: ten accepted injections of `Space`, `Enter`, `KeyJ` and `KeyM` changed no game
+    /// state, and there was no way to see whether they had been written. A monotonic count is that
+    /// distinction, and it settled the question: `applied` climbs by two for one tap, so the queue
+    /// and the write path are sound and the key is dropped downstream.
+    pub applied: u64,
+    /// Written by the frame that was running when the count last changed.
+    pub applied_this_frame: u32,
     /// Taps press on one frame and release on the next, because that is what a real tap does. Pressing
     /// and releasing within a single frame leaves `pressed` false for the whole frame while both
     /// `just_pressed` and `just_released` are true — a state no physical key can produce, and one that
@@ -289,6 +302,11 @@ impl PendingInput {
             action,
             window: Entity::PLACEHOLDER,
         });
+    }
+
+    /// How many commands are waiting: the other half of "queued versus applied".
+    pub fn queued(&self) -> usize {
+        self.queue.len() + self.release_next_keys.len() + self.release_next_buttons.len()
     }
 
     /// Queue one already-built typed character — see [`typed`], which is how a caller gets one.
@@ -359,14 +377,24 @@ pub fn apply_pending_input(
     let release_buttons = core::mem::take(&mut pending.release_next_buttons);
     let queue = core::mem::take(&mut pending.queue);
 
+    // The count of what has really been written, so a caller can tell "queued" from "applied" -- see
+    // `PendingInput::applied`. **Reset before the releases, not after**: a release written here is
+    // this frame's, and resetting after them put them in the previous frame's count (the edge test
+    // caught it: one tap read 1 where the press and the release are 2).
+    pending.applied_this_frame = 0;
+
     // Last frame's presses end here, one frame after they began. Not optional: `ButtonInput` is
     // derived from this stream now, and `release` is the only thing that clears `pressed`.
     for message in release_keys {
         keyboard.write(message);
+        pending.applied += 1;
+        pending.applied_this_frame += 1;
     }
     for message in release_buttons {
         route.button(&message, cursor.0.unwrap_or(Vec2::ZERO));
         mouse.write(message);
+        pending.applied += 1;
+        pending.applied_this_frame += 1;
     }
 
     // **At most one command per key per frame; the rest wait.**
@@ -471,12 +499,18 @@ pub fn apply_pending_input(
                 match action {
                     InputAction::Press => {
                         keyboard.write(message(ButtonState::Pressed));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                     }
                     InputAction::Release => {
                         keyboard.write(message(ButtonState::Released));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                     }
                     InputAction::Tap => {
                         keyboard.write(message(ButtonState::Pressed));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                         pending.release_next_keys.push(message(ButtonState::Released));
                     }
                 }
@@ -487,6 +521,8 @@ pub fn apply_pending_input(
                 let mut released = message.clone();
                 released.state = ButtonState::Released;
                 keyboard.write(message);
+                pending.applied += 1;
+                pending.applied_this_frame += 1;
                 pending.release_next_keys.push(released);
             }
             Injected::Mouse(button, action, window) => {
@@ -498,14 +534,20 @@ pub fn apply_pending_input(
                     InputAction::Press => {
                         route.button(&message(ButtonState::Pressed), at);
                         mouse.write(message(ButtonState::Pressed));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                     }
                     InputAction::Release => {
                         route.button(&message(ButtonState::Released), at);
                         mouse.write(message(ButtonState::Released));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                     }
                     InputAction::Tap => {
                         route.button(&message(ButtonState::Pressed), at);
                         mouse.write(message(ButtonState::Pressed));
+                        pending.applied += 1;
+                        pending.applied_this_frame += 1;
                         pending.release_next_buttons.push(message(ButtonState::Released));
                     }
                 }
