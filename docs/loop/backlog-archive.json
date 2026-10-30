@@ -991,6 +991,70 @@
       "evidence": "tests/fixture_ground_truth.rs::observe_show_entity_lists_the_entitys_components failed before, passes after (asks for every registered component, drops COMPONENT_NOT_PRESENT errors)",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-076",
+      "kind": "change",
+      "area": "observe",
+      "title": "observe::handle still dispatches on serde_json::Value string keys; ObserveState keeps a snapshot history (diff_against_history, clear_history) no field can reach",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/mcp_tools.rs builds json!({query, diff}) for observe::handle; the tool contract asks for the handler to take the request struct"
+      },
+      "status": "fixed",
+      "evidence": "acbe1c4: observe::handle takes &ObserveRequest (no string-key reads, no silent defaults); the unreachable ObserveState history (diff_against_history, clear_history, history_size, ...) and with_diff_config/configure_diff are removed. tools::observe unit tests and the 7 fixture observe tests pass.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-077",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe semantic queries (find stuck entities, show fast moving objects, ...) never send their value thresholds: query_params ignores where_clause, so every entity with the named components comes back while semantic_analysis claims a velocity threshold was applied",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/brp/mod.rs query_params reads only with/without; src/server/semantic_analyzer.rs:208-247 builds where_clause thresholds (independent review of d148e25)"
+      },
+      "status": "fixed",
+      "evidence": "f49baf1: the semantic phrases are removed from observe and refused as unrecognised queries. tests/fixture_ground_truth.rs::observe_refuses_the_semantic_phrases_it_never_evaluated failed before (`find memory leaks` returned the mover as a leak candidate) and passes after. Assumed decision (remove, not evaluate thresholds) recorded in the commit body.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-078",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe diff summary reports entities_modified 0 while an entity's component changed: nothing ever produces ChangeType::EntityModified",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "live proof 2026-10-30: summary components_modified 1, entities_modified 0 for the moving mover; src/server/state_diff.rs DiffSummary::from_changes counts only EntityModified"
+      },
+      "status": "fixed",
+      "evidence": "70111e9: DiffSummary::from_changes counts distinct entities with component changes. tests/fixture_ground_truth.rs::observe_diff_reports_the_mover_moving_between_two_reads asserts summary.entities_modified == 1 (failed before: 0); tests/test_state_diff.rs::test_diff_summary_calculation's pinned 0 corrected to 3; new test_diff_summary_counts_each_modified_entity_once.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-079",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe `find N entities with component Y` parsed N into `_limit` and dropped it, returning every match under entity_count",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "src/server/query_parser.rs limit pattern: `let _limit = caps[1].parse()`; fixture: `find 2 entities with component fixture_game::Crate` answered 6 rows, entity_count 6"
+      },
+      "status": "fixed",
+      "evidence": "1032672: QueryParser::parse returns ParsedQuery {request, limit}; observe cuts rows and reports metadata.limit/matched; `find 0` refused. tests/fixture_ground_truth.rs::observe_find_n_entities_returns_n_and_says_how_many_matched failed before (6 rows) and passes after.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
