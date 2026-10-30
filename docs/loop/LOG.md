@@ -12,3 +12,4 @@
 - 2026-10-29 guide-test-gate: B-053 fixed, 19 guide tests compiled out by a nonexistent feature gate now run and pass; ratchet ok — v0.3.3 — [report](iterations/2026-10-29-guide-test-gate.md)
 - 2026-10-29 handler-errors: B-048 fixed (handler Err → isError result) + empty `experiment execute` refused; ratchet ok, evals not run — v0.3.4 — [report](iterations/2026-10-29-handler-errors.md)
 - 2026-10-29 watch: B-045 `watch` tool (frame-stamped polled series, batch-with-status); ratchet ok, dev 6/6, heldout 3/3 — v0.3.5 — [report](iterations/2026-10-29-watch.md)
+- 2026-10-29 tcp-flag-removal: B-012 fixed, dead `--tcp`/`--server` removed, stdio only; ratchet ok, workspace tests green, evals not run (no tool change) — v0.4.0 — [report](iterations/2026-10-29-tcp-flag-removal.md)

@@ -59,8 +59,8 @@
         "common_no_workaround": true,
         "evidence": "src/main.rs:60 advertises the flag; src/mcp_server.rs:170-189 handle_connection"
       },
-      "status": "open",
-      "evidence": "Verified 2026-10-21 by reading the code. A dead end that also holds a port open.",
+      "status": "fixed",
+      "evidence": "tests/cli_args.rs::the_tcp_flags_that_never_served_anything_are_refused (hung before, passes after); flags removed, v0.4.0",
       "last_failure": "",
       "first_seen": "2026-10-21"
     },
