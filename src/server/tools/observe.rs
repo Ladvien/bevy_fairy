@@ -4,7 +4,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-use crate::server::brp_client::BrpClient;
+use crate::server::brp_client::{certainly_another_game, BrpClient, GameName, Unnamed};
 use crate::server::brp_messages::{
     entity_data_from_query_result, BrpPayload, BrpRequest,
     EntityData,
@@ -33,7 +33,7 @@ pub struct ObserveState {
     /// The query `last_snapshot` answered. A read of another query is not comparable with it.
     last_query: Option<String>,
     /// The game process `last_snapshot` was read from (`Err`: why it could not say).
-    last_game: std::result::Result<String, String>,
+    last_game: GameName,
 }
 
 impl ObserveState {
@@ -47,13 +47,13 @@ impl ObserveState {
             diff_engine: StateDiff::new(),
             last_snapshot: None,
             last_query: None,
-            last_game: Err("no read yet".to_string()),
+            last_game: Err(Unnamed { why: "no read yet".to_string(), answered_without_a_name: false }),
         })
     }
 
     /// Keep `snapshot`, the answer to `query` read from `game`, as the read the next `diff` read of
     /// the same query is compared with.
-    pub fn add_snapshot(&mut self, query: &str, snapshot: StateSnapshot, game: std::result::Result<String, String>) {
+    pub fn add_snapshot(&mut self, query: &str, snapshot: StateSnapshot, game: GameName) {
         self.last_snapshot = Some(snapshot);
         self.last_query = Some(query.to_string());
         self.last_game = game;
@@ -68,7 +68,7 @@ impl ObserveState {
         &self,
         query: &str,
         current_snapshot: &StateSnapshot,
-        game: &std::result::Result<String, String>,
+        game: &GameName,
     ) -> Baseline {
         if self.last_query.as_deref() != Some(query) {
             return Baseline::None;
@@ -76,10 +76,12 @@ impl ObserveState {
         let Some(last) = self.last_snapshot.as_ref() else {
             return Baseline::None;
         };
+        if certainly_another_game(&self.last_game, game) {
+            return Baseline::AnotherGame;
+        }
         let unverified = match (&self.last_game, game) {
-            (Ok(then), Ok(now)) if then != now => return Baseline::AnotherGame,
             (Ok(_), Ok(_)) => None,
-            (Err(why), _) | (_, Err(why)) => Some(why.clone()),
+            (Err(Unnamed { why, .. }), _) | (_, Err(Unnamed { why, .. })) => Some(why.clone()),
         };
         Baseline::Earlier(Box::new(self.diff_engine.diff_snapshots(last, current_snapshot)), unverified)
     }

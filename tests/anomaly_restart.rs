@@ -103,4 +103,19 @@ async fn detect_anomaly_does_not_score_a_restarted_game_against_the_one_before_i
         reply["game_instance_unverified"].as_str().is_some_and(|why| why.contains("bevy_fairy/status")),
         "an anonymous game's samples cannot be told from another's, and the reply must say so: {reply}"
     );
+
+    // The game restarts once more, now with a plugin that names itself. The game before it answered
+    // and named no instance; a process cannot gain a plugin, so this is another process, and the
+    // samples held (read from the anonymous game) are not its own.
+    {
+        let mut game = game.lock().expect("fake game lock");
+        game.instance = Some("game-c".to_string());
+        game.speed = 1.0;
+    }
+    let reply = detect(&tools).await;
+    assert!(
+        reply["history_discarded"]["reason"].as_str().is_some_and(|r| r.contains("another game")),
+        "a game that now names itself is not the anonymous one before it, and the samples must be dropped: {reply}"
+    );
+    assert!(reply.get("game_instance_unverified").is_none(), "{reply}");
 }

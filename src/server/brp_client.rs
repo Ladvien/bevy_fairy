@@ -22,6 +22,34 @@ use crate::server::error::{Error, Result};
 /// Request timeout for a single BRP call.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A game that did not say which process it is (see [`BrpClient::game_instance`]), and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unnamed {
+    /// Why the game could not say, in words an agent can act on.
+    pub why: String,
+    /// The game answered, and its answer names no instance: it serves BRP without this crate's
+    /// plugin, or its plugin is older than this server. `false` when the game was not asked
+    /// successfully (it did not answer, or refused for another reason), which says nothing about
+    /// it.
+    pub answered_without_a_name: bool,
+}
+
+/// The answer of [`BrpClient::game_instance`], kept by the stores that name entities by id.
+pub type GameName = std::result::Result<String, Unnamed>;
+
+/// Whether the game that gave the answer `then` is certainly another process than the one that
+/// gives `now`. Two different instances are. A game that answered without naming itself is also
+/// another process than one that names itself later, because a process does not gain a plugin.
+/// Anything else (a game that could not be asked, or two that cannot name themselves) is unknown.
+#[must_use]
+pub fn certainly_another_game(then: &GameName, now: &GameName) -> bool {
+    match (then, now) {
+        (Ok(then), Ok(now)) => then != now,
+        (Err(then), Ok(_)) => then.answered_without_a_name,
+        _ => false,
+    }
+}
+
 /// BRP client with extensible command handler support.
 ///
 /// Stateless over HTTP: "connected" means the last `rpc.discover` health
@@ -304,7 +332,7 @@ impl BrpClient {
     /// entities by id, and a restarted game gives the same ids to other entities; this is how that
     /// state tells its own game from another. The `Err` says why the game cannot say: it does not
     /// answer, it serves BRP without this crate's plugin, or its plugin is older than this server.
-    pub async fn game_instance(&mut self) -> std::result::Result<String, String> {
+    pub async fn game_instance(&mut self) -> GameName {
         const METHOD: &str = "bevy_fairy/status";
         let request = BrpRequest { method: METHOD.to_string(), id: Some(Value::from(1)), params: None };
         match self.send_request(&request).await {
@@ -313,10 +341,19 @@ impl BrpClient {
                     .get("instance")
                     .and_then(Value::as_str)
                     .map(str::to_string)
-                    .ok_or_else(|| format!("`{METHOD}` names no `instance`: the game's plugin is older than this server")),
-                BrpPayload::Error(error) => Err(refusal_text(METHOD, &error)),
+                    .ok_or_else(|| Unnamed {
+                        why: format!("`{METHOD}` names no `instance`: the game's plugin is older than this server"),
+                        answered_without_a_name: true,
+                    }),
+                BrpPayload::Error(error) => Err(Unnamed {
+                    why: refusal_text(METHOD, &error),
+                    answered_without_a_name: error.code == bevy_remote::error_codes::METHOD_NOT_FOUND,
+                }),
             },
-            Err(e) => Err(format!("the game did not answer `{METHOD}`: {e}")),
+            Err(e) => Err(Unnamed {
+                why: format!("the game did not answer `{METHOD}`: {e}"),
+                answered_without_a_name: false,
+            }),
         }
     }
 

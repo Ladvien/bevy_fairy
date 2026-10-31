@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 use crate::server::anomaly_detector::{
     Anomaly, AnomalyConfig, AnomalyDetectionSystem, DetectorCoverage,
 };
-use crate::server::brp_client::BrpClient;
+use crate::server::brp_client::{certainly_another_game, BrpClient, GameName, Unnamed};
 use crate::server::brp_messages::{
     builtin_methods, entity_data_from_query_result, BrpPayload, BrpRequest,
 };
@@ -26,7 +26,7 @@ pub struct AnomalyState {
     detection_system: AnomalyDetectionSystem,
     /// The game the detectors' samples were read from (`Err`: why it could not say); `None` before
     /// the first `detect`.
-    last_game: Option<std::result::Result<String, String>>,
+    last_game: Option<GameName>,
 }
 
 impl AnomalyState {
@@ -52,15 +52,18 @@ impl AnomalyState {
     /// Record the game the next samples come from. The detectors score an entity against its own
     /// recent values by entity id, and a restarted game gives the same ids to other entities, so
     /// the samples of another game process are dropped (the configuration stays).
-    fn settle(&mut self, game: &std::result::Result<String, String>) -> Option<Samples> {
-        let found = match (&self.last_game, game) {
-            (None, _) => None,
-            (Some(Ok(then)), Ok(now)) if then != now => {
+    fn settle(&mut self, game: &GameName) -> Option<Samples> {
+        let found = match &self.last_game {
+            None => None,
+            Some(then) if certainly_another_game(then, game) => {
                 self.detection_system = AnomalyDetectionSystem::new(self.detection_system.config().clone());
                 Some(Samples::Dropped)
             }
-            (Some(Ok(_)), Ok(_)) => None,
-            (Some(Err(why)), _) | (Some(_), Err(why)) => Some(Samples::Unverified(why.clone())),
+            // Both reads came from a game that named itself, and it is the same one.
+            Some(Ok(_)) if game.is_ok() => None,
+            // One of the two could not name itself, and it is not known to be another process.
+            Some(Err(then)) => Some(Samples::Unverified(then.why.clone())),
+            Some(Ok(_)) => game.as_ref().err().map(|now| Samples::Unverified(now.why.clone())),
         };
         self.last_game = Some(game.clone());
         found

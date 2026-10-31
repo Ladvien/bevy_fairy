@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `experiment`, `observe` with `diff: true` and `detect_anomaly` kept state recorded against a game that answered `bevy_fairy/status` without an `instance` (no plugin, or an older one) as "unverified" after the game was restarted with a plugin that names itself, and went on using it: `experiment undo` wrote the old game's reversals into the new game, `observe` reported the difference between the two games as a change, `detect_anomaly` scored the new game's entities against the old samples. A process does not gain a plugin, so a game that answered without a name is another game than one that names itself: the history is `stale` (refused and discarded), the first `diff` read is a new baseline, the detector samples are dropped. A game that was only not asked successfully (no answer, another refusal) still says nothing and stays `unverified`.
+
 ## 0.11.0 - 2026-10-31
 
 Covers everything since 0.10.0 (semver-checks: 6 major checks: `EntityFactory` removed, `TestResult`'s `successes`, `failures` and `failure_examples` replaced). Breaking: `hypothesis` replies changed shape and a variation that changes nothing is refused, `hypothesis` `quick_test` refuses `iterations` and `timeout`, `experiment` lost its `archetypes` action and its `archetype` field, `Action` and `ComponentSpec` refuse fields they do not read, and `experiment` `undo` and `redo` are refused after a game restart.

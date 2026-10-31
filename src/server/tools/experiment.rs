@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::server::brp_client::BrpClient;
+use crate::server::brp_client::{BrpClient, GameName, Unnamed};
 use crate::server::error::{Error, Result};
 use crate::server::experiment_system::{Action, ActionExecutor};
 
@@ -14,8 +14,9 @@ enum Recorded {
     Nothing,
     /// A game that named itself with the `instance` of `bevy_fairy/status`.
     Game(String),
-    /// A game that could not name itself, and why: its history cannot be told from another's.
-    Unverifiable(String),
+    /// A game that could not name itself, and why: its history cannot be told from another's, unless
+    /// a game that names itself answers later (a process does not gain a plugin).
+    Unverifiable(Unnamed),
 }
 
 /// What comparing the game that answers now with the one the history was recorded against found.
@@ -102,13 +103,13 @@ impl ExperimentState {
 
     /// Compare the game that answers now (`Err`: why it cannot name itself) with the one the
     /// history was recorded against. Changes nothing.
-    fn standing(&self, now: &std::result::Result<String, String>) -> Standing {
+    fn standing(&self, now: &GameName) -> Standing {
         standing_of(&self.recorded, self.executor.entry_count(), now)
     }
 
     /// Settle on the game now answering before an operation runs: a stale history is dropped, and
     /// an empty one is recorded against the game the operation is about to act on.
-    fn adopt(&mut self, now: &std::result::Result<String, String>) -> Standing {
+    fn adopt(&mut self, now: &GameName) -> Standing {
         let standing = self.standing(now);
         let empty = self.executor.entry_count() == 0;
         if matches!(standing, Standing::Stale { .. }) {
@@ -117,7 +118,7 @@ impl ExperimentState {
         if empty || matches!(standing, Standing::Stale { .. }) {
             self.recorded = match now {
                 Ok(id) => Recorded::Game(id.clone()),
-                Err(why) => Recorded::Unverifiable(why.clone()),
+                Err(unnamed) => Recorded::Unverifiable(unnamed.clone()),
             };
         }
         standing
@@ -126,14 +127,17 @@ impl ExperimentState {
 
 /// The decision behind [`ExperimentState::standing`]: `entries` actions are on record, taken
 /// against `recorded`, and `now` is the game that answers.
-fn standing_of(recorded: &Recorded, entries: usize, now: &std::result::Result<String, String>) -> Standing {
+fn standing_of(recorded: &Recorded, entries: usize, now: &GameName) -> Standing {
     match (entries, recorded, now) {
         (0, _, Ok(_)) => Standing::Current,
-        (0, _, Err(why)) => Standing::Unverified(why.clone()),
+        (0, _, Err(now)) => Standing::Unverified(now.why.clone()),
         (_, Recorded::Game(then), Ok(id)) if then == id => Standing::Current,
         (_, Recorded::Game(_), Ok(_)) => Standing::Stale { entries },
-        (_, Recorded::Game(_), Err(why)) => Standing::Unconfirmed(why.clone()),
-        (_, Recorded::Unverifiable(why), _) => Standing::Unverified(why.clone()),
+        (_, Recorded::Game(_), Err(now)) => Standing::Unconfirmed(now.why.clone()),
+        // The game that ran the actions answered without naming itself and a game that names itself
+        // answers now: a process does not gain a plugin, so it is another one.
+        (_, Recorded::Unverifiable(then), Ok(_)) if then.answered_without_a_name => Standing::Stale { entries },
+        (_, Recorded::Unverifiable(then), _) => Standing::Unverified(then.why.clone()),
         // Actions on record against no game cannot happen: `adopt` runs before every action.
         (_, Recorded::Nothing, _) => Standing::Unverified("the history records no game".to_string()),
     }
@@ -431,6 +435,10 @@ mod tests {
         Recorded::Game(id.to_string())
     }
 
+    fn unnamed(why: &str, answered_without_a_name: bool) -> Unnamed {
+        Unnamed { why: why.to_string(), answered_without_a_name }
+    }
+
     #[test]
     fn a_history_is_current_only_for_the_game_it_was_recorded_against() {
         let same = Ok("a".to_string());
@@ -441,16 +449,36 @@ mod tests {
 
     #[test]
     fn a_game_that_cannot_be_asked_leaves_a_named_history_unconfirmed_not_current() {
-        let silent = Err("no answer".to_string());
+        let silent = Err(unnamed("no answer", false));
         assert_eq!(standing_of(&game("a"), 1, &silent), Standing::Unconfirmed("no answer".to_string()));
     }
 
     #[test]
-    fn a_history_recorded_without_a_name_is_never_called_current_or_stale() {
-        let unnamed = Recorded::Unverifiable("no plugin".to_string());
-        for now in [Ok("a".to_string()), Err("still none".to_string())] {
-            assert_eq!(standing_of(&unnamed, 2, &now), Standing::Unverified("no plugin".to_string()), "{now:?}");
+    fn a_history_recorded_without_a_name_is_unverified_while_no_game_names_itself() {
+        for answered in [true, false] {
+            let recorded = Recorded::Unverifiable(unnamed("no plugin", answered));
+            assert_eq!(
+                standing_of(&recorded, 2, &Err(unnamed("still none", true))),
+                Standing::Unverified("no plugin".to_string()),
+                "answered: {answered}"
+            );
         }
+    }
+
+    /// A process does not gain a plugin: the game that answered with no `instance` cannot be the
+    /// one that names itself now.
+    #[test]
+    fn a_history_recorded_against_a_game_that_answered_without_a_name_is_stale_for_one_that_names_itself() {
+        let recorded = Recorded::Unverifiable(unnamed("no plugin", true));
+        assert_eq!(standing_of(&recorded, 2, &Ok("a".to_string())), Standing::Stale { entries: 2 });
+    }
+
+    /// A game that was not asked successfully says nothing about itself, so a game that names
+    /// itself later may be the same one.
+    #[test]
+    fn a_history_recorded_while_the_game_could_not_be_asked_stays_unverified_for_one_that_names_itself() {
+        let recorded = Recorded::Unverifiable(unnamed("no answer", false));
+        assert_eq!(standing_of(&recorded, 2, &Ok("a".to_string())), Standing::Unverified("no answer".to_string()));
     }
 
     #[test]
@@ -458,7 +486,7 @@ mod tests {
         assert_eq!(standing_of(&game("a"), 0, &Ok("b".to_string())), Standing::Current);
         assert_eq!(standing_of(&Recorded::Nothing, 0, &Ok("b".to_string())), Standing::Current);
         assert_eq!(
-            standing_of(&Recorded::Nothing, 0, &Err("no plugin".to_string())),
+            standing_of(&Recorded::Nothing, 0, &Err(unnamed("no plugin", true))),
             Standing::Unverified("no plugin".to_string())
         );
     }
