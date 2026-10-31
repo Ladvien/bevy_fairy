@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 use bevy::prelude::*;
 use bevy::remote::builtin_methods::process_remote_query_request;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Number, Value};
 
 use crate::plugin::commands::{add_builtin_command, DebugCommandInfo};
 use crate::plugin::ready::FrameTicks;
@@ -92,7 +92,7 @@ pub(crate) fn register(app: &mut App) {
             "Keep the newest N frames of a world.query result, one sample per frame, recorded inside the game. Actions: start (query, optional frames and trigger), dump (optional last), stop, status. Every sample carries its frame number and elapsed seconds; the reply says whether it is still recording, how many samples were evicted, and the trigger frame if one fired. Samples are state, not pixels.",
         )
         .params(
-            "action: start | dump | stop | status; start needs query (world.query params) and takes frames (1-600, default 120) and trigger {pointer: JSON pointer into one sample's result, equals: value} which stops recording on the first frame it matches; dump takes last (newest N samples)",
+            "action: start | dump | stop | status; start needs query (world.query params) and takes frames (1-600, default 120) and trigger {pointer: JSON pointer into one sample's result, equals: value} which stops recording on the first frame it matches (a number matches as a number: 9 matches 9.0, and 0.1 matches the f32 field that holds it); dump takes last (newest N samples)",
         )
         .example(json!({
             "action": "start",
@@ -104,8 +104,38 @@ pub(crate) fn register(app: &mut App) {
     );
 }
 
+/// Whether the sampled `value` is what a trigger's `equals` asked for. `serde_json` calls `9` and
+/// `9.0` different, and an `f32` component reads back as the f64 nearest to it (`0.1` is
+/// `0.10000000149011612`), so a trigger written the way a person writes a number never matched a
+/// float field and the buffer ran on to its end with `triggered_at_frame: null`.
+fn same_value(sampled: &Value, wanted: &Value) -> bool {
+    match (sampled, wanted) {
+        (Value::Number(sampled), Value::Number(wanted)) => same_number(sampled, wanted),
+        (Value::Array(sampled), Value::Array(wanted)) => {
+            sampled.len() == wanted.len() && sampled.iter().zip(wanted).all(|(s, w)| same_value(s, w))
+        }
+        (Value::Object(sampled), Value::Object(wanted)) => {
+            sampled.len() == wanted.len()
+                && wanted.iter().all(|(key, w)| sampled.get(key).is_some_and(|s| same_value(s, w)))
+        }
+        _ => sampled == wanted,
+    }
+}
+
+/// Two integers are equal exactly. Otherwise the numbers are equal as numbers, or the sampled one is
+/// the `f32` the wanted one rounds to.
+fn same_number(sampled: &Number, wanted: &Number) -> bool {
+    if !sampled.is_f64() && !wanted.is_f64() {
+        return sampled == wanted;
+    }
+    match (sampled.as_f64(), wanted.as_f64()) {
+        (Some(sampled), Some(wanted)) => sampled == wanted || sampled == f64::from(wanted as f32),
+        _ => false,
+    }
+}
+
 fn trigger_fires(trigger: &Trigger, result: &Value) -> bool {
-    result.pointer(&trigger.pointer) == Some(&trigger.equals)
+    result.pointer(&trigger.pointer).is_some_and(|sampled| same_value(sampled, &trigger.equals))
 }
 
 /// Runs the query once for this frame and pushes the sample.
