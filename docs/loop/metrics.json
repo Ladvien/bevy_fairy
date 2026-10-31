@@ -1,12 +1,12 @@
 {
   "measured_at": "2026-10-31",
-  "sha": "9afe28b",
+  "sha": "c52e818",
   "server": {
     "loc": 21266,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
-    "release_binary_bytes": 104895024,
+    "release_binary_bytes": 105158736,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
@@ -48,20 +48,20 @@
       "success": "6/6",
       "mean_tool_calls": 4.7,
       "invalid_calls": 0,
-      "note": "Calls 2, 6, 3, 3, 6, 8 (spinner_stops 8). The server binary was the b3b693e debug build run through scripts/evals/run.py with the fixture of the same build; no tool-call shape the agents use changed, only descriptions of experiment, status, observe's `diff` and detect_anomaly."
+      "note": "Calls 2, 6, 3, 3, 6, 8 (spinner_stops 8). The server binary was the b3b693e debug build run through evals/run.py with the fixture of the same build; no tool-call shape the agents use changed, only descriptions of experiment, status, observe's `diff` and detect_anomaly."
     },
     "last_heldout_run": {
-      "sha": "ff29519",
+      "sha": "3540366",
       "success": "3/3",
       "tool_calls": [
+        3,
         4,
-        4,
-        6
+        4
       ],
       "invalid_calls": 0,
-      "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
+      "note": "The v0.11.0 release commit's debug build. entities_with_game_components passed; its truth is still disputed (B-049)."
     },
-    "latest": "9afe28b (this pass): dev 6/6 at 4.7 calls, 0 invalid (b3b693e; v0.10.0 and b681d29 were 5.0 and 4.0-5.5). Held-out run: see the release entry below."
+    "latest": "c52e818 (this pass): dev 6/6 at 4.7 calls, 0 invalid (b3b693e; v0.10.0 was 5.5, b681d29 4.0-5.0); held-out 3/3 at 3.7 calls, 0 invalid (3540366; v0.10.0 was 4.7). Released as v0.11.0."
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -84,7 +84,8 @@
     "2026-10-30 (7505991, v0.9.0): release_binary_bytes 99925248 -> 105777312 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked`). The old number was recorded once at 9b4a317 (2026-10-21) and never re-measured, so the increase spans every iteration since, including the `image` dependency `burst` added; this pass removed code and added no dependency. Measure it each release from here.",
     "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c.",
     "2026-10-31 (0829adc..b681d29, hypothesis-restore): server loc 20503 -> 20936 (find src/server -name '*.rs' | xargs cat | wc -l; +433): hypothesis_system.rs rewrote the four mutate_* functions as leaf-level generators (net about +60 with the Kinds/number helpers), TestRunner::run gained the restore, deadline and plan checks (+90), experiment_system.rs gained read-back, Restoration/restore_all and redo retargeting (+190), and about 120 lines are in-file unit tests. clippy 69 unchanged (touched files clean); known_red unchanged; scripts/ratchet.sh OK on all six touched files at b681d29.",
-    "2026-10-31 (e35dd4b..9afe28b, restart-state): server loc 20936 -> 21266 (+330; find src/server -name '*.rs' | xargs cat | wc -l) and plugin loc 3561 -> 3588 (+27: GameInstance and the status field). About 190 of the server lines are the experiment history's game binding (Recorded/Standing/standing_of/adopt/refusal/annotate and 4 in-file unit tests), +50 observe's Baseline, +45 anomaly's settle, +23 BrpClient::game_instance (shared), the rest tool descriptions. No dependency added (plugin direct dependencies still 4: GameInstance uses std only). Clippy 69 unchanged; the ratchet was OK on every touched file at 9afe28b."
+    "2026-10-31 (e35dd4b..9afe28b, restart-state): server loc 20936 -> 21266 (+330; find src/server -name '*.rs' | xargs cat | wc -l) and plugin loc 3561 -> 3588 (+27: GameInstance and the status field). About 190 of the server lines are the experiment history's game binding (Recorded/Standing/standing_of/adopt/refusal/annotate and 4 in-file unit tests), +50 observe's Baseline, +45 anomaly's settle, +23 BrpClient::game_instance (shared), the rest tool descriptions. No dependency added (plugin direct dependencies still 4: GameInstance uses std only). Clippy 69 unchanged; the ratchet was OK on every touched file at 9afe28b.",
+    "2026-10-31 (v0.11.0, c52e818): release_binary_bytes 104895024 -> 105158736 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked --force`; +0.25%, the restart bindings and their text). v0.11.0 published from 3540366 at 03:23 CDT, the minute the 6 h rule (v0.10.0 tag commit time + 21600 s) opened."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
