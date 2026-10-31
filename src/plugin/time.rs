@@ -53,6 +53,8 @@ struct Observation {
     effective_speed: f32,
     /// The speed `Time<Virtual>` held when it advanced, whoever set it.
     relative_speed: f32,
+    /// Whether `Time<Virtual>` was paused on that frame, whoever paused it.
+    paused: bool,
     /// The engine cut the frame to `max_delta`, so `effective_speed` is below `relative_speed`.
     clamped: bool,
 }
@@ -87,7 +89,7 @@ pub(crate) fn register(app: &mut App, host_owned: bool) {
         app,
         DebugCommandInfo::new(
             "bevy_fairy/time",
-            "Pause or unpause the game clock (Time<Virtual>) and set its speed multiplier. The request persists and is re-applied every frame against a host that writes the clock. Returns the clock state, `held` (did the clock obey on the last frame; null with `unavailable` until a frame has run), `clamped_by_max_delta` (true when the engine cut the last frame to the clock's max_delta, 250 ms by default, so `effective_speed` is below `speed` though nothing overrode the request) and `host_owned`.",
+            "Pause or unpause the game clock (Time<Virtual>) and set its speed multiplier. The request persists and is re-applied every frame against a host that writes the clock; it does not fight a host's own pause or slow motion once the request is back to not paused at 1.0. Returns the clock state, `held` (did the clock match the request on the last frame: paused when asked to be, running when not, at the asked speed; false when something else holds the clock, null with `unavailable` until a frame has run), `clamped_by_max_delta` (true when the engine cut the last frame to the clock's max_delta, 250 ms by default, so `effective_speed` is below `speed` though nothing overrode the request) and `host_owned`.",
         )
         .params("pause: bool, optional; speed: f32 in (0, 1000], optional (1.0 is real time)")
         .example(json!({"pause": true})),
@@ -128,6 +130,7 @@ fn observe_clock(request: Res<ClockRequest>, clock: Res<Time<Virtual>>, mut stat
         delta: clock.delta(),
         effective_speed: clock.effective_speed(),
         relative_speed,
+        paused: clock.is_paused(),
         // The engine cuts a frame to exactly `max_delta` and reports the speed that gives; an
         // unclamped frame advances at the speed it was given.
         clamped: !clock.is_paused() && clock.delta() == clock.max_delta() && clock.effective_speed() < relative_speed,
@@ -168,13 +171,19 @@ fn handle_time(
     match state.observed.filter(|seen| seen.request == *request) {
         Some(seen) => {
             let near = |speed: f32| (speed - request.speed).abs() <= 1e-3 * request.speed;
-            let pause_held = !request.pause || seen.delta.is_zero();
-            // A frame the engine clamped advanced slower than the speed in force, so the request
-            // held when the speed in force is the request's.
-            let speed_held = request.pause
-                || request.speed == 1.0
-                || near(seen.effective_speed)
-                || (seen.clamped && near(seen.relative_speed));
+            // `held` is whether the clock matched the request on that frame: paused when it was
+            // asked to be, running when it was not, at the speed asked for. "Not paused, 1.0" is a
+            // request like any other (B-129): it used to be skipped, so a host holding its own pause
+            // or running its own slow motion read as `held: true` beside `paused: true`.
+            let pause_held = if request.pause { seen.delta.is_zero() } else { !seen.paused };
+            // A paused clock has no effective speed to read; the speed it holds for when it resumes
+            // is the one to compare. A frame the engine clamped advanced slower than the speed in
+            // force, so the request held when the speed in force is the request's.
+            let speed_held = if seen.paused {
+                near(seen.relative_speed)
+            } else {
+                near(seen.effective_speed) || (seen.clamped && near(seen.relative_speed))
+            };
             reply["held"] = json!(pause_held && speed_held);
             reply["clamped_by_max_delta"] = json!(seen.clamped);
         }

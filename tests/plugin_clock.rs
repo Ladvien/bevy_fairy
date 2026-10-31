@@ -49,6 +49,16 @@ fn host_sets_speed_to_one(mut time: ResMut<Time<Virtual>>) {
     time.set_relative_speed(1.0);
 }
 
+/// A host that holds its own pause every frame, as a pause menu does.
+fn host_pauses(mut time: ResMut<Time<Virtual>>) {
+    time.pause();
+}
+
+/// A host that runs the world in slow motion of its own, as a bullet-time effect does.
+fn host_slows_to_half(mut time: ResMut<Time<Virtual>>) {
+    time.set_relative_speed(0.5);
+}
+
 #[test]
 fn a_pause_holds_against_a_host_that_unpauses_every_frame() {
     let mut app = app_with(DebuggerPlugin::default());
@@ -192,4 +202,49 @@ fn a_host_that_ignores_a_clamped_speed_is_still_not_held() {
     let read = call(&mut app, None).expect("read");
     assert_eq!(read["held"], false, "{read}");
     assert_eq!(read["clamped_by_max_delta"], false, "the host's 1x speed was not clamped: {read}");
+}
+
+/// **B-129.** The agent asks for the clock to run and the host holds it paused. `held` said true,
+/// because an unpause was never something it checked, while `paused: true` sat in the same reply:
+/// the agent read "the clock obeyed" next to a clock that had not moved.
+#[test]
+fn an_unpause_the_host_overrides_is_not_held() {
+    let mut app = app_with(DebuggerPlugin::default());
+    app.add_systems(Update, host_pauses);
+    run(&mut app, 5);
+
+    call(&mut app, Some(json!({ "pause": false }))).expect("answers");
+    assert_eq!(run(&mut app, 30), Duration::ZERO, "the host's pause held the clock");
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["paused"], true, "{read}");
+    assert_eq!(read["held"], false, "asked to run, clock paused, and held said true: {read}");
+}
+
+/// **B-129.** The same for speed: a request of 1.0 was never checked against the clock, so a host
+/// running the world at half speed read as `held: true` beside `effective_speed: 0.5`.
+#[test]
+fn a_speed_of_one_the_host_overrides_is_not_held() {
+    let mut app = app_with(DebuggerPlugin::default());
+    app.add_systems(Update, host_slows_to_half);
+    run(&mut app, 5);
+
+    call(&mut app, Some(json!({ "speed": 1.0 }))).expect("answers");
+    run(&mut app, 30);
+    let read = call(&mut app, None).expect("read");
+    assert!((read["effective_speed"].as_f64().unwrap() - 0.5).abs() < 1e-6, "{read}");
+    assert_eq!(read["held"], false, "asked for real time, clock at half, and held said true: {read}");
+}
+
+/// The other side of the two above: with nobody fighting, the same requests are held, so the fix
+/// did not turn `held` into a constant `false` for requests that ask for nothing unusual.
+#[test]
+fn an_unpause_and_a_speed_of_one_nobody_overrides_are_held() {
+    let mut app = app_with(DebuggerPlugin::default());
+    call(&mut app, Some(json!({ "pause": true }))).expect("answers");
+    run(&mut app, 5);
+    call(&mut app, Some(json!({ "pause": false, "speed": 1.0 }))).expect("answers");
+    run(&mut app, 5);
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["paused"], false, "{read}");
+    assert_eq!(read["held"], true, "{read}");
 }
