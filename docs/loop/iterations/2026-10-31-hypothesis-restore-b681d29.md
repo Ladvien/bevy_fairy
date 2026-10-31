@@ -65,7 +65,10 @@ An independent `reviewer` agent with only commit 0829adc, the plan and the gate 
 
 ## Release and install
 No release: v0.10.0 is 3 h old (the 6 h rule, measured from the tag's commit time), so these changes ride in the next release; CHANGELOG `Unreleased` carries them, with the breaking part named (reply shape, a variation that changes nothing is refused, `grid` `string_values` default). `cargo semver-checks` was not run; it belongs to the release commit.
-Installed binary: rebuilt from the pushed commit (see LOG).
+Installed binary: `cargo install --path . --locked --force` from the pushed commit a04a2b5 (`bevy-fairy --version` says 0.10.0, because nothing was bumped; it carries the unreleased changes). The same live script run against the installed binary showed 14 tools and the same `read_back`, `game_state`, refusal and `stopped_early` replies. Downstream copies of this crate (bevy_emerge pins a git revision) pick the change up when they move their pin to `main`.
+
+## Cleanup
+Removed what this pass created: `/tmp/fairy_*.log`, `/tmp/fairy_live_smoke.py`, `/tmp/fairy-eval-new`, `/tmp/fairy-eval-fixture`, and the nine `evals/transcripts/2026-10-31-*` directories (git-ignored); no worktree was made and the stash is empty. Left for a person (not mine): `/tmp/fairy-gate-baseline.log` and `/tmp/fairy-gate-targeted.log` from earlier passes (7 KB), and `/home` is at 96% (148 GB free) with `/home/ladvien/target/fairy-loop` the shared build cache.
 
 ## Deferred / open
 - B-109 (experiment history is stale after a game restart: `undo` can delete the entity that now has the recorded id) is still unconfirmed; the fix needs a game-instance token in `bevy_fairy/status`, a plugin change.
