@@ -583,8 +583,8 @@ pub fn handle_input(
     window: Option<Single<Entity, With<PrimaryWindow>>>,
     injected_cursor: Option<Res<DebugCursor>>,
 ) -> BrpResult {
-    // Said back to the caller when a press has no injected position behind it; see `Mouse`.
-    let mut note: Option<&str> = None;
+    // Said back to the caller when a call has something the reply should not leave unsaid; see `Mouse`.
+    let mut notes: Vec<&str> = Vec::new();
     // `serde_json::Error` has no `From` into `BrpError`, so `?` cannot carry it — a malformed payload
     // is reported as INVALID_PARAMS with the parser's own message, which is the part a caller can act on.
     let cmd: InputCommand = match params.as_ref() {
@@ -684,9 +684,19 @@ pub fn handle_input(
             let aimed = injected_cursor.is_some_and(|c| c.0.is_some())
                 || pending.queue.iter().any(|c| matches!(c, Injected::Cursor(Some(_))));
             if !aimed {
-                note = Some(
+                notes.push(
                     "no injected cursor position: the click lands where the pointer last was \
                      (the origin if it never moved). Send `kind: \"Cursor\"` with `x` and `y` first",
+                );
+            }
+            // `bevy_picking` maps Left, Right and Middle and skips the rest (`mouse_pick_events`), on
+            // the window route and the image route alike: the press is in `ButtonInput` and the
+            // message stream, and nothing built on picking can see it (B-131).
+            if !matches!(button, MouseButton::Left | MouseButton::Right | MouseButton::Middle) {
+                notes.push(
+                    "this button reaches ButtonInput<MouseButton> and the MouseButtonInput stream \
+                     only: bevy_picking has no Back, Forward or Other pointer button, so bevy_ui \
+                     buttons and pointer observers never see it",
                 );
             }
             pending.queue.push(Injected::Mouse(button, cmd.action, addressed));
@@ -768,8 +778,8 @@ pub fn handle_input(
         // to see — the reply said the key had been delivered while the game never saw it.
         "message": "Input queued; applied on the next frame's PreUpdate",
     });
-    if let Some(note) = note {
-        reply["note"] = json!(note);
+    if !notes.is_empty() {
+        reply["note"] = json!(notes.join(". "));
     }
     Ok(reply)
 }

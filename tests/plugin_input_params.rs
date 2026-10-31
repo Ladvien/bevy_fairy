@@ -125,3 +125,24 @@ fn well_formed_calls_of_every_kind_are_still_accepted() {
         accepted(&mut app, params);
     }
 }
+
+/// **B-131.** `bevy_picking` maps three pointer buttons and skips the rest, so a Back, Forward or
+/// Other press reaches `ButtonInput<MouseButton>` and the `MouseButtonInput` stream and nothing a
+/// picking observer or a `bevy_ui` button can see. The call answered with the same `success: true`
+/// as a Left click, so an agent that pressed Back and watched a button not fire had no way to tell
+/// the game from the engine.
+#[test]
+fn a_mouse_button_picking_cannot_see_says_so_and_a_button_it_can_see_does_not() {
+    let mut app = app();
+    accepted(&mut app, json!({"kind": "Cursor", "x": 10.0, "y": 10.0}));
+
+    for button in [json!("Back"), json!("Forward"), json!({"Other": 7})] {
+        let reply = input(&mut app, json!({"kind": "Mouse", "button": button}))
+            .unwrap_or_else(|e| panic!("{button} is a mouse button: {}", e.message));
+        let note = reply["note"].as_str().unwrap_or_else(|| panic!("{button} said nothing: {reply}"));
+        assert!(note.contains("bevy_picking"), "names what cannot see it: {note}");
+    }
+
+    let reply = input(&mut app, json!({"kind": "Mouse", "button": "Left"})).expect("a click");
+    assert!(reply.get("note").is_none(), "an aimed Left click has nothing to add: {reply}");
+}
