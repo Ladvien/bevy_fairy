@@ -97,6 +97,11 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         .and_then(|a| a.as_str())
         .unwrap_or("detect");
 
+    if matches!(action, "detect" | "configure" | "status") {
+        if let Some(refusal) = refuse_unread_fields(action, &arguments) {
+            return Ok(refusal);
+        }
+    }
     match action {
         "detect" => handle_detect(arguments, brp_client).await,
         "configure" => handle_configure(arguments).await,
@@ -107,6 +112,43 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
             "available_actions": ["detect", "configure", "status"]
         })),
     }
+}
+
+/// The fields each action reads, `action` aside.
+fn fields_read_by(action: &str) -> &'static [&'static str] {
+    match action {
+        "detect" => &["min_severity", "limit"],
+        "configure" => &["window_size", "z_score_threshold", "min_samples", "entity_growth_threshold"],
+        _ => &[],
+    }
+}
+
+/// A field the action does not read is refused by name before anything runs, because the reply to
+/// `detect` with a `z_score_threshold` (or `configure` with a `limit`) used to look exactly like
+/// one that had applied it. The tool serializes every field it was not given as null, and a null is
+/// not sent.
+fn refuse_unread_fields(action: &str, arguments: &Value) -> Option<Value> {
+    let read = fields_read_by(action);
+    let field = arguments
+        .as_object()?
+        .iter()
+        .find(|(key, value)| key.as_str() != "action" && !value.is_null() && !read.contains(&key.as_str()))?
+        .0;
+    let reads = if read.is_empty() {
+        "no fields".to_string()
+    } else {
+        read.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(", ")
+    };
+    let example = match action {
+        "detect" => json!({"action": "detect", "min_severity": 0.5, "limit": 10}),
+        "configure" => json!({"action": "configure", "window_size": 50, "z_score_threshold": 2.5}),
+        _ => json!({"action": "status"}),
+    };
+    Some(json!({
+        "error": "Unread field",
+        "message": format!("`{field}` is not read by action `{action}`, so it would change nothing; `{action}` reads {reads}. Nothing was run."),
+        "example": example,
+    }))
 }
 
 /// Detect anomalies in current game state
@@ -522,6 +564,32 @@ mod tests {
         assert_eq!(r["error"], "Invalid configuration", "{r}");
         let message = r["message"].as_str().unwrap();
         assert!(message.contains("window_size (5)") && message.contains("min_samples is 10"), "{r}");
+    }
+
+    /// B-137: `detect` accepted `z_score_threshold` and `window_size`, `configure` accepted `limit`
+    /// and `min_severity` (and answered "Configuration updated successfully"), and `status` accepted
+    /// anything, each as if the field had been read. A caller that sent `z_score_threshold: 7` to
+    /// `detect` believed the detectors ran at 7. Each is refused by name before anything is applied.
+    #[tokio::test]
+    async fn a_field_the_action_does_not_read_is_refused_by_name_and_changes_nothing() {
+        for (args, field) in [
+            (json!({"action": "detect", "z_score_threshold": 9.25}), "z_score_threshold"),
+            (json!({"action": "detect", "window_size": 33}), "window_size"),
+            (json!({"action": "configure", "limit": 3}), "limit"),
+            (json!({"action": "configure", "min_severity": 0.2, "z_score_threshold": 9.25}), "min_severity"),
+            (json!({"action": "status", "window_size": 7}), "window_size"),
+        ] {
+            let r = handle(args.clone(), create_test_brp_client()).await.unwrap();
+            assert_eq!(r["error"], "Unread field", "{args}: {r}");
+            assert!(r["message"].as_str().unwrap().contains(&format!("`{field}`")), "{args}: {r}");
+            assert!(r.get("config").is_none(), "{args}: {r}");
+        }
+        let status = handle_status().await.unwrap();
+        assert_ne!(status["config"]["z_score_threshold"], 9.25, "a refused configure changed the config: {status}");
+
+        // The tool serializes every field it was not given as null; that is not "sent".
+        let r = handle(json!({"action": "status", "window_size": null, "limit": null}), create_test_brp_client()).await.unwrap();
+        assert!(r.get("error").is_none(), "{r}");
     }
 
     /// `start_monitoring` used to set a flag, answer "Continuous monitoring started" and run

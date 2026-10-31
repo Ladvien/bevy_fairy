@@ -33,17 +33,17 @@ No arguments.
 
 ## `detect_anomaly`
 
-Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. Those readings belong to one game process: after a game restart they are dropped, because the new game gives the same entity ids to other entities, and the reply says so in history_discarded; a game that cannot name its process leaves them unverified, with the reason in game_instance_unverified, and they are dropped once a game that names itself answers after one that answered without naming itself. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.
+Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors (and reads `min_severity` and `limit`), `configure` sets the thresholds below (`window_size`, `z_score_threshold`, `min_samples`, `entity_growth_threshold`), `status` lists what each detector reads and reads no field; a field the action does not read is refused by name and nothing runs. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. Those readings belong to one game process: after a game restart they are dropped, because the new game gives the same entity ids to other entities, and the reply says so in history_discarded; a game that cannot name its process leaves them unverified, with the reason in game_instance_unverified, and they are dropped once a game that names itself answers after one that answered without naming itself. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `action` | string | yes | The operation to run. One of `detect`, `configure`, `status`. |
-| `entity_growth_threshold` | number | no | The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally. |
-| `limit` | integer | no | How many anomalies to report at most. |
-| `min_samples` | integer | no | The fewest samples needed before a verdict is possible; at most `window_size`. |
-| `min_severity` | number | no | The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement. |
-| `window_size` | integer | no | How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window. |
-| `z_score_threshold` | number | no | How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated. |
+| `entity_growth_threshold` | number | no | Read by `configure` only. The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally. |
+| `limit` | integer | no | Read by `detect` only. How many anomalies to report at most. |
+| `min_samples` | integer | no | Read by `configure` only. The fewest samples needed before a verdict is possible; at most `window_size`. |
+| `min_severity` | number | no | Read by `detect` only. The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement. |
+| `window_size` | integer | no | Read by `configure` only. How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window. |
+| `z_score_threshold` | number | no | Read by `configure` only. How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated. |
 
 ## `experiment`
 
@@ -130,12 +130,12 @@ Run one command the game registered, by name, with its parameters. Waits up to 1
 
 ## `scene`
 
-Work with the commands recorded in this game session. save writes them to a replayable scene file on this machine (path required); show returns them; clear forgets them.
+Work with the commands recorded in this game session. save writes them to a replayable scene file on this machine (path required, and read only by save: show and clear refuse one); show returns them; clear forgets them.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `action` | any | yes | `save`, `show` or `clear`. |
-| `path` | string | no | Required for `save`: the file to write, on this machine. |
+| `path` | string | no | Required for `save`: the file to write, on this machine. Refused for `show` and `clear`, which read no file. |
 
 ## `screenshot`
 
