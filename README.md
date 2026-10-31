@@ -62,6 +62,7 @@ dependency graph ever gains something that could synthesise an OS event.
 | | How |
 |---|---|
 | **Read state** | Query any entity, component or resource over BRP (`brp`, `observe`). |
+| **Watch change over time** | Sample a value repeatedly and see which of its fields moved and which stopped, each with the frame it was read on (`watch`); capture a short run of frames as one contact sheet (`burst`). |
 | **Run game actions** | Call commands your game registers, each with typed params and a worked example (`commands`, `run`). |
 | **See the screen** | Capture a PNG from an offscreen render target, or from the game window (`screenshot`). |
 | **Press keys, type, click, drag** | Inject keyboard, text, mouse, scroll and cursor input that the game reads like the real thing. |
