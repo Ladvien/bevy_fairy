@@ -1228,7 +1228,7 @@
         "evidence": "the planted spinner bug: watching the whole Spinner component spans the freeze at frame 120 and the reply could not say which field stopped; a workaround exists (watch each field with its own pointer)"
       },
       "status": "fixed",
-      "evidence": "587587e, 84fd461: `fields` per leaf with the same four numbers, ranked stopped/moving/never-moved, absent_samples. fixture_ground_truth::watch_without_a_pointer_says_which_spinner_field_froze failed on 7d2e7a1 ('the reply has no `fields` array') and passes; 16 unit tests in server::watch_fields; 16 manual mutants killed. Dev evals did not move (the agent could already read the freeze off the raw samples): 6/6 before and after.",
+      "evidence": "587587e, 84fd461, 62bb197: `fields` per leaf with the same four numbers, ranked stopped/moving/never-moved, absent_samples. fixture_ground_truth::watch_without_a_pointer_says_which_spinner_field_froze failed on 7d2e7a1 ('the reply has no `fields` array') and passes; 15 unit tests in server::watch_fields; 18 manual mutants killed; two independent review rounds, three gaps fixed. Dev evals did not move (the agent could already read the freeze off the raw samples): 6/6 before and after. Released in v0.10.0.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }
