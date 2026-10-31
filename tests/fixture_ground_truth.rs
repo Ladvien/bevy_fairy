@@ -1415,6 +1415,9 @@ async fn experiment_execute_drops_the_history_of_a_game_that_is_gone_and_says_so
 
     let undo = experiment(&after_restart, json!({"action": "undo"})).await;
     assert_eq!(undo["result"]["success"], json!(true), "the new game's own history still undoes: {undo}");
+    let history = experiment(&after_restart, json!({"action": "history"})).await;
+    assert_eq!(history["count"], json!(0), "the one action was undone: {history}");
+    assert_eq!(history["redoable"], json!(1), "and can be redone: {history}");
 }
 
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.

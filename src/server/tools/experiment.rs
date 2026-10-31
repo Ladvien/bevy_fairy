@@ -33,7 +33,9 @@ enum Standing {
 
 impl Standing {
     /// The reply that refuses an operation this standing forbids, or `None` when it may go ahead.
-    /// A stale history refuses `undo` and `redo` but not `execute`, which starts a new one.
+    /// A stale history refuses `undo` and `redo` but not `execute`, which starts a new one. A
+    /// history recorded against a game that named itself refuses every operation, `execute`
+    /// included, while that game cannot be asked who it is.
     fn refusal(&self, operation: &str, url: &str, stale_refuses: bool) -> Option<Value> {
         match self {
             Standing::Stale { entries } if stale_refuses => Some(json!({
@@ -70,7 +72,12 @@ impl Standing {
                 );
             }
             Standing::Unverified(why) => {
-                fields.insert("game_instance_unverified".to_string(), Value::from(why));
+                fields.insert(
+                    "game_instance_unverified".to_string(),
+                    Value::from(format!(
+                        "the game answering could not be confirmed as the one that ran the recorded actions: {why}"
+                    )),
+                );
             }
             Standing::Current | Standing::Unconfirmed(_) => {}
         }
@@ -308,7 +315,9 @@ async fn handle_redo(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
 
 /// Handle history request. It says which game the history was recorded against and whether the
 /// game answering now is that one: `stale` is `true` or `false` when the game can be asked, and
-/// `null`, with the reason, when it cannot. Reading the history changes nothing.
+/// `null` when it cannot, with the reason in `game_instance_unverified` while actions are on
+/// record. `history` and `count` are the actions `undo` can step back over; `redoable` counts the
+/// ones `redo` can step forward over, which a stale check also covers. Reading changes nothing.
 async fn handle_history(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let state = get_experiment_state();
     let state_guard = state.read().await;
@@ -323,6 +332,7 @@ async fn handle_history(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let mut reply = json!({
         "history": history,
         "count": history.len(),
+        "redoable": state_guard.executor.entry_count() - history.len(),
         "recorded_against": match &state_guard.recorded {
             Recorded::Game(id) => Value::from(id.as_str()),
             Recorded::Nothing | Recorded::Unverifiable(_) => Value::Null,
