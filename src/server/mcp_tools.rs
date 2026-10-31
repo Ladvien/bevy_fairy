@@ -622,6 +622,19 @@ impl BevyDebuggerTools {
         let request = BrpRequest { method: method.to_string(), id: Some(Value::from(1)), params };
         let mut client = self.brp_client.write().await;
         match client.send_request(&request).await {
+            // The request left, so the game is running and has it queued; it may carry it out after
+            // this server has given up. "No game answering" would send the agent to restart a game
+            // that is running, or to send the request again and apply it twice.
+            Err(crate::server::error::Error::Timeout(why)) => Err(format!(
+                "bevy-fairy: the game at {} did not answer `{method}`: {why}. The request was sent, so \
+                 the game may still act on it when it next gets to its requests (a long frame, a window \
+                 that is not being redrawn); check with `status` before sending it again",
+                client.url()
+            )),
+            Err(crate::server::error::Error::Brp(why)) => Err(format!(
+                "bevy-fairy: the game at {} answered `{method}` with a failure, not a JSON-RPC reply: {why}",
+                client.url()
+            )),
             Ok(response) => match response.payload {
                 BrpPayload::Result(value) => Ok(value),
                 BrpPayload::Error(err) => Err(crate::server::brp::refusal_text(method, &err)),

@@ -268,7 +268,7 @@ impl BrpClient {
             .map_err(|e| {
                 self.connected.store(false, Ordering::Relaxed);
                 if e.is_timeout() {
-                    Error::Connection("Request timeout".to_string())
+                    Error::Timeout(format!("the game did not answer within {} s", REQUEST_TIMEOUT.as_secs()))
                 } else {
                     Error::Connection(format!("BRP HTTP request failed: {e}"))
                 }
@@ -277,9 +277,7 @@ impl BrpClient {
         let status = response.status();
         if !status.is_success() {
             self.connected.store(false, Ordering::Relaxed);
-            return Err(Error::Connection(format!(
-                "BRP server returned HTTP {status}"
-            )));
+            return Err(Error::Brp(format!("the game's BRP server answered with HTTP {status}")));
         }
 
         self.connected.store(true, Ordering::Relaxed);
@@ -294,7 +292,7 @@ impl BrpClient {
         let response = self.http.post(&self.url).json(requests).send().await.map_err(|e| {
             self.connected.store(false, Ordering::Relaxed);
             if e.is_timeout() {
-                Error::Connection("Request timeout".to_string())
+                Error::Timeout(format!("the game did not answer within {} s", REQUEST_TIMEOUT.as_secs()))
             } else {
                 Error::Connection(format!("BRP HTTP request failed: {e}"))
             }
@@ -302,7 +300,7 @@ impl BrpClient {
         let status = response.status();
         if !status.is_success() {
             self.connected.store(false, Ordering::Relaxed);
-            return Err(Error::Connection(format!("BRP server returned HTTP {status}")));
+            return Err(Error::Brp(format!("the game's BRP server answered with HTTP {status}")));
         }
         self.connected.store(true, Ordering::Relaxed);
         let mut answers = response.json::<Vec<BrpResponse>>().await.map_err(Error::from)?;
