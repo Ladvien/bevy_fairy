@@ -10,6 +10,7 @@ use std::sync::Arc;
 use axum::{routing::post, Json, Router};
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
+use bevy_fairy::server::experiment_system::Restoration;
 use bevy_fairy::server::hypothesis_system::{Assertion, Predicate};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -49,7 +50,7 @@ async fn client() -> BrpClient {
 
 async fn eval(a: Assertion) -> Result<bool, String> {
     let mut c = client().await;
-    a.evaluate(&mut c).await.map_err(|e| e.to_string())
+    a.evaluate(&mut c, &mut Restoration::default()).await.map_err(|e| e.to_string())
 }
 
 fn exists(types: &[&str], count: Option<usize>) -> Assertion {

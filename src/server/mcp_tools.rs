@@ -120,15 +120,19 @@ pub struct HypothesisRequest {
     /// "component_types": ["game::Crate"], "count": 6}. `test` and `quick_test` require it.
     #[serde(default)]
     pub success_condition: Option<Value>,
-    /// The actions to run before the condition is read, on every iteration. They change the
-    /// running game and are not undone.
+    /// The actions to run before the condition is read, on every iteration. After the condition is
+    /// read the server reverses what they spawned or modified, so each iteration starts from the
+    /// game as it was found; a delete cannot be put back, and the reply's game_state says so.
     #[serde(default)]
     pub actions: Vec<Action>,
-    /// How to vary the test between iterations. Default `none`. `random` varies within
-    /// `numeric_min`..`numeric_max`, `string_pool` and `bool_probability`; `grid` walks
-    /// `numeric_values`, `string_values` and `bool_values`; `boundary` tries edge values chosen by
-    /// the `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with
-    /// probability `mutation_probability`.
+    /// How to vary the test between iterations. Default `none`. A variation changes the numbers,
+    /// strings and booleans inside `actions`, at any depth of a component's value, and never
+    /// which entity an action targets; with no actions, or none it can change, the call is
+    /// refused. `random` varies within `numeric_min`..`numeric_max`, `string_pool` and
+    /// `bool_probability`; `grid` walks `numeric_values`, `string_values` and `bool_values`, for
+    /// the kinds of value the actions write; `boundary` tries edge values chosen by the
+    /// `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with
+    /// probability `mutation_probability`. A number written over an integer field is rounded.
     #[serde(default)]
     pub variation_type: Option<VariationType>,
     /// For `random`: the low end of the numeric range to vary over. Default 0.
@@ -161,7 +165,7 @@ pub struct HypothesisRequest {
     /// For `boundary`: try the largest values. Default true.
     #[serde(default)]
     pub include_max: Option<bool>,
-    /// For `boundary`: try empty strings and collections. Default true.
+    /// For `boundary`: try empty strings. Default true.
     #[serde(default)]
     pub include_empty: Option<bool>,
     /// For `fuzz`: the most mutations applied to one run. Default 3.
@@ -171,14 +175,15 @@ pub struct HypothesisRequest {
     #[serde(default)]
     pub mutation_probability: Option<f64>,
     /// How many times to run the test. With no variation the test runs once, and `grid` and
-    /// `boundary` run at most as many times as they have values.
+    /// `boundary` run at most as many times as they have values to try.
     #[serde(default)]
     pub iterations: Option<u64>,
-    /// How long one action may take, in seconds. It does not bound the whole run.
+    /// How long the whole run may take, in seconds. Default 60. When it passes, the run stops
+    /// between iterations and the reply's stopped_early says so; iterations that never ran count
+    /// against CONFIRMED. Other tools are answered between iterations.
     #[serde(default)]
     pub timeout: Option<u64>,
-    /// The seed for `random` and `fuzz` variation. The game is not restored between iterations,
-    /// so a seed repeats the variation, not the state the game is in.
+    /// The seed for `random` and `fuzz` variation: the same seed draws the same values.
     #[serde(default)]
     pub seed: Option<u64>,
     /// The share of iterations, above 0 and at most 1, in which the condition must hold for the
@@ -807,7 +812,7 @@ impl BevyDebuggerTools {
     }
 
     /// Run controlled experiments on game state
-    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. `undo` and `redo` step through the recorded actions: a delete cannot be reversed, and a modify only when its components existed before. The reply does not read the game back, so a game system may overwrite a modified value on the next frame. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
+    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. A modify's result carries read_back, the written components read from the game after the write; its matches is false, and the message says so, when the game does not hold what was written (a system sets the value every frame). `undo` and `redo` step through the recorded actions and answer with action_type undo or redo and of_action, the kind of action they stepped over: a delete cannot be reversed, and a modify only when its components existed before. A redo of a spawn makes a different entity, and the redo entries behind it follow it. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
     pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running experiment action: {}", req.action);
 
@@ -826,7 +831,7 @@ impl BevyDebuggerTools {
     }
 
     /// Test hypotheses about game behavior
-    #[tool(description = "Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it. The condition is a string (entity_exists:game::Crate or component_equals:game::Score=100) or an object whose type is entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any or not. A condition that cannot be read as written, or that names a component the game never registered, is refused before anything runs. The `actions` run on every iteration and change the live game; they are not undone. The reply's verdict is CONFIRMED, REJECTED, INCONCLUSIVE or NOT_EVALUATED, and statistics counts each iteration as held, violated, or not_evaluated: an action failed first, so the condition was never read, and the examples carry the game's own message. NOT_EVALUATED says nothing about the claim. success_rate and the interval are over the iterations that read the condition; the verdict counts every iteration, so held plus violated below iterations_run keeps it from CONFIRMED. Without variation there is one iteration, so CONFIRMED means the condition held once when read, and the interval says how little that shows.")]
+    #[tool(description = "Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it. The condition is a string (entity_exists:game::Crate or component_equals:game::Score=100) or an object whose type is entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any or not. A condition that cannot be read as written, or that names a component the game never registered, is refused before anything runs. Each iteration runs the `actions`, reads the condition, then reverses what the actions spawned or modified, so every iteration starts from the game as it was found; game_state in the reply counts what was reversed and what stays applied (a delete cannot be put back). A `variation_type` changes the numbers, strings and booleans inside `actions`; with no actions, or none it can change, the call is refused, because identical iterations are not independent trials. The reply's verdict is CONFIRMED, REJECTED, INCONCLUSIVE or NOT_EVALUATED, and statistics counts each iteration as held, violated, or not_evaluated: an action failed first, so the condition was never read, and the examples carry the game's own message. NOT_EVALUATED says nothing about the claim. success_rate and the interval are over the iterations that read the condition; the verdict counts every planned iteration, so held plus violated below iterations_planned keeps it from CONFIRMED. `timeout` bounds the whole run: when it passes the run stops between iterations and stopped_early says so, and other tools are answered between iterations. Without variation there is one iteration, so CONFIRMED means the condition held once when read, and the interval says how little that shows.")]
     pub async fn hypothesis(&self, Parameters(req): Parameters<HypothesisRequest>) -> Result<CallToolResult, McpError> {
         debug!("Testing hypothesis action: {}", req.action);
 

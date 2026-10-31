@@ -2,13 +2,15 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tracing::{debug, info};
 // use rand_distr::{Distribution, Uniform}; // Currently unused, kept for future use
 
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{BoxedResult, Error, Result};
-use crate::server::experiment_system::{Action, ActionExecutor};
+use crate::server::experiment_system::{Action, ActionExecutor, Restoration};
 
 /// Represents a testable hypothesis about game behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,11 +251,14 @@ impl Assertion {
         }
     }
 
-    /// Evaluate assertion against current game state
+    /// Evaluate assertion against current game state. An `action_succeeds` runs its action to see
+    /// whether the game accepts it, then reverses it; what that reversal did is added to
+    /// `restoration`, so the caller can say what stayed applied.
     pub fn evaluate<'a>(
         &'a self,
         brp_client: &'a mut BrpClient,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send + 'a>> {
+        restoration: &'a mut Restoration,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>> {
         Box::pin(async move {
             match self {
                 Self::EntityExists {
@@ -300,12 +305,15 @@ impl Assertion {
                 }
                 Self::ActionSucceeds { action } => {
                     let mut executor = ActionExecutor::new();
-                    let result = executor.execute_action(action, brp_client).await?;
-                    Ok(result.success)
+                    let result = executor.execute_action(action, brp_client).await;
+                    // The probe asks whether the game accepts the action; it is not a change the
+                    // caller asked for, so it is put back before the answer is given.
+                    restoration.add(executor.restore_all(brp_client).await);
+                    Ok(result?.success)
                 }
                 Self::All { assertions } => {
                     for assertion in assertions {
-                        if !assertion.evaluate(brp_client).await? {
+                        if !assertion.evaluate(brp_client, restoration).await? {
                             return Ok(false);
                         }
                     }
@@ -313,13 +321,13 @@ impl Assertion {
                 }
                 Self::Any { assertions } => {
                     for assertion in assertions {
-                        if assertion.evaluate(brp_client).await? {
+                        if assertion.evaluate(brp_client, restoration).await? {
                             return Ok(true);
                         }
                     }
                     Ok(false)
                 }
-                Self::Not { assertion } => Ok(!assertion.evaluate(brp_client).await?),
+                Self::Not { assertion } => Ok(!assertion.evaluate(brp_client, restoration).await?),
             }
         })
     }
@@ -556,16 +564,115 @@ pub enum VariationStrategy {
 }
 
 
+/// Apply `f` to every number, string and boolean inside `value`, however deeply it is nested in
+/// objects and arrays. A Bevy component is nearly always a struct, so what a variation has to
+/// change sits one or more levels below the component's value.
+fn for_each_leaf(value: &mut serde_json::Value, f: &mut dyn FnMut(&mut serde_json::Value)) {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => map.values_mut().for_each(|v| for_each_leaf(v, f)),
+        Value::Array(items) => items.iter_mut().for_each(|v| for_each_leaf(v, f)),
+        Value::Null => {}
+        leaf => f(leaf),
+    }
+}
+
+/// Apply `f` to every leaf of every value an action writes: the components of a spawn or a
+/// modify, and those of the actions inside a batch. A delete writes none.
+fn for_each_written_leaf(action: &mut Action, f: &mut dyn FnMut(&mut serde_json::Value)) {
+    match action {
+        Action::Spawn { components } | Action::Modify { components, .. } => {
+            for component in components {
+                for_each_leaf(&mut component.value, f);
+            }
+        }
+        Action::Batch { actions, .. } => {
+            for action in actions {
+                for_each_written_leaf(action, f);
+            }
+        }
+        Action::Delete { .. } => {}
+    }
+}
+
+/// A copy of `actions` with `f` applied to every leaf they write.
+fn varied(actions: &[Action], f: &mut dyn FnMut(&mut serde_json::Value)) -> Vec<Action> {
+    let mut variant = actions.to_vec();
+    for action in &mut variant {
+        for_each_written_leaf(action, f);
+    }
+    variant
+}
+
+/// `value` as a JSON number of the kind `like` is. A number written over an integer is rounded to
+/// an integer (`3`, where `3.0` is refused by a `u32` field); one written over a float stays a
+/// float. A value that is not finite leaves `like` as it was: JSON has no infinity, and `null` is
+/// not a number.
+fn number_like(like: &serde_json::Number, value: f64) -> serde_json::Value {
+    if !value.is_finite() {
+        return serde_json::Value::Number(like.clone());
+    }
+    if like.is_i64() || like.is_u64() {
+        let whole = value.round();
+        if (0.0..u64::MAX as f64).contains(&whole) {
+            return serde_json::json!(whole as u64);
+        }
+        if whole < 0.0 && whole >= i64::MIN as f64 {
+            return serde_json::json!(whole as i64);
+        }
+    }
+    serde_json::json!(value)
+}
+
+/// Which kinds of value a list of actions writes.
+#[derive(Debug, Default, Clone, Copy)]
+struct Kinds {
+    numbers: bool,
+    strings: bool,
+    booleans: bool,
+}
+
+impl Kinds {
+    fn of(actions: &[Action]) -> Self {
+        let mut kinds = Self::default();
+        let mut copy = actions.to_vec();
+        for action in &mut copy {
+            for_each_written_leaf(action, &mut |leaf| match leaf {
+                serde_json::Value::Number(_) => kinds.numbers = true,
+                serde_json::Value::String(_) => kinds.strings = true,
+                serde_json::Value::Bool(_) => kinds.booleans = true,
+                _ => {}
+            });
+        }
+        kinds
+    }
+}
+
 impl VariationStrategy {
-    /// Generate variations of base actions
+    /// The name the caller gave this strategy in `variation_type`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Random { .. } => "random",
+            Self::Grid { .. } => "grid",
+            Self::Boundary { .. } => "boundary",
+            Self::Fuzz { .. } => "fuzz",
+        }
+    }
+
+    /// Generate variations of base actions. A variation changes the numbers, strings and booleans
+    /// the actions write, at any depth of the component values; it never changes which entity an
+    /// action targets or what kind of action it is.
     pub fn generate_variations(
         &self,
         base_actions: &[Action],
         count: usize,
         seed: u64,
     ) -> Vec<Vec<Action>> {
+        use serde_json::Value;
         let mut rng = StdRng::seed_from_u64(seed);
         let mut variations = Vec::new();
+        let kinds = Kinds::of(base_actions);
 
         match self {
             Self::None => {
@@ -577,17 +684,19 @@ impl VariationStrategy {
                 bool_probability,
             } => {
                 for _ in 0..count {
-                    let mut variant = base_actions.to_vec();
-                    for action in &mut variant {
-                        self.mutate_action_random(
-                            action,
-                            &mut rng,
-                            *numeric_range,
-                            string_pool,
-                            *bool_probability,
-                        );
-                    }
-                    variations.push(variant);
+                    variations.push(varied(base_actions, &mut |leaf| match leaf {
+                        Value::Number(like) => {
+                            let like = like.clone();
+                            let drawn = rng.random_range(numeric_range.0..numeric_range.1);
+                            *leaf = number_like(&like, drawn);
+                        }
+                        Value::String(_) if !string_pool.is_empty() => {
+                            let pick = rng.random_range(0..string_pool.len());
+                            *leaf = Value::String(string_pool[pick].clone());
+                        }
+                        Value::Bool(_) => *leaf = Value::Bool(rng.random::<f64>() < *bool_probability),
+                        _ => {}
+                    }));
                 }
             }
             Self::Grid {
@@ -595,27 +704,24 @@ impl VariationStrategy {
                 string_values,
                 bool_values,
             } => {
-                // Generate all combinations
-                let total_combinations =
-                    numeric_values.len() * string_values.len() * bool_values.len();
-                let iterations = count.min(total_combinations);
+                // Combinations of the kinds of value the actions write. A kind they do not write
+                // multiplies nothing: it would only repeat identical iterations.
+                let n = if kinds.numbers { numeric_values.len() } else { 1 };
+                let s = if kinds.strings { string_values.len() } else { 1 };
+                let b = if kinds.booleans { bool_values.len() } else { 1 };
+                let iterations = count.min(n * s * b);
 
                 for i in 0..iterations {
-                    let mut variant = base_actions.to_vec();
-                    let num_idx = i % numeric_values.len();
-                    let str_idx = (i / numeric_values.len()) % string_values.len();
-                    let bool_idx =
-                        (i / (numeric_values.len() * string_values.len())) % bool_values.len();
-
-                    for action in &mut variant {
-                        self.mutate_action_grid(
-                            action,
-                            numeric_values[num_idx],
-                            &string_values[str_idx],
-                            bool_values[bool_idx],
-                        );
-                    }
-                    variations.push(variant);
+                    let (num_idx, str_idx, bool_idx) = (i % n, (i / n) % s, (i / (n * s)) % b);
+                    variations.push(varied(base_actions, &mut |leaf| match leaf {
+                        Value::Number(like) => {
+                            let like = like.clone();
+                            *leaf = number_like(&like, numeric_values[num_idx]);
+                        }
+                        Value::String(_) => *leaf = Value::String(string_values[str_idx].clone()),
+                        Value::Bool(_) => *leaf = Value::Bool(bool_values[bool_idx]),
+                        _ => {}
+                    }));
                 }
             }
             Self::Boundary {
@@ -626,13 +732,24 @@ impl VariationStrategy {
             } => {
                 let boundary_values =
                     self.get_boundary_values(*include_zero, *include_negative, *include_max);
-
-                for value in boundary_values.iter().take(count) {
-                    let mut variant = base_actions.to_vec();
-                    for action in &mut variant {
-                        self.mutate_action_boundary(action, *value, *include_empty);
-                    }
-                    variations.push(variant);
+                // One iteration per boundary number. Actions that write no number have only the
+                // empty string to try, once.
+                let numbers: Vec<Option<f64>> = if kinds.numbers {
+                    boundary_values.iter().take(count).copied().map(Some).collect()
+                } else {
+                    vec![None; count.min(1)]
+                };
+                for number in numbers {
+                    variations.push(varied(base_actions, &mut |leaf| match leaf {
+                        Value::Number(like) => {
+                            if let Some(boundary) = number {
+                                let like = like.clone();
+                                *leaf = number_like(&like, boundary);
+                            }
+                        }
+                        Value::String(_) if *include_empty => *leaf = Value::String(String::new()),
+                        _ => {}
+                    }));
                 }
             }
             Self::Fuzz {
@@ -646,7 +763,7 @@ impl VariationStrategy {
                     for _ in 0..mutations {
                         if rng.random::<f64>() < *mutation_probability {
                             for action in &mut variant {
-                                self.mutate_action_fuzz(action, &mut rng);
+                                for_each_written_leaf(action, &mut |leaf| Self::fuzz_leaf(leaf, &mut rng));
                             }
                         }
                     }
@@ -658,165 +775,35 @@ impl VariationStrategy {
         variations
     }
 
-    fn mutate_action_random(
-        &self,
-        action: &mut Action,
-        rng: &mut StdRng,
-        numeric_range: (f64, f64),
-        string_pool: &[String],
-        bool_probability: f64,
-    ) {
-        match action {
-            Action::Spawn { components, .. } => {
-                for component in components {
-                    self.mutate_component_value(
-                        &mut component.value,
-                        rng,
-                        numeric_range,
-                        string_pool,
-                        bool_probability,
-                    );
-                }
-            }
-            Action::Modify { components, .. } => {
-                for component in components {
-                    self.mutate_component_value(
-                        &mut component.value,
-                        rng,
-                        numeric_range,
-                        string_pool,
-                        bool_probability,
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn mutate_action_grid(
-        &self,
-        action: &mut Action,
-        num_value: f64,
-        str_value: &str,
-        bool_value: bool,
-    ) {
-        match action {
-            Action::Spawn { components, .. } | Action::Modify { components, .. } => {
-                for component in components {
-                    if component.value.is_number() {
-                        component.value = serde_json::json!(num_value);
-                    } else if component.value.is_string() {
-                        component.value = serde_json::json!(str_value);
-                    } else if component.value.is_boolean() {
-                        component.value = serde_json::json!(bool_value);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn mutate_action_boundary(
-        &self,
-        action: &mut Action,
-        boundary_value: f64,
-        include_empty: bool,
-    ) {
-        match action {
-            Action::Spawn { components, .. } | Action::Modify { components, .. } => {
-                for component in components {
-                    if component.value.is_number() {
-                        component.value = serde_json::json!(boundary_value);
-                    } else if component.value.is_string() && include_empty {
-                        component.value = serde_json::json!("");
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn mutate_action_fuzz(&self, action: &mut Action, rng: &mut StdRng) {
-        match action {
-            Action::Spawn { components, .. } | Action::Modify { components, .. } => {
-                for component in components {
-                    component.value = self.fuzz_value(&component.value, rng);
-                }
-            }
-            Action::Delete { entity_id } => {
-                // Fuzz entity ID
-                *entity_id = rng.random_range(0..1000);
-            }
-            _ => {}
-        }
-    }
-
-    fn mutate_component_value(
-        &self,
-        value: &mut serde_json::Value,
-        rng: &mut StdRng,
-        numeric_range: (f64, f64),
-        string_pool: &[String],
-        bool_probability: f64,
-    ) {
-        match value {
-            serde_json::Value::Number(_) => {
-                let value_f64 = rng.random_range(numeric_range.0..numeric_range.1);
-                *value = serde_json::json!(value_f64);
-            }
-            serde_json::Value::String(_) => {
-                if !string_pool.is_empty() {
-                    let idx = rng.random_range(0..string_pool.len());
-                    *value = serde_json::json!(string_pool[idx].clone());
-                }
-            }
-            serde_json::Value::Bool(_) => {
-                *value = serde_json::json!(rng.random::<f64>() < bool_probability);
-            }
-            serde_json::Value::Object(map) => {
-                for (_, v) in map.iter_mut() {
-                    self.mutate_component_value(
-                        v,
-                        rng,
-                        numeric_range,
-                        string_pool,
-                        bool_probability,
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn fuzz_value(&self, value: &serde_json::Value, rng: &mut StdRng) -> serde_json::Value {
-        match value {
-            serde_json::Value::Number(n) => {
-                if let Some(f) = n.as_f64() {
+    /// Perturb one number, string or boolean.
+    fn fuzz_leaf(leaf: &mut serde_json::Value, rng: &mut StdRng) {
+        use serde_json::Value;
+        match leaf {
+            Value::Number(like) => {
+                if let Some(f) = like.as_f64() {
                     let fuzzed = f * (0.5 + rng.random::<f64>() * 1.5);
-                    serde_json::json!(fuzzed)
-                } else {
-                    value.clone()
+                    // An integer field is fuzzed to another integer (`number_like` rounds it).
+                    let like = like.clone();
+                    *leaf = number_like(&like, fuzzed);
                 }
             }
-            serde_json::Value::String(s) => {
+            Value::String(s) => {
                 // Add random characters
                 let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()"
                     .chars()
                     .collect();
-                let mut fuzzed = s.clone();
                 for _ in 0..rng.random_range(0..3) {
                     let idx = rng.random_range(0..chars.len());
-                    fuzzed.push(chars[idx]);
+                    s.push(chars[idx]);
                 }
-                serde_json::json!(fuzzed)
             }
-            serde_json::Value::Bool(_) => {
-                serde_json::json!(rng.random::<bool>())
-            }
-            _ => value.clone(),
+            Value::Bool(_) => *leaf = Value::Bool(rng.random::<bool>()),
+            _ => {}
         }
     }
 
+    /// The numbers `boundary` tries. All finite: JSON has no infinity, and one written as `null`
+    /// is not a boundary of anything. Each flag adds its own values and nothing else does.
     fn get_boundary_values(
         &self,
         include_zero: bool,
@@ -826,29 +813,19 @@ impl VariationStrategy {
         let mut values = Vec::new();
 
         if include_zero {
-            values.push(0.0);
-            values.push(0.0001); // Near zero
-            values.push(-0.0001);
+            values.extend([0.0, 0.0001, -0.0001]);
         }
 
         if include_negative {
-            values.push(-1.0);
-            values.push(-100.0);
-            values.push(-1000000.0);
-            values.push(f64::NEG_INFINITY);
+            values.extend([-1.0, -100.0, -1_000_000.0]);
         }
 
         if include_max {
-            values.push(f64::MAX);
-            values.push(f64::MIN);
-            values.push(f64::INFINITY);
+            values.extend([f64::MAX, f64::MIN]);
         }
 
         // Common boundaries
-        values.push(1.0);
-        values.push(-1.0);
-        values.push(255.0); // u8 max
-        values.push(65535.0); // u16 max
+        values.extend([1.0, 255.0, 65535.0]);
 
         values
     }
@@ -904,11 +881,18 @@ impl TestRunner {
         self
     }
 
-    /// Run hypothesis test
+    /// Run hypothesis test.
+    ///
+    /// An iteration holds the client from its first action to its last reversal and not a moment
+    /// longer, so another tool is answered between iterations; it runs the iteration's actions,
+    /// reads the condition, and then reverses what the actions spawned or modified, so the next
+    /// iteration starts from the game the last one found. `timeout` bounds the whole run: when it
+    /// passes the run stops, and the iterations that never ran count against a verdict of
+    /// confirmed the way an iteration that was not evaluated does.
     pub async fn run(
         &self,
         hypothesis: &Hypothesis,
-        brp_client: &mut BrpClient,
+        brp_client: &RwLock<BrpClient>,
     ) -> Result<TestResult> {
         info!("Running hypothesis test: {}", hypothesis.description);
 
@@ -929,27 +913,64 @@ impl TestRunner {
             seed,
         );
 
+        // A variation that changes nothing is N copies of one test. Counting them as N trials
+        // narrows the interval without testing anything, so it is refused before anything runs.
+        let as_json = |actions: &Vec<Action>| {
+            serde_json::to_value(actions).map_err(|e| Error::Validation(e.to_string()))
+        };
+        let base = as_json(&hypothesis.base_actions)?;
+        let changed = variations
+            .iter()
+            .map(|variant| Ok(as_json(variant)? != base))
+            .collect::<Result<Vec<bool>>>()?;
+        let strategy = hypothesis.variation_strategy.name();
+        if strategy != "none" && !variations.is_empty() && !changed.contains(&true) {
+            let why = if hypothesis.base_actions.is_empty() {
+                "there are no `actions` to vary"
+            } else {
+                "the `actions` write no value it changes, or it chose the values they already hold"
+            };
+            return Err(Error::Validation(format!(
+                "variation_type `{strategy}` changes the numbers, strings and booleans inside `actions`, and {why}: none of its {} variations differs from the actions as given, so running them would repeat one test and count each repeat as a trial. Pass `actions` that write values (a spawn or modify with component values), or use variation_type none. Nothing was run",
+                variations.len()
+            )));
+        }
+
+        let planned = variations.len();
+        let deadline = tokio::time::Instant::now() + self.timeout;
+        let mut stopped_early: Option<String> = None;
+        let mut restoration = Restoration::default();
         let mut held = 0;
         let mut violated = 0;
         let mut not_evaluated = 0;
+        let mut varied_iterations = 0;
         let mut edge_cases = Vec::new();
         let mut examples = Vec::new();
         let mut execution_times = Vec::new();
 
         // Execute test variations
         for (i, variant) in variations.iter().enumerate() {
-            debug!("Running iteration {} of {}", i + 1, variations.len());
+            if tokio::time::Instant::now() >= deadline {
+                stopped_early = Some(format!(
+                    "the {} s timeout passed after {i} of {planned} iterations",
+                    self.timeout.as_secs()
+                ));
+                break;
+            }
+            debug!("Running iteration {} of {}", i + 1, planned);
 
+            let mut client = brp_client.write().await;
             let start = std::time::Instant::now();
 
             // Execute actions
             let mut executor = ActionExecutor::new();
             // The first reason an action of this iteration did not run, in the game's own words.
             let mut action_error: Option<String> = None;
+            let mut timed_out = false;
 
             for action in variant {
                 let result =
-                    tokio::time::timeout(self.timeout, executor.execute_action(action, brp_client))
+                    tokio::time::timeout_at(deadline, executor.execute_action(action, &mut client))
                         .await;
 
                 match result {
@@ -964,8 +985,9 @@ impl TestRunner {
                         break;
                     }
                     Err(_) => {
+                        timed_out = true;
                         action_error = Some(format!(
-                            "an action did not finish within the {} s timeout; whether the game applied it is unknown",
+                            "the {} s timeout passed while an action was running; whether the game applied it is unknown",
                             self.timeout.as_secs()
                         ));
                         break;
@@ -973,24 +995,44 @@ impl TestRunner {
                 }
             }
 
-            // The condition was not read, so this iteration neither held nor violated the claim.
-            if let Some(error) = action_error {
-                not_evaluated += 1;
-                if examples.len() < 5 {
-                    examples.push(FailureExample {
-                        iteration: i,
-                        kind: ExampleKind::NotEvaluated,
-                        actions: variant.clone(),
-                        error,
-                    });
-                }
-                continue;
-            }
-
-            // Evaluate success condition
-            let condition_met = hypothesis.success_condition.evaluate(brp_client).await?;
-
+            // Evaluate the success condition, unless an action failed first.
+            let outcome = match action_error {
+                Some(error) => Err(error),
+                None => Ok(hypothesis.success_condition.evaluate(&mut client, &mut restoration).await),
+            };
             let elapsed = start.elapsed();
+
+            // Put back what this iteration spawned or modified, whatever the condition said, so
+            // that the next one starts from the game this one found.
+            restoration.add(executor.restore_all(&mut client).await);
+            drop(client);
+            varied_iterations += usize::from(changed[i]);
+
+            let condition_met = match outcome {
+                Ok(condition) => condition?,
+                // The condition was not read, so this iteration neither held nor violated the claim.
+                Err(error) => {
+                    not_evaluated += 1;
+                    if examples.len() < 5 {
+                        examples.push(FailureExample {
+                            iteration: i,
+                            kind: ExampleKind::NotEvaluated,
+                            actions: variant.clone(),
+                            error,
+                        });
+                    }
+                    if timed_out {
+                        stopped_early = Some(format!(
+                            "the {} s timeout passed during iteration {} of {planned}",
+                            self.timeout.as_secs(),
+                            i + 1
+                        ));
+                        break;
+                    }
+                    continue;
+                }
+            };
+
             execution_times.push(elapsed.as_millis() as f64);
 
             if condition_met {
@@ -1030,7 +1072,9 @@ impl TestRunner {
 
         let result = TestResult {
             hypothesis: hypothesis.description.clone(),
+            iterations_planned: planned,
             iterations_run: held + violated + not_evaluated,
+            varied_iterations,
             held,
             violated,
             not_evaluated,
@@ -1040,6 +1084,8 @@ impl TestRunner {
             examples,
             avg_execution_time_ms,
             seed,
+            restoration,
+            stopped_early,
         };
 
         info!(
@@ -1081,13 +1127,18 @@ impl Default for TestRunner {
 
 /// Result of running a hypothesis test.
 ///
-/// Every iteration is exactly one of `held`, `violated` or `not_evaluated`. An iteration whose
-/// actions the game refused never read the condition, so it is `not_evaluated`: counting it as
-/// `violated` told an agent its claim was false when the claim had not been looked at.
+/// Every iteration that ran is exactly one of `held`, `violated` or `not_evaluated`. An iteration
+/// whose actions the game refused never read the condition, so it is `not_evaluated`: counting it
+/// as `violated` told an agent its claim was false when the claim had not been looked at. An
+/// iteration that was planned and never ran (the timeout passed) is none of the three.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResult {
     pub hypothesis: String,
+    /// How many iterations the variation strategy produced; `iterations_run` is how many ran.
+    pub iterations_planned: usize,
     pub iterations_run: usize,
+    /// Of the iterations that ran, how many ran actions that differ from the actions as given.
+    pub varied_iterations: usize,
     pub held: usize,
     pub violated: usize,
     pub not_evaluated: usize,
@@ -1099,6 +1150,10 @@ pub struct TestResult {
     /// Over the iterations that read the condition; `None` when none did.
     pub avg_execution_time_ms: Option<f64>,
     pub seed: u64,
+    /// What reversing the iterations' changes did, summed over the run.
+    pub restoration: Restoration,
+    /// Why the run ended before every planned iteration ran; `None` when they all did.
+    pub stopped_early: Option<String>,
 }
 
 /// What a test says about its claim.
@@ -1131,17 +1186,17 @@ impl TestResult {
         self.held + self.violated
     }
 
-    /// The verdict, bounding the share of iterations that held by what is known. An iteration
-    /// that was not evaluated may or may not have held: it counts against `Confirmed` (only
-    /// iterations known to hold count toward `threshold`) and for `Rejected` (a rejection needs
-    /// the claim to fail even if every unevaluated iteration had held).
+    /// The verdict, bounding the share of planned iterations that held by what is known. An
+    /// iteration that was not evaluated, or never ran, may or may not have held: it counts
+    /// against `Confirmed` (only iterations known to hold count toward `threshold`) and for
+    /// `Rejected` (a rejection needs the claim to fail even if every such iteration had held).
     pub fn verdict(&self, threshold: f64) -> Verdict {
         if self.evaluated() == 0 {
             return Verdict::NotEvaluated;
         }
-        let total = self.iterations_run as f64;
+        let total = self.iterations_planned as f64;
         let lowest = self.held as f64 / total;
-        let highest = (self.held + self.not_evaluated) as f64 / total;
+        let highest = (self.iterations_planned - self.violated) as f64 / total;
         if lowest >= threshold {
             Verdict::Confirmed
         } else if highest < REJECTED_BELOW {
@@ -1297,7 +1352,9 @@ mod tests {
     fn counted(held: usize, violated: usize, not_evaluated: usize) -> TestResult {
         TestResult {
             hypothesis: "Test".to_string(),
+            iterations_planned: held + violated + not_evaluated,
             iterations_run: held + violated + not_evaluated,
+            varied_iterations: 0,
             held,
             violated,
             not_evaluated,
@@ -1307,6 +1364,86 @@ mod tests {
             examples: vec![],
             avg_execution_time_ms: None,
             seed: 42,
+            restoration: Restoration::default(),
+            stopped_early: None,
+        }
+    }
+
+    #[test]
+    fn iterations_that_never_ran_neither_confirm_nor_reject() {
+        // 850 of 1000 planned ran and held: at best 85% of the iterations are known to hold.
+        let mut stopped = counted(850, 0, 0);
+        stopped.iterations_planned = 1000;
+        assert_eq!(stopped.verdict(0.95), Verdict::Inconclusive);
+        // 20 of 1000 ran and all were violated: up to 98% of the plan could still have held.
+        let mut stopped = counted(0, 20, 0);
+        stopped.iterations_planned = 1000;
+        assert_eq!(stopped.verdict(0.95), Verdict::Inconclusive);
+    }
+
+    fn modify(value: serde_json::Value) -> Action {
+        Action::Modify {
+            entity_id: 7,
+            components: vec![ComponentSpec { type_id: "game::C".to_string(), value }],
+        }
+    }
+
+    fn written(action: &Action) -> &serde_json::Value {
+        match action {
+            Action::Modify { components, .. } => &components[0].value,
+            _ => panic!("not a modify"),
+        }
+    }
+
+    #[test]
+    fn every_strategy_varies_the_fields_inside_objects_and_arrays_and_keeps_integers_whole() {
+        let base = vec![modify(serde_json::json!({"weight": 5.0, "count": 3, "tags": [1.5, "a"], "on": true}))];
+        let strategies = [
+            VariationStrategy::Random { numeric_range: (10.0, 20.0), string_pool: vec!["x".into()], bool_probability: 0.5 },
+            VariationStrategy::Grid { numeric_values: vec![10.0], string_values: vec!["x".into()], bool_values: vec![false] },
+            VariationStrategy::Boundary { include_zero: true, include_negative: true, include_max: false, include_empty: true },
+            VariationStrategy::Fuzz { max_mutations: 3, mutation_probability: 1.0 },
+        ];
+        for strategy in strategies {
+            let variations = strategy.generate_variations(&base, 3, 42);
+            assert!(!variations.is_empty(), "{}", strategy.name());
+            for variant in &variations {
+                let value = written(&variant[0]);
+                assert_ne!(value, written(&base[0]), "{} left the component as given", strategy.name());
+                assert!(value["count"].is_i64() || value["count"].is_u64(), "{}: an integer field stayed whole: {value}", strategy.name());
+                assert!(value["weight"].is_f64(), "{}: {value}", strategy.name());
+                assert!(value["tags"][0].is_number() && value["tags"][1].is_string(), "{}: arrays are varied too: {value}", strategy.name());
+            }
+        }
+    }
+
+    #[test]
+    fn grid_only_multiplies_the_kinds_of_value_the_actions_write() {
+        // Numbers only: two numbers are two iterations, not two times the two default booleans.
+        let grid = VariationStrategy::Grid {
+            numeric_values: vec![10.0, 20.0],
+            string_values: vec!["default".into()],
+            bool_values: vec![true, false],
+        };
+        let variations = grid.generate_variations(&[modify(serde_json::json!({"weight": 5.0}))], 100, 1);
+        assert_eq!(variations.len(), 2);
+    }
+
+    #[test]
+    fn boundary_has_no_infinity_and_each_flag_adds_only_its_own_values() {
+        let strategy = VariationStrategy::Boundary { include_zero: false, include_negative: false, include_max: false, include_empty: false };
+        let values = strategy.get_boundary_values(false, false, false);
+        assert_eq!(values, vec![1.0, 255.0, 65535.0], "no zero, no negative, no maximum was asked for");
+        let all = strategy.get_boundary_values(true, true, true);
+        assert!(all.iter().all(|v| v.is_finite()), "JSON cannot carry an infinity: {all:?}");
+        assert!(all.contains(&-1.0) && all.contains(&0.0) && all.contains(&f64::MAX));
+    }
+
+    #[test]
+    fn fuzz_never_changes_which_entity_a_delete_targets() {
+        let strategy = VariationStrategy::Fuzz { max_mutations: 5, mutation_probability: 1.0 };
+        for variant in strategy.generate_variations(&[Action::Delete { entity_id: 4294967297 }], 20, 9) {
+            assert!(matches!(variant[0], Action::Delete { entity_id: 4294967297 }), "{:?}", variant[0]);
         }
     }
 
