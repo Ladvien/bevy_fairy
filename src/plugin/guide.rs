@@ -72,7 +72,7 @@ pub const BEAT_SECONDS: f32 = 2.0;
 ///
 /// # `deny_unknown_fields`, because every field here is `#[serde(default)]`
 ///
-/// A misspelled key is otherwise **silent**: `crates/bevy_emerge_mapper/guides/label_a_mesh.json` shipped
+/// A misspelled key is otherwise **silent**: `crates/bevy_grimoire_mapper/guides/label_a_mesh.json` shipped
 /// two steps whose checkpoint arguments were spelled `args` instead of `with`, so `with` came out
 /// `None`, the condition was handed `null`, and both steps could never pass — a guide that looked
 /// complete and could not be walked. There is nothing to weigh here: an unknown key in a script is
@@ -687,7 +687,7 @@ struct Showing(Option<(usize, bool, u64)>);
 /// Where the card sits, in logical pixels from the top of the window.
 ///
 /// **This exists because the plugin cannot know a host's chrome, and the first capture proved it.**
-/// The default put the card at 12 px, which in `bevy_emerge_mapper` is exactly the tab bar: the shot came
+/// The default put the card at 12 px, which in `bevy_grimoire_mapper` is exactly the tab bar: the shot came
 /// back with ANIM ghosting through STEP 1 OF 8 at 0.92 alpha. Guessing a bigger number would only
 /// move the collision to a host with a taller bar.
 ///

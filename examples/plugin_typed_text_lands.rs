@@ -10,7 +10,7 @@
 //! committed or cancelled. Three separate verifications were blocked by this in one day.
 //!
 //! The system below is the shape a real text field has — the same shape ten handlers in
-//! `bevy_emerge_mapper` have. It is driven here with no MCP server, no network and no window.
+//! `bevy_grimoire_mapper` have. It is driven here with no MCP server, no network and no window.
 //!
 //! Run it:
 //!

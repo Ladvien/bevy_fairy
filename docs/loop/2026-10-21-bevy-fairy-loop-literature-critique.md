@@ -4,7 +4,7 @@
 **Purpose:** The evidence behind `.omp/commands/build-loop.md` (named `bevy-debugger-loop.md` until 2026-10-28).
 **Method:**
 - 16 concepts specific to this loop were checked against the home-still corpus by three parallel searches (clusters H, I and J below).
-- Concepts shared with the bevy_emerge loop reuse that critique (`2026-10-21-bevy-emerge-loop-literature-critique.md`): agent loop design, verification layering, reviewer bias, context degradation, test gaming, and frame-sequence capture.
+- Concepts shared with the bevy_grimoire loop reuse that critique (`2026-10-21-bevy-emerge-loop-literature-critique.md`): agent loop design, verification layering, reviewer bias, context degradation, test gaming, and frame-sequence capture.
 - Web research covered the crate's published state, the MCP 2026-07-28 spec, and Anthropic's tool-evaluation guidance.
 - Every stem cited below was confirmed with `catalog_read`.
 

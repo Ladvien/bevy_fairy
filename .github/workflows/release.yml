@@ -124,7 +124,7 @@ jobs:
       id: published
       run: |
         version="${{ steps.version.outputs.version }}"
-        if curl -sf -A "bevy_fairy release workflow (github.com/Ladvien/bevy_fairy)" \
+        if curl -sf -A "bevy_fairy release workflow (github.com/bevy-coven/bevy_fairy)" \
             "https://crates.io/api/v1/crates/bevy_fairy/$version" >/dev/null; then
           echo "bevy_fairy@$version is already on crates.io; nothing to publish."
           echo "already=true" >> "$GITHUB_OUTPUT"
@@ -156,6 +156,6 @@ jobs:
       if: ${{ !inputs.dry_run }}
       run: |
         version="${{ steps.version.outputs.version }}"
-        curl -sf -A "bevy_fairy release workflow (github.com/Ladvien/bevy_fairy)" \
+        curl -sf -A "bevy_fairy release workflow (github.com/bevy-coven/bevy_fairy)" \
           "https://crates.io/api/v1/crates/bevy_fairy/$version" >/dev/null \
           || { echo "::error::bevy_fairy@$version is not on crates.io."; exit 1; }

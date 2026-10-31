@@ -76,7 +76,7 @@
         "evidence": "crates.io trusted publishing cannot create a crate; release.yml now authenticates with rust-lang/crates-io-auth-action, which fails until a publisher is configured"
       },
       "status": "blocked",
-      "evidence": "Needs the human: crates.io -> bevy_fairy -> Settings -> Trusted Publishing -> GitHub, repository Ladvien/bevy_fairy, workflow release.yml. Possible only once the first version is published.",
+      "evidence": "Needs the human: crates.io -> bevy_fairy -> Settings -> Trusted Publishing -> GitHub, repository bevy-coven/bevy_fairy, workflow release.yml. Possible only once the first version is published.",
       "last_failure": "",
       "first_seen": "2026-10-23"
     },

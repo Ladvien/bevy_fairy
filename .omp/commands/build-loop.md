@@ -317,7 +317,7 @@ For borderline calls, get a second independent judgment from a fresh-context sub
 
 ## Issues from the projects that use this crate
 
-Before you choose, list the open issues: `gh issue list --repo Ladvien/bevy_fairy --state open --limit 100 --json number,title,labels --jq '.[] | "#\(.number) [\(.labels | map(.name) | join(","))] \(.title)"'`. A bug issue is a bug and goes to Phase 1. **An issue labelled `consumer` is the pass's item next, ahead of the candidates below.** A project built on this crate needs it and is waiting: `consumer:bevy_emerge` is the owner's editor. It resumes when the issue is closed as completed and it moves its git pin to a `main` commit containing the fix.
+Before you choose, list the open issues: `gh issue list --repo bevy-coven/bevy_fairy --state open --limit 100 --json number,title,labels --jq '.[] | "#\(.number) [\(.labels | map(.name) | join(","))] \(.title)"'`. A bug issue is a bug and goes to Phase 1. **An issue labelled `consumer` is the pass's item next, ahead of the candidates below.** A project built on this crate needs it and is waiting: `consumer:bevy_grimoire` is the owner's editor. It resumes when the issue is closed as completed and it moves its git pin to a `main` commit containing the fix.
 
 - **Build the general form**, never something named for one project. Prove it here with a check that fails before and passes after, against the issue's acceptance.
 - **Pushing to `main` is the delivery.** Requesters pin a git revision, so a consumer fix never waits for Phase 6's release.
@@ -338,7 +338,7 @@ Before you choose, list the open issues: `gh issue list --repo Ladvien/bevy_fair
 Pick the top candidate. Log the others in the backlog.
 
 **A pass never ends idle** (owner, 2026-10-29: "If they're not addressing bugs or enhancing features, they need to evolve their own code base to support Bevy Emerge better or add new features. Research these things in home still, implement them. They shouldn't stay idle."). An empty issue list or a stale backlog is this phase's input, never a reason to ship nothing. When the candidates above give no workable change, take the first of these that applies:
-1. **What the owner's editor needs from this crate.** bevy_emerge plays a map in the editor with an agent watching through this crate (`gh issue view 97 --repo Ladvien/bevy_emerge`, and #114 on decisions about the running game's frames). Read those issues and how the editor uses this crate today (a shallow clone of `Ladvien/bevy_emerge` under `/tmp`, removed afterwards), and build the tool or plugin capability they need, in this crate's general form and never named for the editor.
+1. **What the owner's editor needs from this crate.** bevy_grimoire plays a map in the editor with an agent watching through this crate (`gh issue view 97 --repo bevy-coven/bevy_grimoire`, and #114 on decisions about the running game's frames). Read those issues and how the editor uses this crate today (a shallow clone of `bevy-coven/bevy_grimoire` under `/tmp`, removed afterwards), and build the tool or plugin capability they need, in this crate's general form and never named for the editor.
 2. **A capability agents debugging a Bevy game need and this crate lacks**, found by research: home-still first (`distill_search`; for a paper the corpus lacks, `paper_search`, `paper_download`, `scribe_convert`, then `distill_index`) on agent tool design, game debugging and MCP practice, then the eval transcripts.
 3. **Depth**: the tool with the worst eval or ground-truth record, improved.
 

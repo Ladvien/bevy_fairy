@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/ladvien/bevy_fairy"
+REPO_URL="https://github.com/bevy-coven/bevy_fairy"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="$HOME/.config/bevy-fairy"
 BINARY_NAME="bevy-fairy"

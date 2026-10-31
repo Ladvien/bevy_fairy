@@ -542,7 +542,7 @@ fn the_one_script_this_crate_ships_is_ascii() {
 
 /// **The host says where the card goes, and this is why.**
 ///
-/// The plugin's default is 12 px from the top. In `bevy_emerge_mapper` that is exactly the tab bar, and
+/// The plugin's default is 12 px from the top. In `bevy_grimoire_mapper` that is exactly the tab bar, and
 /// the first devshot capture came back with ANIM reading through STEP 1 OF 8 at 0.92 alpha — the
 /// card sitting on the chrome it was supposed to sit beside. No test could have caught that, because
 /// the plugin cannot know a host has a tab bar; only a frame could.
@@ -556,7 +556,7 @@ fn a_host_can_move_the_card_off_its_own_chrome() {
     use bevy_fairy::GuidePlacement;
 
     let mut app = app();
-    // The host speaks first, as `bevy_emerge_mapper`'s GuidePlugin does.
+    // The host speaks first, as `bevy_grimoire_mapper`'s GuidePlugin does.
     app.insert_resource(GuidePlacement { top: 58.0, width: 520.0 });
     app.add_plugins(GuideOverlayPlugin);
     app.update();

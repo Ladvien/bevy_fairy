@@ -4,8 +4,8 @@ version = "0.12.0"
 edition = "2021"
 authors = ["ladvien <ladvien@example.com>"]
 description = "An agentic debugger for Bevy games: a Bevy plugin that exposes the game's state over BRP, and an MCP server that lets a coding agent read and drive it"
-homepage = "https://github.com/ladvien/bevy_fairy"
-repository = "https://github.com/ladvien/bevy_fairy"
+homepage = "https://github.com/bevy-coven/bevy_fairy"
+repository = "https://github.com/bevy-coven/bevy_fairy"
 readme = "README.md"
 # Relicensed from GPL-3.0 to match the other `bevy_*` crates in this workspace. A GPL crate in the
 # Bevy ecosystem is unadoptable, and adoption is the whole point of mirroring these out; the GPL stays

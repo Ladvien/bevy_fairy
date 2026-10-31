@@ -1,10 +1,10 @@
 class BevyDebuggerMcp < Formula
   desc "AI-assisted debugging tools for Bevy games via Claude MCP"
-  homepage "https://github.com/ladvien/bevy_fairy"
-  url "https://github.com/ladvien/bevy_fairy/archive/v0.1.9.tar.gz"
+  homepage "https://github.com/bevy-coven/bevy_fairy"
+  url "https://github.com/bevy-coven/bevy_fairy/archive/v0.1.9.tar.gz"
   sha256 "PLACEHOLDER_SHA256"  # Update with actual SHA
   license "MIT"
-  head "https://github.com/ladvien/bevy_fairy.git", branch: "main"
+  head "https://github.com/bevy-coven/bevy_fairy.git", branch: "main"
 
   depends_on "rust" => :build
 

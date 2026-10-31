@@ -33,16 +33,16 @@ coding agent ──MCP over stdio──▶ bevy-fairy ──BRP over HTTP :15702
 `screenshot` tool returned. The game runs at 10 fps here so the planted bug — the spinner stops at
 frame 120 — happens mid-tour.
 
-![MCP tool calls beside the game frames they captured](https://raw.githubusercontent.com/Ladvien/bevy_fairy/main/docs/media/mcp-tour.gif)
+![MCP tool calls beside the game frames they captured](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/mcp-tour.gif)
 
 **A real agent session.** Claude, with no tools but these, told that something in the game which
 should spin forever stops, and asked what it is, which of its values stops changing, and on what
 frame. The script runs that question as the `spinner_stops` eval up to three times and draws the
 first session that passes; it never draws one that failed.
 
-![An agent finding the frame the spinner stops on](https://raw.githubusercontent.com/Ladvien/bevy_fairy/main/docs/media/agent-session.gif)
+![An agent finding the frame the spinner stops on](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/agent-session.gif)
 
-Both are recorded from [`examples/demo_game.rs`](https://github.com/Ladvien/bevy_fairy/blob/main/examples/demo_game.rs)
+Both are recorded from [`examples/demo_game.rs`](https://github.com/bevy-coven/bevy_fairy/blob/main/examples/demo_game.rs)
 by `python3 scripts/record_demo.py all`.
 
 ## Why
@@ -197,7 +197,7 @@ commands.insert_resource(DebugCaptureTarget { image: render_target_handle });
 With a `DebugCaptureTarget`, captures come from that image and never depend on the window. Without
 one, `screenshot` falls back to the game window. That needs nothing from the OS, but a covered or
 minimised window can give a stale frame. A full example with the camera setup is
-[`examples/plugin_agent_scene.rs`](https://github.com/Ladvien/bevy_fairy/blob/main/examples/plugin_agent_scene.rs).
+[`examples/plugin_agent_scene.rs`](https://github.com/bevy-coven/bevy_fairy/blob/main/examples/plugin_agent_scene.rs).
 
 ### Inject input
 
@@ -272,7 +272,7 @@ reports ready. Scenes record commands, not raw input: keys, text and clicks sent
 
 ## Reference
 
-- **Tools:** 14 MCP tools. [`docs/mcp-tools.md`](https://github.com/Ladvien/bevy_fairy/blob/main/docs/mcp-tools.md)
+- **Tools:** 14 MCP tools. [`docs/mcp-tools.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/mcp-tools.md)
   has every description and argument, generated from the server's own `tools/list`.
 - **API:** the plugin's types are documented on [docs.rs](https://docs.rs/bevy_fairy).
 
@@ -338,16 +338,16 @@ UPDATE_TOOL_REFERENCE=1 cargo test --test tool_list                       # rege
 ```
 
 Tool behaviour is tested against `examples/fixture_game.rs`, whose state is known from its own
-constants. [`evals/`](https://github.com/Ladvien/bevy_fairy/blob/main/evals/README.md) measures
+constants. [`evals/`](https://github.com/bevy-coven/bevy_fairy/blob/main/evals/README.md) measures
 whether an agent with only this server can answer debugging questions about that game.
-[`CLAUDE.md`](https://github.com/Ladvien/bevy_fairy/blob/main/CLAUDE.md) explains the design
+[`CLAUDE.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CLAUDE.md) explains the design
 decisions that are easy to undo by accident.
 
-Issues and pull requests are welcome at [github.com/Ladvien/bevy_fairy](https://github.com/Ladvien/bevy_fairy/issues).
+Issues and pull requests are welcome at [github.com/bevy-coven/bevy_fairy](https://github.com/bevy-coven/bevy_fairy/issues).
 
 ## Changelog
 
-See [`CHANGELOG.md`](https://github.com/Ladvien/bevy_fairy/blob/main/CHANGELOG.md).
+See [`CHANGELOG.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CHANGELOG.md).
 
 ## License
 

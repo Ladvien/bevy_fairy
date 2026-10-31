@@ -27,7 +27,7 @@ When one of these seems necessary, stop and ask. Name the exact command, what it
 
 ## Source of truth
 
-This standalone repo, `Ladvien/bevy_fairy`, is the source of truth for the crate, on Bevy 0.20 (Sanctuary decision 0232, 2026-10-19). It was a pinned git dependency, then vendored into `Ladvien/foundation_vs_slop` with `git subtree add` and mirrored back out of it. The monorepo's copy is now a frozen Bevy 0.19 copy that is never mirrored again, and `Ladvien/bevy_emerge` depends on this repo by git. A bug found while driving a game is an ordinary edit here, followed by a push.
+This standalone repo, `bevy-coven/bevy_fairy`, is the source of truth for the crate, on Bevy 0.20 (Sanctuary decision 0232, 2026-10-19). It was a pinned git dependency, then vendored into `Ladvien/foundation_vs_slop` with `git subtree add` and mirrored back out of it. The monorepo's copy is now a frozen Bevy 0.19 copy that is never mirrored again, and `bevy-coven/bevy_grimoire` depends on this repo by git. A bug found while driving a game is an ordinary edit here, followed by a push.
 
 ## One crate, two halves
 

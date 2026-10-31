@@ -488,7 +488,7 @@ fn a_physical_only_key_states_that_it_has_no_logical_value() {
 
 /// **A space is the space bar, not the character `" "`.**
 ///
-/// The one character with a named variant. Five separate text handlers in `bevy_emerge_mapper` match
+/// The one character with a named variant. Five separate text handlers in `bevy_grimoire_mapper` match
 /// `Key::Space` and none matches `Key::Character(" ")`, so the wrong choice would drop the space out
 /// of a typed name while the call reported success — a silent corruption of exactly the input this
 /// feature exists to deliver.
@@ -505,7 +505,7 @@ fn a_space_is_the_space_bar_not_a_character() {
 
 /// **Text waits for the frame after the keystroke that opened the field.**
 ///
-/// Every text field in `bevy_emerge_mapper` drains the stream *while shut*, so the key that opened it
+/// Every text field in `bevy_grimoire_mapper` drains the stream *while shut*, so the key that opened it
 /// cannot become its first character — the `xseam` bug. Its key phase runs before its dispatcher
 /// phase, so text sent in the same frame as the opening key would be eaten by that very guard while
 /// this method reported success. One frame is the same price the one-edge-per-key rule already pays.

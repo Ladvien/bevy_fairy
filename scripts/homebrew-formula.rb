@@ -1,21 +1,21 @@
 class BevyDebuggerMcp < Formula
   desc "MCP server for debugging Bevy games with Claude"
-  homepage "https://github.com/ladvien/bevy_fairy"
+  homepage "https://github.com/bevy-coven/bevy_fairy"
   version "0.1.0"
   license "GPL-3.0"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/ladvien/bevy_fairy/releases/download/v#{version}/bevy-fairy-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/bevy-coven/bevy_fairy/releases/download/v#{version}/bevy-fairy-aarch64-apple-darwin.tar.gz"
       sha256 "YOUR_SHA256_HERE"
     else
-      url "https://github.com/ladvien/bevy_fairy/releases/download/v#{version}/bevy-fairy-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/bevy-coven/bevy_fairy/releases/download/v#{version}/bevy-fairy-x86_64-apple-darwin.tar.gz"
       sha256 "YOUR_SHA256_HERE"
     end
   end
 
   on_linux do
-    url "https://github.com/ladvien/bevy_fairy/releases/download/v#{version}/bevy-fairy-x86_64-unknown-linux-gnu.tar.gz"
+    url "https://github.com/bevy-coven/bevy_fairy/releases/download/v#{version}/bevy-fairy-x86_64-unknown-linux-gnu.tar.gz"
     sha256 "YOUR_SHA256_HERE"
   end
 
