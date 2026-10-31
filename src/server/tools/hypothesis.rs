@@ -7,7 +7,7 @@ use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
 use crate::server::experiment_system::Action;
 use crate::server::hypothesis_system::{
-    Assertion, Hypothesis, PerformanceMetric, TestRunner, VariationStrategy,
+    Assertion, Hypothesis, TestRunner, VariationStrategy,
 };
 
 /// Handle hypothesis tool requests
@@ -211,156 +211,14 @@ async fn handle_validate(arguments: Value) -> Result<Value> {
 
 /// Parse success condition from arguments
 fn parse_success_condition(arguments: &Value) -> Result<Assertion> {
-    if let Some(condition_str) = arguments.get("success_condition").and_then(|c| c.as_str()) {
-        // Try to parse as string format
-        Assertion::parse(condition_str)
-    } else if let Some(condition_obj) = arguments
-        .get("success_condition")
-        .and_then(|c| c.as_object())
-    {
-        // Parse as JSON object
-        parse_assertion_from_json(condition_obj)
-    } else {
-        Err(Error::Validation(
-            "Missing or invalid 'success_condition' parameter".to_string(),
-        ))
-    }
-}
-
-/// Parse assertion from JSON object
-fn parse_assertion_from_json(obj: &serde_json::Map<String, Value>) -> Result<Assertion> {
-    let assertion_type = obj
-        .get("type")
-        .and_then(|t| t.as_str())
-        .ok_or_else(|| Error::Validation("Assertion must have 'type' field".to_string()))?;
-
-    match assertion_type {
-        "entity_exists" => {
-            let component_types = obj
-                .get("component_types")
-                .and_then(|c| c.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let count = obj
-                .get("count")
-                .and_then(|c| c.as_u64())
-                .map(|c| c as usize);
-
-            Ok(Assertion::EntityExists {
-                component_types,
-                count,
-            })
-        }
-        "component_equals" => {
-            let entity_id = obj.get("entity_id").and_then(|e| e.as_u64());
-            let component_type = obj
-                .get("component_type")
-                .and_then(|c| c.as_str())
-                .ok_or_else(|| {
-                    Error::Validation("component_equals requires 'component_type'".to_string())
-                })?;
-
-            let expected_value = obj
-                .get("expected_value")
-                .ok_or_else(|| {
-                    Error::Validation("component_equals requires 'expected_value'".to_string())
-                })?
-                .clone();
-
-            Ok(Assertion::ComponentEquals {
-                entity_id,
-                component_type: component_type.to_string(),
-                expected_value,
-            })
-        }
-        "performance_within" => {
-            let metric_str = obj.get("metric").and_then(|m| m.as_str()).ok_or_else(|| {
-                Error::Validation("performance_within requires 'metric'".to_string())
-            })?;
-
-            let metric = match metric_str {
-                "frame_time" => PerformanceMetric::FrameTime,
-                "entity_count" => PerformanceMetric::EntityCount,
-                "component_count" => PerformanceMetric::ComponentCount,
-                "memory_usage" => PerformanceMetric::MemoryUsage,
-                "cpu_usage" => PerformanceMetric::CpuUsage,
-                _ => return Err(Error::Validation(format!("Unknown metric: {metric_str}"))),
-            };
-
-            let max_value = obj
-                .get("max_value")
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| {
-                    Error::Validation("performance_within requires 'max_value'".to_string())
-                })?;
-
-            Ok(Assertion::PerformanceWithin { metric, max_value })
-        }
-        "action_succeeds" => {
-            let action_json = obj.get("action").ok_or_else(|| {
-                Error::Validation("action_succeeds requires 'action'".to_string())
-            })?;
-
-            let action = serde_json::from_value(action_json.clone())
-                .map_err(|e| Error::Validation(format!("Invalid action: {e}")))?;
-
-            Ok(Assertion::ActionSucceeds { action })
-        }
-        "all" => {
-            let assertions_json = obj
-                .get("assertions")
-                .and_then(|a| a.as_array())
-                .ok_or_else(|| {
-                    Error::Validation("'all' requires 'assertions' array".to_string())
-                })?;
-
-            let mut assertions = Vec::new();
-            for assertion_json in assertions_json {
-                if let Some(obj) = assertion_json.as_object() {
-                    assertions.push(parse_assertion_from_json(obj)?);
-                }
-            }
-
-            Ok(Assertion::All { assertions })
-        }
-        "any" => {
-            let assertions_json = obj
-                .get("assertions")
-                .and_then(|a| a.as_array())
-                .ok_or_else(|| {
-                    Error::Validation("'any' requires 'assertions' array".to_string())
-                })?;
-
-            let mut assertions = Vec::new();
-            for assertion_json in assertions_json {
-                if let Some(obj) = assertion_json.as_object() {
-                    assertions.push(parse_assertion_from_json(obj)?);
-                }
-            }
-
-            Ok(Assertion::Any { assertions })
-        }
-        "not" => {
-            let assertion_json = obj
-                .get("assertion")
-                .and_then(|a| a.as_object())
-                .ok_or_else(|| {
-                    Error::Validation("'not' requires 'assertion' object".to_string())
-                })?;
-
-            let assertion = parse_assertion_from_json(assertion_json)?;
-
-            Ok(Assertion::Not {
-                assertion: Box::new(assertion),
-            })
-        }
+    const SHAPES: &str = "a string (\"entity_exists:game::Crate,game::Health\" or \"component_equals:game::Score=100\") or an object whose \"type\" is one of entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any, not. Example: {\"type\": \"entity_exists\", \"component_types\": [\"game::Crate\"], \"count\": 6}";
+    match arguments.get("success_condition") {
+        Some(Value::String(condition)) => Assertion::parse(condition),
+        Some(condition @ Value::Object(_)) => serde_json::from_value(condition.clone()).map_err(|e| {
+            Error::Validation(format!("Invalid success_condition {condition}: {e}. A condition is {SHAPES}"))
+        }),
         _ => Err(Error::Validation(format!(
-            "Unknown assertion type: {assertion_type}"
+            "Missing or invalid 'success_condition'. A condition is {SHAPES}"
         ))),
     }
 }

@@ -3,7 +3,7 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 // use rand_distr::{Distribution, Uniform}; // Currently unused, kept for future use
 
 use crate::server::brp_client::BrpClient;
@@ -85,6 +85,7 @@ impl HypothesisBuilder {
         let success_condition = self.success_condition.ok_or_else(|| {
             Error::Validation("Hypothesis must have a success condition".to_string())
         })?;
+        success_condition.check()?;
 
         Ok(Hypothesis {
             description: self.description,
@@ -98,7 +99,7 @@ impl HypothesisBuilder {
 
 /// Testable assertion types
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Assertion {
     /// Entity exists with specific components
     EntityExists {
@@ -165,18 +166,64 @@ impl Assertion {
                     .map_err(|e| Error::Validation(format!("Invalid JSON value: {e}")))?,
             })
         } else if condition == "action_succeeds" {
-            // Placeholder - would need actual action
-            Ok(Self::ActionSucceeds {
-                action: Action::Spawn {
-                    components: vec![],
-                    archetype: None,
-                },
-            })
+            // A string carries no action, and running a made-up one answers a different question.
+            Err(Error::Validation(
+                "action_succeeds needs the action it should run, which a string cannot carry. \
+                 Use the object form: {\"type\": \"action_succeeds\", \"action\": {\"type\": \"delete\", \"entity_id\": 4294967297}}"
+                    .to_string(),
+            ))
         } else {
             Err(Error::Validation(format!(
-                "Cannot parse assertion: {condition}"
+                "Cannot parse assertion: {condition}. A string is entity_exists:<type>[,<type>...] or component_equals:<type>=<json value>; anything else takes the object form"
             )))
         }
+    }
+
+    /// Refuse a condition that could not be checked, or that every game satisfies, before any
+    /// action runs: the actions change the live game, so a bad condition must not cost a mutation.
+    pub fn check(&self) -> Result<()> {
+        match self {
+            Self::EntityExists { component_types, .. } => {
+                if component_types.is_empty() || component_types.iter().any(|name| name.trim().is_empty()) {
+                    return Err(Error::Validation(
+                        "entity_exists needs at least one component type name in component_types (as a list), none of them empty: with no component to require, any entity satisfies it. Example: entity_exists:game::Crate".to_string(),
+                    ));
+                }
+            }
+            Self::ComponentEquals { component_type, .. } => {
+                if component_type.trim().is_empty() {
+                    return Err(Error::Validation(
+                        "component_equals needs a component_type, the registered path or its short name".to_string(),
+                    ));
+                }
+            }
+            Self::ComponentMatches { .. } => {
+                return Err(Error::Validation(
+                    "component_matches cannot be evaluated: the server has no predicate evaluator, \
+                     and answering true would confirm every hypothesis. Use component_equals, or \
+                     assert on entity_exists."
+                        .to_string(),
+                ));
+            }
+            Self::PerformanceWithin { metric, .. } => {
+                if let Some(reason) = metric.unmeasurable() {
+                    return Err(Error::Validation(reason.to_string()));
+                }
+            }
+            Self::ActionSucceeds { .. } => {}
+            Self::All { assertions } | Self::Any { assertions } => {
+                if assertions.is_empty() {
+                    return Err(Error::Validation(
+                        "all and any need at least one entry in assertions: an empty list is true for all and false for any, whatever the game does".to_string(),
+                    ));
+                }
+                for assertion in assertions {
+                    assertion.check()?;
+                }
+            }
+            Self::Not { assertion } => assertion.check()?,
+        }
+        Ok(())
     }
 
     /// Evaluate assertion against current game state
@@ -288,41 +335,44 @@ pub enum PerformanceMetric {
 }
 
 impl PerformanceMetric {
-    /// Measure the current value of this metric, by asking the game.
+    /// Why this metric cannot be measured over BRP, or `None` when it can.
     ///
     /// Only the two metrics the BRP surface can actually report are measured. The rest have no
     /// way to be observed from here, so they are refused with a reason rather than answered with
     /// a number. A number that was made up looks exactly like a measurement to the agent reading
     /// it, and the agent has no way to tell the difference.
-    pub async fn measure(&self, brp_client: &mut BrpClient) -> BoxedResult<f64> {
+    pub fn unmeasurable(&self) -> Option<&'static str> {
         match self {
-            Self::EntityCount | Self::ComponentCount => {
-                let entities = query_entities(brp_client).await?;
-                Ok(match self {
-                    Self::EntityCount => entities.len() as f64,
-                    Self::ComponentCount => entities
-                        .iter()
-                        .map(|entity| entity.components.len())
-                        .sum::<usize>() as f64,
-                    _ => unreachable!("the arm above is the only one that reaches here"),
-                })
-            }
-            Self::FrameTime => Err(Box::new(Error::Validation(
+            Self::EntityCount | Self::ComponentCount => None,
+            Self::FrameTime => Some(
                 "frame time cannot be measured over BRP: the protocol reports no timing. Use the \
-                 game's own timing, or assert on a component value instead."
-                    .to_string(),
-            ))),
-            Self::MemoryUsage => Err(Box::new(Error::Validation(
+                 game's own timing, or assert on a component value instead.",
+            ),
+            Self::MemoryUsage => Some(
                 "memory usage cannot be measured over BRP: the protocol reports no process \
-                 statistics. Use the game's own resource, or assert on a component value instead."
-                    .to_string(),
-            ))),
-            Self::CpuUsage => Err(Box::new(Error::Validation(
+                 statistics. Use the game's own resource, or assert on a component value instead.",
+            ),
+            Self::CpuUsage => Some(
                 "CPU usage cannot be measured over BRP: the protocol reports no process \
-                 statistics. Use the game's own resource, or assert on a component value instead."
-                    .to_string(),
-            ))),
+                 statistics. Use the game's own resource, or assert on a component value instead.",
+            ),
         }
+    }
+
+    /// Measure the current value of this metric, by asking the game.
+    pub async fn measure(&self, brp_client: &mut BrpClient) -> BoxedResult<f64> {
+        if let Some(reason) = self.unmeasurable() {
+            return Err(Box::new(Error::Validation(reason.to_string())));
+        }
+        let entities = query_entities(brp_client).await?;
+        Ok(match self {
+            Self::EntityCount => entities.len() as f64,
+            Self::ComponentCount => entities
+                .iter()
+                .map(|entity| entity.components.len())
+                .sum::<usize>() as f64,
+            _ => unreachable!("`unmeasurable` refused every other metric"),
+        })
     }
 }
 

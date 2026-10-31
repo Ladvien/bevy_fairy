@@ -1187,6 +1187,70 @@ async fn hypothesis_refuses_a_threshold_outside_zero_to_one_before_touching_the_
     assert_eq!(crate_weights(&tools).await, before, "a refused request must not have changed the game");
 }
 
+/// A condition the server cannot read as written must be refused, never read as "nothing to
+/// check". Before the fix each of these parsed to a condition that is true of any game with an
+/// entity -- a string where a list belongs became an empty list, a string inside `all` was
+/// skipped, a count that was not an integer became "any count" -- and the verdict was CONFIRMED.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_a_condition_it_cannot_read_instead_of_confirming_it() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let crate_type = "fixture_game::Crate";
+    for (condition, names) in [
+        (json!({"type": "entity_exists", "component_types": crate_type}), "component_types"),
+        (json!({"type": "entity_exists", "component_types": [crate_type, 3]}), "component_types"),
+        (json!({"type": "entity_exists", "component_types": [crate_type], "count": "6"}), "count"),
+        (json!({"type": "entity_exists", "component_types": []}), "component_types"),
+        (json!({"type": "entity_exists"}), "component_types"),
+        (json!({"type": "all", "assertions": [format!("entity_exists:{crate_type}")]}), "assertions"),
+        (json!({"type": "all", "assertions": []}), "assertions"),
+        (json!({"type": "any", "assertions": []}), "assertions"),
+        (json!({"type": "component_equals", "entity_id": "12", "component_type": crate_type, "expected_value": 1}), "entity_id"),
+        (json!({"type": "entity_exists", "component_types": [crate_type], "cuont": 6}), "cuont"),
+        (json!({"type": "entity_exist", "component_types": [crate_type]}), "entity_exists"),
+        (json!("entity_exists:"), "component"),
+        (json!({"type": "performance_within", "metric": "frame_time", "max_value": 20.0}), "frame time"),
+        (json!({"type": "performance_within", "metric": "frame_tim", "max_value": 20.0}), "frame_time"),
+    ] {
+        for action in ["test", "validate"] {
+            let (reply, failed) = hypothesis(
+                &tools,
+                json!({"action": action, "description": "a claim", "success_condition": condition}),
+            )
+            .await;
+            let refused = failed || reply["valid"] == json!(false);
+            assert!(refused, "{action} must refuse {condition}, got: {reply}");
+            assert!(reply.get("verdict").is_none(), "{action} of {condition} must not carry a verdict: {reply}");
+            assert!(
+                reply.to_string().contains(names),
+                "{action} of {condition}: the refusal must name `{names}`: {reply}"
+            );
+        }
+    }
+}
+
+/// The string `action_succeeds` was a placeholder: it carried no action, so the server made one
+/// up -- spawn an empty entity -- ran it every iteration, and answered CONFIRMED. It left an
+/// entity in the game each time.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_action_succeeds_without_an_action_is_refused_and_spawns_nothing() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let count = |rows: Value| rows.as_array().map_or(0, Vec::len);
+    let query = json!({"method": "world.query", "params": {"data": {"components": []}}});
+    let before = count(brp(&tools, query.clone()).await);
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({"action": "test", "description": "an action succeeds", "success_condition": "action_succeeds"}),
+    )
+    .await;
+    assert!(failed, "a string cannot carry an action, so it must be refused: {reply}");
+    assert!(reply.to_string().contains("action"), "{reply}");
+    assert_eq!(count(brp(&tools, query).await), before, "the placeholder must not spawn anything");
+}
+
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
 /// way an agent's client reaches it, so a tool the server does not offer is answered as such.
 struct StdioServer {
