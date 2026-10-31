@@ -1769,3 +1769,69 @@ async fn observe_brackets_the_frame_every_read_was_taken_on() {
     assert!(lowest <= highest, "no constant offset fits every bracket ({lowest} > {highest})");
     assert!(firsts.windows(2).all(|w| w[0] < w[1]), "reads 100 ms apart are on later frames: {firsts:?}");
 }
+
+/// The MCP client starts the server with the agent's session, and the game starts later. The
+/// background heartbeat that refreshes the connection state runs every 30 s, and `experiment`
+/// and `hypothesis` read that state without asking the game, so for up to 30 s after the game
+/// came up each answered "not connected to Bevy game" about a game that was answering. They
+/// now probe once before giving that answer. (`observe` and `detect_anomaly` already did, by
+/// asking the game for its frame first; they are here so that stays true.)
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_answer_as_soon_as_the_game_is_up_not_after_the_next_heartbeat() {
+    let port = free_port();
+    // Clients that have never seen the game, as in a server started before it.
+    let tools = [tools_for(port), tools_for(port), tools_for(port), tools_for(port)];
+
+    // Before the game exists the refusal is true.
+    let (text, _) = observe(&tools[0], "find entities with component fixture_game::Crate").await;
+    assert!(text.contains("not connected"), "no game is running yet: {text}");
+
+    std::thread::spawn(move || {
+        fixture_game::build_app(port, fixture_game::DEFAULT_FPS).run();
+    });
+    // A fifth client waits until the game answers; the four above are never asked before the check.
+    wait_until_ready(&tools_for(port)).await;
+
+    let asked = [
+        text_of(
+            &tools[0]
+                .observe(Parameters(ObserveRequest {
+                    query: "find entities with component fixture_game::Crate".to_string(),
+                    diff: false,
+                }))
+                .await
+                .expect("observe returns a result"),
+        ),
+        text_of(
+            &tools[1]
+                .detect_anomaly(Parameters(
+                    serde_json::from_value(json!({"action": "detect"})).expect("the request deserialises"),
+                ))
+                .await
+                .expect("detect_anomaly returns a result"),
+        ),
+        text_of(
+            &tools[2]
+                .experiment(Parameters(
+                    serde_json::from_value(json!({"action": "undo"})).expect("the request deserialises"),
+                ))
+                .await
+                .expect("experiment returns a result"),
+        ),
+        text_of(
+            &tools[3]
+                .hypothesis(Parameters(
+                    serde_json::from_value(json!({
+                        "action": "test", "description": "a crate exists",
+                        "success_condition": "entity_exists:fixture_game::Crate"
+                    }))
+                    .expect("the request deserialises"),
+                ))
+                .await
+                .expect("hypothesis returns a result"),
+        ),
+    ];
+    for (tool, text) in ["observe", "detect_anomaly", "experiment", "hypothesis"].iter().zip(&asked) {
+        assert!(!text.contains("not connected"), "{tool} said the game was not connected while it answered: {text}");
+    }
+}

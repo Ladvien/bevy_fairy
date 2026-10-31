@@ -38,7 +38,7 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
     // Check connection
     let is_connected = {
         let client = brp_client.read().await;
-        client.is_connected()
+        client.reachable().await
     };
 
     if !is_connected {

@@ -26,6 +26,7 @@ Breaking: `hypothesis` replies changed shape, `experiment` lost its `archetypes`
 - `experiment` returned a tool error, without the spawns that had already happened, when the server refused an action (an empty component type); in an atomic batch that skipped the rollback and left the transaction open, so the first spawn stayed in the game and no later action was recorded for `undo`. A refused action is a failed result listed beside the rest.
 - `experiment` `undo` answered "`batch` cannot be undone" forever after a batch, because the batch itself was the history entry and has no reverse, and a batch's reply named no entity it spawned.
 - `experiment` actions refuse fields they do not read (`Action` and `ComponentSpec` have `deny_unknown_fields`): a `path` on a component used to be dropped and the whole component overwritten.
+- `experiment` and `hypothesis` answered "not connected to Bevy game" for up to 30 s after a game came up that the server had been started before: they read the connection state the heartbeat leaves every 30 s without asking the game. They probe once before giving that answer (`BrpClient::reachable`). An MCP client that starts its server with the agent's session and a game started a moment later is the ordinary case.
 
 ### Not yet fixed
 

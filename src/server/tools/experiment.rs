@@ -57,7 +57,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     // Check connection for actions that need BRP
     let is_connected = {
         let client = brp_client.read().await;
-        client.is_connected()
+        client.reachable().await
     };
 
     if !is_connected {

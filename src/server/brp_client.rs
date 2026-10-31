@@ -176,6 +176,13 @@ impl BrpClient {
         self.connected.load(Ordering::Relaxed)
     }
 
+    /// Whether the game answers now. `is_connected` is the state the last probe left, refreshed by
+    /// a heartbeat every 30 s, so a tool that read it alone refused with "not connected" for up to
+    /// that long after a game came up. When the last known state is "no", probe once before saying so.
+    pub async fn reachable(&self) -> bool {
+        self.is_connected() || self.probe().await.is_ok()
+    }
+
     /// The BRP endpoint this client talks to, for log messages.
     pub fn url(&self) -> &str {
         &self.url
