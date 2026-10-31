@@ -1,91 +1,30 @@
 # bevy_fairy
 
-**Let a coding agent look inside a running Bevy game, drive it, and ask the person playing it for
-help — without touching your desktop.**
+> ⚠️ **Vibe Coded.** Written by AI agents working from a human's direction, covered by tests rather than a line-by-line human review. Read the code before you rely on it for something you care about.
 
-[![crates.io](https://img.shields.io/crates/v/bevy_fairy.svg)](https://crates.io/crates/bevy_fairy)
-[![docs.rs](https://img.shields.io/docsrs/bevy_fairy)](https://docs.rs/bevy_fairy)
-[![Bevy 0.20](https://img.shields.io/badge/bevy-0.20-purple.svg)](https://bevyengine.org)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+Let a coding agent look inside a running Bevy game, drive it, and ask the person playing it for help — without touching your desktop.
 
-`bevy_fairy` is two things in one crate:
+[![crates.io](https://img.shields.io/crates/v/bevy_fairy.svg)](https://crates.io/crates/bevy_fairy) [![docs.rs](https://img.shields.io/docsrs/bevy_fairy)](https://docs.rs/bevy_fairy) [![CI](https://github.com/bevy-coven/bevy_fairy/actions/workflows/ci.yml/badge.svg)](https://github.com/bevy-coven/bevy_fairy/actions/workflows/ci.yml) [![Bevy 0.20](https://img.shields.io/badge/bevy-0.20-purple.svg)](https://bevyengine.org) [![Licence: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#who-and-licence)
 
-- **a Bevy plugin** your game links, which adds debugging methods to the
-  [Bevy Remote Protocol](https://docs.rs/bevy_remote) (BRP);
-- **an [MCP](https://modelcontextprotocol.io) server**, `bevy-fairy`, which gives an agent such as
-  Claude Code tools to read the game's state, run the game's own commands, capture what it shows,
-  and inject input.
+![A six-second loop: the agent checks status, reads the spinner and captures the frame, then spawns three cubes through the game's own command](docs/media/hero.gif)
 
-```text
-coding agent ──MCP over stdio──▶ bevy-fairy ──BRP over HTTP :15702──▶ your game + DebuggerPlugin
-                                                                            │
-                                                        guide card on screen ▼
-                                                              the person at the keyboard
-```
+*The whole loop in six seconds: `status`, a `brp` read of the spinner beside the frame its `screenshot` call saved, then three `run` calls spawning cubes. Every reply is the server's own output and every picture is the game's own frame. The still below is that run's `brp` + `screenshot` pair; [the longer tour and a real agent session](docs/media/README.md) sit beside them.*
 
-> [!NOTE]
-> This crate was written by an AI agent working from a human's direction. It is tested against a
-> fixture game and used against a real one, but it has had no line-by-line human audit.
+![One tool call beside the frame it captured, from the same recording](docs/media/hero.png)
 
-## See it work
+**Status:** usable · Bevy 0.20 · MSRV 1.95
 
-**A scripted tour.** Every reply is the real server's output; every picture is the game frame its
-`screenshot` tool returned. The game runs at 10 fps here so the planted bug — the spinner stops at
-frame 120 — happens mid-tour.
-
-![MCP tool calls beside the game frames they captured](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/mcp-tour.gif)
-
-**A real agent session.** Claude, with no tools but these, told that something in the game which
-should spin forever stops, and asked what it is, which of its values stops changing, and on what
-frame. The script runs that question as the `spinner_stops` eval up to three times and draws the
-first session that passes; it never draws one that failed.
-
-![An agent finding the frame the spinner stops on](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/agent-session.gif)
-
-Both are recorded from [`examples/demo_game.rs`](https://github.com/bevy-coven/bevy_fairy/blob/main/examples/demo_game.rs)
-by `python3 scripts/record_demo.py all`.
-
-## Why
-
-An agent that debugs a game by reading source code is guessing. It needs to see the game's actual
-state, change it, and check what happened. The obvious way to do that, OS screenshots and OS
-input, needs the game window in front: on the game this was built for, a capture with the window
-focused had 7,188 distinct colours, and with another app in front it had **one**. Synthetic OS
-keystrokes go to whichever window has focus, which is often the one you are typing in.
-
-So nothing here touches the operating system. Captures come from the game's own pixels, input is
-written into Bevy's own input streams, and `tests/plugin_leaf.rs` fails the build if the plugin's
-dependency graph ever gains something that could synthesise an OS event.
-
-## What an agent can do with it
-
-| | How |
-|---|---|
-| **Read state** | Query any entity, component or resource over BRP (`brp`, `observe`). |
-| **Watch change over time** | Sample a value repeatedly and see which of its fields moved and which stopped, each with the frame it was read on (`watch`); capture a short run of frames as one contact sheet (`burst`). |
-| **Run game actions** | Call commands your game registers, each with typed params and a worked example (`commands`, `run`). |
-| **See the screen** | Capture a PNG from an offscreen render target, or from the game window (`screenshot`). |
-| **Press keys, type, click, drag** | Inject keyboard, text, mouse, scroll and cursor input that the game reads like the real thing. |
-| **Ask a person** | Show one instruction at a time on the player's screen and watch for the state it asked for (`guide`). |
-| **Record and replay** | Save the commands a session ran and replay them when the game starts (`scene`). |
-
-It cannot see frame time, CPU or memory: BRP does not report them, and the tools say so rather than
-make up a number.
+**Why:** an agent debugging a game from its source code is guessing, and the obvious alternative — OS screenshots and OS keystrokes — needs the game's window raised and focused: on the game this was built for, a capture with the window focused had 7,188 distinct colours and with another app in front it had **one**, and a synthetic key goes to whichever window happens to have focus. So nothing here touches the operating system: captures come from the game's own pixels, input is written into Bevy's own input messages, and `tests/plugin_leaf.rs` fails the build if the plugin's dependency graph ever gains a crate that could synthesise an OS event.
 
 ## Quick start
 
-This takes a game you already have and an agent that speaks MCP, such as Claude Code.
+`bevy_fairy` is one crate with two halves. A **game** links the plugin; an **agent** spawns the `bevy-fairy` server, which speaks [MCP](https://modelcontextprotocol.io) over stdio to the agent and the [Bevy Remote Protocol](https://docs.rs/bevy_remote) (BRP — Bevy's own JSON-RPC interface, usually on port 15702) to the game.
 
-**1. Add the plugin to your game.**
-
-```toml
-# Cargo.toml
-[dependencies]
-bevy = "0.20"
-bevy_fairy = { version = "0.12", default-features = false, features = ["plugin"] }
+```sh
+cargo add bevy_fairy --no-default-features --features plugin
 ```
 
-```rust
+```rust,no_run
 use bevy::prelude::*;
 use bevy::remote::http::RemoteHttpPlugin;
 use bevy_fairy::DebuggerPlugin;
@@ -93,262 +32,73 @@ use bevy_fairy::DebuggerPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(DebuggerPlugin::default()) // registers the bevy_fairy/* methods
-        .add_plugins(RemoteHttpPlugin::default()) // serves them on port 15702
+        // Owns the BRP RemotePlugin. Never add a second one next to it.
+        .add_plugins(DebuggerPlugin::default())
+        // Serves the bevy_fairy/* methods on 127.0.0.1:15702.
+        .add_plugins(RemoteHttpPlugin::default())
         .run();
 }
 ```
 
-Run the game, then check it answers:
-
-```sh
-curl -s localhost:15702 -d '{"jsonrpc":"2.0","id":1,"method":"bevy_fairy/status"}'
-# {"jsonrpc":"2.0","id":1,"result":{..., "ready":true, ...}}
-```
-
-**2. Install the server.**
+`DebuggerPlugin` adds Bevy's `RemotePlugin` itself, so adding one as well panics on start, and it needs `InputPlugin`, which `DefaultPlugins` has and `MinimalPlugins` does not.
 
 ```sh
 cargo install bevy_fairy --no-default-features --features server
-bevy-fairy --version
-# bevy-fairy 0.12.0
+claude mcp add bevy-fairy -- bevy-fairy --stdio    # or the [clients page](docs/guide/clients.md)
+curl -s localhost:15702 -d '{"jsonrpc":"2.0","id":1,"method":"bevy_fairy/status"}'
+# {"jsonrpc":"2.0","id":1,"result":{...,"ready":true,...}}
 ```
 
-**3. Register it with your agent.** For Claude Code, from your project directory:
+```text
+agent ──MCP over stdio──▶ bevy-fairy ──BRP over HTTP :15702──▶ your game + DebuggerPlugin
+                                                                        │
+                                                    card on screen ▼    │
+                                                          the person at the keyboard
+```
+
+## Try it
 
 ```sh
-claude mcp add bevy-fairy -- bevy-fairy --stdio
+cargo run --features plugin-screenshot --example demo_game
 ```
 
-For Claude Desktop or a project `.mcp.json`:
+That is the game the tour was recorded from: six crates, a score, a mover, and a spinner with a bug planted in it. Point your agent at it and ask *"Call `status`, then list the game's resources with `brp`."* Then ask it to find which of the spinner's values stops changing, and on what frame.
 
-```json
-{
-  "mcpServers": {
-    "bevy-fairy": {
-      "command": "bevy-fairy",
-      "args": ["--stdio"],
-      "env": { "BEVY_BRP_HOST": "localhost", "BEVY_BRP_PORT": "15702" }
-    }
-  }
-}
-```
+## What you can do
 
-**4. Try it.** With the game running, ask the agent: *"Call `status`, then list the game's resources
-with `brp`."* It should report `ready: true` and a list of resource type names. From there, ask it
-questions about your game.
+- **Read state, and change it and undo it.** `brp` calls any BRP method the game serves; `observe` answers a short phrase query with the entities and their component values, and `diff: true` compares a read with the last one; `experiment` spawns, modifies and deletes entities and steps back through its own history — [tools](docs/guide/tools.md).
+- **Watch a value over time.** `watch` samples a method repeatedly and says which fields moved and which stopped, each sample stamped with the game frame; `burst` returns a sequence of frames as one contact sheet; `bevy_fairy/ring` records N frames inside the game and freezes on a trigger — [tools](docs/guide/tools.md).
+- **Run the game's own commands, and replay them.** `commands` lists what the game registered, with typed params and a worked example; `run` calls one; `scene save` writes the recorded run to a file that `BEVY_FAIRY_SCENE` replays at startup — [commands](docs/guide/commands.md), [scenes](docs/guide/scene.md).
+- **See the screen.** `screenshot` captures a PNG from an offscreen render target or from the window, with a crop and a zoom, and returns the frame numbers it was asked and delivered on — [capture](docs/guide/capture.md).
+- **Press keys, type, click and drag.** `bevy_fairy/input` writes keyboard, text, mouse, scroll and cursor input into the messages Bevy reads, so `ButtonInput`, text fields and `bevy_ui` picking all see it — [input](docs/guide/input.md).
+- **Ask a person.** `guide` posts a script the game draws one step at a time, and the step moves on when a checkpoint your game registered passes — [guide](docs/guide/guide.md).
+- **Test a claim, or look for an anomaly.** `hypothesis` runs a claim against the running game over many iterations and puts the game back after each; `detect_anomaly` scores velocities and state inconsistencies against thresholds you set — [claims](docs/guide/claims.md).
 
-### If it doesn't work
+It cannot see frame time, CPU or memory: BRP does not report them, and the tools say so rather than make up a number.
 
-| Symptom | Cause and fix |
+## Part of the Coven
+
+`bevy_fairy` is one of the [crates of the Bevy Coven](https://github.com/bevy-coven): the editor, [Grimoire](https://github.com/bevy-coven/bevy_grimoire), links this plugin behind its `debugger` feature, so an agent can look at the editor itself the same way it looks at a game. [How to use it in Grimoire](https://bevy-coven.github.io/crates/bevy_fairy.html#use-it-in-grimoire) is on the crate's page in [the book](https://bevy-coven.github.io/).
+
+## Bevy compatibility
+
+| bevy_fairy | Bevy |
 |---|---|
-| `status` says no game is answering | The game is not running, or `BEVY_BRP_HOST`/`BEVY_BRP_PORT` do not point at it. The default is `localhost:15702`. |
-| The game panics on start | You added a second `RemotePlugin`. `DebuggerPlugin` adds its own; add only a transport such as `RemoteHttpPlugin`. Or `InputPlugin` is missing: `DefaultPlugins` has it, `MinimalPlugins` does not. |
-| The agent sees no `bevy-fairy` tools | The client cannot find the binary. Run `bevy-fairy --version`; if that works, give `command` as the full path (`~/.cargo/bin/bevy-fairy`) and restart the client. |
-| `screenshot` says `bevy_fairy/screenshot` is not registered | Build the game with the `plugin-screenshot` feature. |
-| A `+watch` method is refused by `brp` | Watching methods stream; `brp` returns one answer per call. Call the method without `+watch` again. |
+| `0.2.0` and later (now `0.12.0`) | 0.20 |
+| `0.1.10` | 0.19, then 0.16 before that |
 
-## Guides
+## Learn more
 
-### Let the agent run your game's actions
+- **[The tools](docs/guide/tools.md)**: every tool and argument, and what it refuses.
+- **[`docs/mcp-tools.md`](docs/mcp-tools.md)**: the same list generated from the server's own `tools/list`, so it cannot drift.
+- **[The guide](docs/guide/README.md)**: installing it into a game, the clients, input, capture, the guide overlay, claims and workflows.
+- **[The book page](https://bevy-coven.github.io/crates/bevy_fairy.html)**, and the [API on docs.rs](https://docs.rs/bevy_fairy).
+- **[Examples](examples/)**: each prints what happened, and most need no window or GPU.
+- **[`evals/`](evals/README.md)** measures whether an agent with only this server can answer debugging questions about the fixture game.
+- **[`CHANGELOG.md`](CHANGELOG.md)**, and [`CLAUDE.md`](CLAUDE.md) for the design decisions that are easy to undo by accident.
 
-Register commands with typed params and a worked example. The agent finds them with `commands` and
-runs them with `run`; a mistyped name is answered with the nearest real one, and wrong params are
-refused before your handler runs.
+## Who and licence
 
-```rust
-use bevy_fairy::{DebugCommandInfo, DebugCommandsAppExt};
-use serde_json::{json, Value};
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SpawnCube { at: [f32; 3] }
-
-fn spawn_cube(In(p): In<SpawnCube>, mut commands: Commands) -> Result<Value, String> {
-    commands.spawn(Transform::from_translation(Vec3::from(p.at)));
-    Ok(json!({ "spawned_at": p.at }))
-}
-
-// After .add_plugins(DebuggerPlugin::default()):
-app.add_debug_command(
-    DebugCommandInfo::new("demo/spawn_cube", "Spawn a cube at a world position in metres")
-        .params("at: [x, y, z]")
-        .example(json!({ "at": [0.0, 0.5, 0.0] })),
-    spawn_cube,
-);
-```
-
-Registration is checked at startup: a reserved name (`bevy_fairy/`, `world.`, ...), a duplicate,
-or an example that does not parse as the params type panics then, not when the agent calls it.
-If your game needs time to load, build the plugin with `DebuggerPlugin::default().host_signals_ready()`
-and set the `DebugReady` resource to `true` when it is; until then every command answers "not
-ready yet".
-
-### Capture what the game shows
-
-Enable `plugin-screenshot`, then give the plugin an image one of your cameras renders to:
-
-```rust
-use bevy_fairy::DebugCaptureTarget;
-
-commands.insert_resource(DebugCaptureTarget { image: render_target_handle });
-```
-
-With a `DebugCaptureTarget`, captures come from that image and never depend on the window. Without
-one, `screenshot` falls back to the game window. That needs nothing from the OS, but a covered or
-minimised window can give a stale frame. A full example with the camera setup is
-[`examples/plugin_agent_scene.rs`](https://github.com/bevy-coven/bevy_fairy/blob/main/examples/plugin_agent_scene.rs).
-
-### Inject input
-
-The agent sends input through `brp` with the method `bevy_fairy/input`:
-
-```jsonc
-{"kind": "Keyboard", "key": "Space"}                      // a tap: pressed one frame, released the next
-{"kind": "Keyboard", "text": "site_67"}                   // typed into a focused text field
-{"kind": "Cursor", "x": 640, "y": 360}                    // logical window pixels (see below)
-{"kind": "Mouse", "button": "Left", "action": "Press"}
-{"kind": "Cursor", "clear": true}                         // hand the pointer back to the real mouse
-```
-
-Input is written into Bevy's own input messages before its input systems run, so `just_pressed`,
-text fields and `ButtonInput` all see it like a real key.
-
-A field the chosen `kind` does not read is refused by name, never ignored: there is no `modifiers`, a
-`Mouse` call takes no `x`/`y` (aim with a `Cursor` call first), and a `Scroll` needs `x` and/or `y`.
-
-**The pointer reaches picking.** `Cursor` and `Mouse` also write the `WindowEvent` messages a real
-mouse produces, so `bevy_ui` buttons, `Interaction` and `On<Pointer<Click | Over | Out | Drag..>>`
-observers fire with no code on your side. A press at one position, a `Cursor` move and a release
-elsewhere is a drag. A click lands at the last `Cursor` position; with none set the reply carries a
-`note` saying so.
-
-**Coordinates.** `x`/`y` are *logical window pixels*, top-left origin, the same space
-`Window::cursor_position` reports, unless the host inserted a `DebugCaptureTarget` (feature
-`plugin-screenshot`). Then the pointer is routed to that image instead of the window, because a camera
-that renders to an image is not hit by a window pointer, and `x`/`y` are pixels of that image. One
-route per game: a host with both a window UI and a capture target is driven through the image.
-
-A host that reads the pointer itself rather than through picking has one line to write: **read it through
-`bevy_fairy::cursor_position(&window, &debug_cursor)`**, not `Window::cursor_position`. The plugin never
-moves the real pointer, because Bevy would move the physical mouse out from under whoever is at the
-machine.
-
-### Guide a person through a test
-
-Enable `plugin-guide`. The agent posts a script with `guide`; your game shows one step at a time:
-
-```json
-{"steps": [{
-  "label": "drop a floor and a wall",
-  "goal": "a tile needs two pieces before the solver can match",
-  "do": ["walk the library with up and down", "press Enter to bring a row in"],
-  "checkpoint": "tile has two members",
-  "recovery": "if nothing lands, the filter is hiding every row: press Backspace"
-}]}
-```
-
-A checkpoint is a condition your game registers by name, so the plugin never needs to know your
-game's vocabulary:
-
-```rust
-use bevy_fairy::Checkpoints;
-
-let has_two = app.register_system(|_: In<serde_json::Value>, tile: Res<Tile>| tile.members >= 2);
-app.world_mut().resource_mut::<Checkpoints>().register("tile has two members", has_two);
-```
-
-The plugin runs a step's checkpoint once a frame and moves the step on by itself when it returns
-true, whether or not anything is watching; `bevy_fairy/guide+watch` reports each pass as it happens.
-A script that names a checkpoint the game has not registered is refused when it is posted, and a
-step without a checkpoint waits for the person to say it is done. For each step the agent gets
-back how many times it came up, how many of those its checkpoint passed, and how long it took.
-
-### Save and replay a session
-
-Every game command that changes the game is recorded; a command registered read-only (`bevy_fairy/ring` and `bevy_fairy/ui_text` are) is not, because replaying it would change nothing. `scene save <path>` writes them to a file;
-starting the game with `BEVY_FAIRY_SCENE=<path>` replays them, one step per frame, once the game
-reports ready. Scenes record commands, not raw input: keys, text and clicks sent with `bevy_fairy/input` are not in the file, and replay is command-level, not frame-exact (Bevy is not deterministic by default).
-
-## Reference
-
-- **Tools:** 14 MCP tools. [`docs/mcp-tools.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/mcp-tools.md)
-  has every description and argument, generated from the server's own `tools/list`.
-- **API:** the plugin's types are documented on [docs.rs](https://docs.rs/bevy_fairy).
-
-### BRP methods the plugin registers
-
-| Method | Feature | What it does |
-|---|---|---|
-| `bevy_fairy/status` | `plugin` | Whether the game is ready, its frame, and what it can capture |
-| `bevy_fairy/commands` | `plugin` | The commands the game registered, with params and examples |
-| `bevy_fairy/input` | `plugin` | Inject keyboard, text, mouse, scroll and cursor input |
-| `bevy_fairy/scene` | `plugin` | Show or clear the recorded commands |
-| `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed (above 0, at most 1000); the request is re-applied every frame and the reply says whether it `held`, and whether the engine cut the last frame to the clock's `max_delta` (`clamped_by_max_delta`) (a built-in command). A host that owns `Time<Virtual>` adds `.host_owns_clock()` and reads `ClockRequest` |
-| `bevy_fairy/ring` | `plugin` | Record the newest N frames (1-600) of a `world.query` result inside the game, with an optional trigger that freezes the buffer on the frame it matches; `dump` returns the samples with frame numbers (a built-in command, called with `run`) |
-| `bevy_fairy/quit` | `plugin` | Ask the game to exit |
-| `bevy_fairy/ui_text` | `plugin-ui-text` | The `bevy_ui` text the player can read, with each node's rect (a built-in command, called with `run`) |
-| `bevy_fairy/screenshot`, `bevy_fairy/capture` | `plugin-screenshot` | Capture a frame and fetch it as PNG |
-| `bevy_fairy/guide`, `bevy_fairy/guide+watch` | `plugin-guide` | Post a guide script; stream its progress |
-
-Bevy's own methods (`world.query`, `world.get_resources`, `registry.schema`, ...) work too.
-
-### Cargo features
-
-| Feature | Use it for | Turns on |
-|---|---|---|
-| `server` (default) | Building the `bevy-fairy` binary | The MCP server and its dependencies |
-| `plugin` | Your game | The plugin; four direct dependencies |
-| `plugin-screenshot` | Your game, with capture | `plugin` + Bevy's renderer |
-| `plugin-guide` | Your game, with the guide overlay | `plugin` + Bevy UI and picking |
-| `plugin-ui-text` | Your game, if an agent should read its HUD text | `plugin` + Bevy UI |
-
-A game should depend on `bevy_fairy` with `default-features = false`, or it compiles the server too.
-
-### Environment variables
-
-| Variable | Read by | Default | Meaning |
-|---|---|---|---|
-| `BEVY_BRP_HOST` | server | `localhost` | Where the game's BRP endpoint is |
-| `BEVY_BRP_PORT` | server | `15702` | Its port |
-| `BEVY_FAIRY_CAPTURE_DIR` | server | `./debug_captures` | Where `screenshot` saves PNGs |
-| `RUST_LOG` | server | `info` | Log level; logs go to stderr, stdout carries MCP |
-| `BEVY_FAIRY_SCENE` | game | unset | A saved scene to replay at startup |
-
-### Examples
-
-None of these need a window or a GPU unless noted. Each prints what happened.
-
-| Command | Shows |
-|---|---|
-| `cargo run --features plugin --example plugin_injected_input_lands` | An injected key is `just_pressed` for exactly one frame |
-| `cargo run --features plugin --example plugin_typed_text_lands` | Typed text reaches a text field |
-| `cargo run --features plugin --example plugin_cursor_drag_lands` | A click-drag lands where it was aimed |
-| `cargo run --features plugin-guide --example plugin_guided_steps_land` | A three-step guide script, driven to completion |
-| `cargo run --features plugin-screenshot --example plugin_agent_scene` | A small game with a command and an offscreen capture target (opens a window) |
-| `cargo run --features plugin --example fixture_game` | The headless game the tests and evals check the tools against |
-| `cargo run --features plugin-screenshot --example demo_game` | The fixture game rendered offscreen, headless; the GIFs above are recorded from it |
-
-## Development
-
-```sh
-cargo test --workspace                                                    # everything
-cargo test --no-default-features --features plugin --test plugin_leaf     # the no-OS-access check
-UPDATE_TOOL_REFERENCE=1 cargo test --test tool_list                       # regenerate docs/mcp-tools.md
-```
-
-Tool behaviour is tested against `examples/fixture_game.rs`, whose state is known from its own
-constants. [`evals/`](https://github.com/bevy-coven/bevy_fairy/blob/main/evals/README.md) measures
-whether an agent with only this server can answer debugging questions about that game.
-[`CLAUDE.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CLAUDE.md) explains the design
-decisions that are easy to undo by accident.
-
-Issues and pull requests are welcome at [github.com/bevy-coven/bevy_fairy](https://github.com/bevy-coven/bevy_fairy/issues).
-
-## Changelog
-
-See [`CHANGELOG.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CHANGELOG.md).
-
-## License
+Maintained by [@Ladvien](https://github.com/Ladvien). Issues and pull requests are welcome at [github.com/bevy-coven/bevy_fairy/issues](https://github.com/bevy-coven/bevy_fairy/issues); read the org's [CONTRIBUTING.md](https://github.com/bevy-coven/.github/blob/main/CONTRIBUTING.md) first.
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

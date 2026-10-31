@@ -1,5 +1,11 @@
 # Fixing MCP Server stdio Mode for Claude Desktop
 
+> **History, not instructions.** This was a 2025 workaround for an `rmcp` version that logged to
+> stdout. The server now writes its logs to stderr with ANSI off in every mode
+> (`src/main.rs`), so no wrapper script is needed: a client spawns `bevy-fairy --stdio` directly.
+> Kept for the record, because the symptom is worth recognising. The current setup is
+> [`../guide/clients.md`](../guide/clients.md).
+
 ## Problem
 
 When running bevy-fairy with Claude Desktop, you may encounter "Unexpected token" JSON parsing errors in the logs:

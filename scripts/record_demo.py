@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Records the README's two GIFs from examples/demo_game.rs. Stdlib only, plus ImageMagick and ffmpeg.
+"""Records the README's GIFs and its still from examples/demo_game.rs. Stdlib only, plus ImageMagick
+and ffmpeg.
 
-    python3 scripts/record_demo.py tour     # docs/media/mcp-tour.gif
-    python3 scripts/record_demo.py agent    # docs/media/agent-session.gif
-    python3 scripts/record_demo.py all      # both
+    python3 scripts/record_demo.py hero     # docs/media/hero.gif and docs/media/hero.png
+    python3 scripts/record_demo.py tour     # docs/media/mcp-tour.gif (32 s: the full tour)
+    python3 scripts/record_demo.py agent    # docs/media/agent-session.gif (25 s: an agent session)
+    python3 scripts/record_demo.py all      # tour and agent
 
-`tour` drives the demo game through the real bevy-fairy server over MCP stdio, and puts each reply
-beside the frame the server's own `screenshot` tool saved. `agent` runs the `spinner_stops` eval
-through evals/run.py until one session passes, at most three times, and draws its transcript.
+`hero` is the README's hero: six seconds, one idea, `status` then a read-and-see then three `run`
+calls, plus the still PNG beside it. `tour` is the same loop at more length. `agent` runs the
+`spinner_stops` eval through evals/run.py until one session passes, at most three times, and draws
+its transcript. All three drive the real bevy-fairy server over MCP stdio.
 
-Nothing in either GIF is written by this script: every reply is the server's text, pretty-printed
+Nothing in any of them is written by this script: every reply is the server's text, pretty-printed
 when it is JSON, and every picture is the game's own frame. A tool error aborts the recording,
 because a demo that showed one would be showing a failure as if it were the product.
 """
@@ -26,9 +29,12 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-GAME_BIN = REPO / "target" / "debug" / "examples" / "demo_game"
-SERVER_BIN = REPO / "target" / "debug" / "bevy-fairy"
-WORK = REPO / "target" / "demo"
+# `CARGO_TARGET_DIR` is honoured, because a machine that shares one target across checkouts (the
+# docs gate does) has no target/ inside the repository.
+TARGET = Path(os.environ.get("CARGO_TARGET_DIR") or (REPO / "target"))
+GAME_BIN = TARGET / "debug" / "examples" / "demo_game"
+SERVER_BIN = TARGET / "debug" / "bevy-fairy"
+WORK = TARGET / "demo"
 MEDIA = REPO / "docs" / "media"
 BUILD_COMMANDS = (
     "cargo build -j 4 --example demo_game --features plugin-screenshot",
@@ -194,8 +200,9 @@ def render_terminal(path, title, lines):
             str(path)])
 
 
-def assemble_gif(frames, out, work):
-    """`frames` is [(png, seconds)]. Writes `out`, at 960 px wide if full width is over 10 MB."""
+def assemble_gif(frames, out, work, width=None, fps=10):
+    """`frames` is [(png, seconds)]. Writes `out`, at `width` px if given, else 960 px when the full
+    width would go over MAX_GIF_BYTES."""
     listing = work / "frames.txt"
     entries = []
     for png, seconds in frames:
@@ -204,16 +211,19 @@ def assemble_gif(frames, out, work):
     entries.append(f"file '{frames[-1][0]}'")
     listing.write_text("\n".join(entries) + "\n")
     staged = work / out.name
-    for prefix in ("", "scale=960:-1:flags=lanczos,"):
+    palette = PALETTE if fps == 10 else PALETTE.replace("fps=10,", f"fps={fps},")
+    prefixes = [f"scale={width}:-1:flags=lanczos,"] if width else ["", "scale=960:-1:flags=lanczos,"]
+    for prefix in prefixes:
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-                        "-vf", prefix + PALETTE, "-loop", "0", str(staged)], check=True)
+                        "-vf", prefix + palette, "-loop", "0", str(staged)], check=True)
         size = staged.stat().st_size
         if size <= MAX_GIF_BYTES:
             MEDIA.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(staged, out)
             print(f"wrote {out.relative_to(REPO)} ({size / 1e6:.1f} MB, {len(frames)} frames)")
             return
-    raise RuntimeError(f"{staged} is {size} bytes even at 960 px wide; the limit is {MAX_GIF_BYTES}")
+    raise RuntimeError(f"{staged} is {size} bytes at {width or 960} px wide; the limit is "
+                       f"{MAX_GIF_BYTES}")
 
 
 # --------------------------------------------------------------------------- tour
@@ -307,6 +317,77 @@ def tour():
         render_frame(png, title, lines, capture, footer)
         frames.append((png, seconds))
     assemble_gif(frames, MEDIA / "mcp-tour.gif", work)
+
+
+# --------------------------------------------------------------------------- hero
+
+
+HERO_STEPS = 6  # frames of the GIF, and so about six seconds: the budget is 3 to 8.
+
+
+def hero():
+    """A six-second GIF of the loop that matters: read the game, see the frame, drive the game.
+
+    It is the README's hero, so it has to fit the house budget (3 to 8 seconds, 960 px wide,
+    15 fps, 4 MB) and show one idea. The full tour stays in `mcp-tour.gif` for the book.
+    """
+    work = fresh_workdir("hero")
+    steps = []  # (title, left lines, capture, seconds)
+    game = mcp = None
+    still = None
+    try:
+        port = EVALS.free_port()
+        game = EVALS.start_fixture(GAME_BIN, port, work / "game.log", fps=TOUR_FPS)
+        mcp = Mcp(port, work)
+        footer = f"real replies from bevy-fairy {mcp.version} · game: examples/demo_game.rs"
+
+        steps.append(("status: is the game answering, and ready?",
+                      call_lines("status", {}, mcp.call("status", {})), None, 0.9))
+
+        while game_frame(mcp) < LOOP_START_FRAME:
+            time.sleep(0.2)
+
+        query = {"method": "world.query", "params": {"data": {"components": ["fixture_game::Spinner"]}}}
+        shot = {"save_to": "hero_1.png"}
+        reply = mcp.call("brp", query)
+        saved = mcp.call("screenshot", shot)
+        steps.append(("brp + screenshot: the state, and the frame it came from",
+                      call_lines("brp", query, reply) + [""] + call_lines("screenshot", shot, saved),
+                      work / shot["save_to"], 1.7))
+        still = work / shot["save_to"]
+
+        for k, at in enumerate(CUBES, start=1):
+            command = {"command": "demo/spawn_cube", "params": {"at": at}}
+            reply = mcp.call("run", command)
+            shot = {"save_to": f"hero_cube_{k}.png"}
+            saved = mcp.call("screenshot", shot)
+            steps.append(("run: an agent drives the game through its own command",
+                          call_lines("run", command, reply) + [""] + call_lines("screenshot", shot, saved),
+                          work / shot["save_to"], 1.1))
+        mcp.call("quit", {})
+    finally:
+        EVALS.kill_group(mcp.proc if mcp else None)
+        EVALS.kill_group(game)
+
+    # One still, at the capture's own size, paired with the call that produced it: an image in the
+    # README that is not a GIF, because stills correlate with a project's popularity and animations
+    # do not (Venigalla & Chimalakonda 2022).
+    render_still(MEDIA / "hero.png", "brp + screenshot: the state, and the frame it came from",
+                 steps[1][1], still, footer)
+
+    frames = []
+    for i, (title, lines, capture, seconds) in enumerate(steps):
+        png = work / f"frame_{i:03}.png"
+        render_frame(png, title, lines, capture, footer)
+        frames.append((png, seconds))
+    if len(frames) != HERO_STEPS:
+        raise RuntimeError(f"the hero is {len(frames)} frames; it was budgeted for {HERO_STEPS}")
+    assemble_gif(frames, MEDIA / "hero.gif", work, width=960, fps=15)
+
+
+def render_still(path, title, left_lines, right_png, footer):
+    """The README's still PNG: the same panels as a tour frame, and no GIF machinery."""
+    render_frame(path, title, left_lines, right_png, footer)
 
 
 # --------------------------------------------------------------------------- agent
@@ -419,9 +500,11 @@ def check_prerequisites():
 
 def main():
     ap = argparse.ArgumentParser(description="Record the README's demo GIFs.")
-    ap.add_argument("mode", choices=["tour", "agent", "all"])
+    ap.add_argument("mode", choices=["hero", "tour", "agent", "all"])
     args = ap.parse_args()
     check_prerequisites()
+    if args.mode == "hero":
+        hero()
     if args.mode in ("tour", "all"):
         tour()
     if args.mode in ("agent", "all"):

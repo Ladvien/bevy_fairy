@@ -53,6 +53,8 @@ The crate has two halves:
 
 Focus for this iteration: `$ARGUMENTS`. If empty, follow the priority order and the evidence you gather.
 
+README and docs follow https://github.com/bevy-coven/.github/blob/main/DOCUMENTATION.md; a feature is not done until its README line and, if visible, its GIF exist.
+
 ## Definition of done
 
 This iteration is done when all of the following are true, or when you have taken the "ship nothing" exit (Non-negotiable 5):

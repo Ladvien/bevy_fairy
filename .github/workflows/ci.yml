@@ -27,6 +27,14 @@ jobs:
       # back, and `--all-features` back on the two steps below.
       - run: ./scripts/ratchet.sh
       - run: xvfb-run -a cargo test --workspace --no-fail-fast
+      # `cargo test --workspace` runs the doctests too, but the README's blocks depend on the
+      # plugin feature, which a workspace test with default features happens to have. This step
+      # names them so a failure points at the README rather than at the suite, and so the
+      # `--no-default-features --features plugin` reading of it is covered as well.
+      - run: xvfb-run -a cargo test --doc --no-default-features --features plugin
+      # Examples double as tests (Lee 2018, rules 2 and 8): a Quick Start that stops compiling
+      # fails here rather than in a reader's editor.
+      - run: cargo build --examples --features plugin-screenshot,plugin-guide,plugin-ui-text
       - run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links

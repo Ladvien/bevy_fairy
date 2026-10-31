@@ -1,5 +1,13 @@
 # bevy-fairy Usage Guide
 
+> **History, not instructions.** This page was written in 2025 against an earlier design and is kept
+> for the record. It names tools this server does not have (`anomaly`, `stress`, `replay`,
+> `diagnostic_report`), features it does not have (checkpoints, a dead letter queue, pipeline
+> orchestration, time travel) and a testing API it does not export. The current guide is
+> [`../guide/README.md`](../guide/README.md), and the current tool list is
+> [`../mcp-tools.md`](../mcp-tools.md), which is generated from the server. Nothing below is an
+> instruction to follow.
+
 A comprehensive guide to getting the most out of bevy-fairy for debugging your Bevy games.
 
 ## Table of Contents

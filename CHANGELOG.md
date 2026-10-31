@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+Documentation only: no crate behaviour changes, so this needs no new version until the next code
+change ships. The README, `docs/` and the media were brought to the org's
+[documentation guide](https://github.com/bevy-coven/.github/blob/main/DOCUMENTATION.md).
+
+### Changed
+
+- **The README is 104 lines and follows one order**: title, the Vibe Coded banner, the pitch, one badge row, a six-second hero GIF and its caption, a still PNG, the Status line, the Why line, a Quick Start whose Rust block `cargo test --doc` now compiles, Try it, seven "What you can do" bullets, Part of the Coven, the Bevy compatibility table, Learn more, and Who and licence. Everything the README used to carry beyond that moved into `docs/guide/` rather than being deleted: the install page, the client setup and its failure table, the command registration example, capture, input, the guide overlay, the BRP method table, the feature table, the environment variables and the examples.
+- **`src/lib.rs` doctests the README** (`struct ReadmeDoctests`), so a Quick Start that stops compiling fails the build. A block that needs a window or a running game is `no_run`, which still compiles it.
+- **CI runs `cargo test --doc --no-default-features --features plugin` and `cargo build --examples`**, which it did not before: `cargo nextest` does not run doctests, and an example that stops compiling was invisible until someone ran it.
+- **`book/` is gone.** `SCREENSHOT_SETUP.md` became `docs/guide/capture.md`; `USAGE_GUIDE.md` became `docs/history/usage-guide-2025.md`, with a header saying it is history, because it names tools this server does not have (`anomaly`, `stress`, `replay`, `diagnostic_report`), features it does not have (checkpoints, a dead letter queue, pipeline orchestration) and a testing API it does not export.
+- **`docs/installation/`, `docs/quick-start.md` and `docs/tutorials/` are `docs/guide/`**: `install.md`, `clients.md`, `quick-start.md` and `workflows.md`, with `docs/guide/README.md` as the index. `docs/STDIO_FIX.md` became `docs/history/stdio-ansi-workaround.md`: the fix it describes is in the server now, and the page is kept because the symptom is worth recognising.
+- **`docs/media/README.md`** lists every image, GIF and video with the command that regenerates it, its capture date and the crate version it shows. The GIFs moved from absolute `raw.githubusercontent.com` URLs to relative paths, because an absolute one breaks when a repository moves and crates.io rewrites a relative one for you.
+- **`scripts/record_demo.py hero`** records the README's six-second hero GIF and its still PNG; `tour` and `agent` keep the longer recordings for the book.
+- **Every doc page that named a tool or an argument now names one that exists.** `docs/tutorials/README.md` described `anomaly`, `stress`, `replay` and `checkpoint`, which no version of this server has had.
+
+### Fixed
+
+- `docs/quick-start.md` said "Rust 1.70+" while `Cargo.toml` sets `rust-version = "1.95"`, and its example output claimed a `show me all entities` reply that the `observe` tool does not produce (it refuses a bare word and lists the query shapes it accepts).
+- `tests/docs_drift.rs` read `book/SCREENSHOT_SETUP.md` by name; it reads `docs/guide/install.md` now, which is where the `bevy = { version = ... }` line lives.
+
 ## 0.12.0 - 2026-10-31
 
 Covers everything since 0.11.0 (semver-checks: 1 major check: `handle_guide` takes 3 parameters instead of 2). Breaking: the plugin's `handle_guide` also reads `Checkpoints`, and `watch_guide` no longer evaluates a checkpoint (a host that does not use `DebuggerPlugin` adds `evaluate_checkpoint` to `Last`). Tool-side: the `guide` tool refuses what it used to accept (an unregistered checkpoint, two verbs in one call, `skip` with no current step, `visible` beside `read` or `clear`), and `status` / `bevy_fairy/time` answer differently in the cases listed below.

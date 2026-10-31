@@ -112,3 +112,13 @@ pub use server::prelude;
 
 #[cfg(feature = "server")]
 pub use server::brp as brp_messages;
+
+// The README's Rust blocks are compiled as doctests, so a Quick Start that stops compiling fails
+// the build instead of misleading the next reader. A block that needs a window or a game running is
+// marked `no_run`, which still compiles it; `cargo test --doc` runs this, and CI runs that.
+//
+// `docs/guide/*.md` are examples rather than library docs, so they are not pulled in here: a guide
+// page that needs a window would fail to compile in a crate whose tests run headless.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

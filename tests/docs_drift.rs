@@ -231,7 +231,7 @@ fn the_docs_name_the_bevy_version_the_crate_uses() {
 
     for (what, text) in [
         ("README.md", read("README.md")),
-        ("book/SCREENSHOT_SETUP.md", read("book/SCREENSHOT_SETUP.md")),
+        ("docs/guide/install.md", read("docs/guide/install.md")),
         ("src/lib.rs", read("src/lib.rs")),
     ] {
         for line in text.lines() {
