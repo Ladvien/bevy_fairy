@@ -191,6 +191,70 @@
       "evidence": "needs an eval task that fails today (an agent asked to find the entity whose Mover speed is anomalous cannot with this tool) before it is built",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-109",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "experiment's undo/redo history is process-wide and kept by the server, so after the game restarts `undo` deletes or overwrites whatever now has the recorded entity id (a fresh process allocates the same ids in the same order)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "experiment.rs EXPERIMENT_STATE, experiment_system.rs; read, not run"
+      },
+      "status": "unconfirmed",
+      "evidence": "The tool description now says to call clear_history after a restart. Fix: stamp each entry with a game-instance token (a bevy_fairy/status start marker) and refuse on mismatch; a game without the plugin has no token. Needs a failing test that restarts a fixture.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-110",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "experiment replies are not read back: a modify that a game system overwrites next frame still says success; undo/redo replies describe the reverse operation (action_type 'delete' for an undone spawn) not the undo; redo of a spawn makes a new entity id while later redo entries keep the old one",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "experiment_system.rs execute_modify, undo, redo; seen in the live smoke (undo of a spawn answered action_type delete)"
+      },
+      "status": "open",
+      "evidence": "Fix: re-read with world.get_components after a modify and return before/after; wrap undo/redo results with action_type undo|redo and the entry reversed; remap ids on redo.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-111",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "hypothesis iterations change the live game and nothing restores it (spawns accumulate, modifies stay); fuzz overwrites a delete's entity_id with a random 0..1000 that is almost never a valid entity; variations leave object and array values unvaried (grid, boundary, fuzz), boundary pushes +-infinity which serialises to null, grid turns integers into floats, include_empty only empties strings; seed defaults to the epoch second",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "hypothesis_system.rs mutate_component_value, fuzz_value, boundary values; read, not run"
+      },
+      "status": "open",
+      "evidence": "Fix: record spawned and modified state per run and restore it (or refuse a variation over a delete), report variations_applied, drop non-finite boundary values, recurse into arrays and objects.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-112",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "timeout bounds one action, not the run, and the BRP client write lock is held for the whole run, so a 1000-iteration stress_test blocks every other tool; iterations does not apply to none, grid and boundary",
+      "must_fix": {
+        "misleads": false,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "tools/hypothesis.rs handle_test (client = brp_client.write()), hypothesis_system.rs run"
+      },
+      "status": "open",
+      "evidence": "Fix: one deadline for the run, take the client per iteration; documented in the tool text for now.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }

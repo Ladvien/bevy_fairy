@@ -1231,6 +1231,230 @@
       "evidence": "587587e, 84fd461, 62bb197: `fields` per leaf with the same four numbers, ranked stopped/moving/never-moved, absent_samples. fixture_ground_truth::watch_without_a_pointer_says_which_spinner_field_froze failed on 7d2e7a1 ('the reply has no `fields` array') and passes; 15 unit tests in server::watch_fields; 18 manual mutants killed; two independent review rounds, three gaps fixed. Dev evals did not move (the agent could already read the freeze off the raw samples): 6/6 before and after. Released in v0.10.0.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-095",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "hypothesis counted an action the game refused as a violation, so the claim was REJECTED with the constant error 'Action execution failed' though its condition was never read; zero iterations answered REJECTED (CONFIRMED with threshold 0)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "src/server/hypothesis_system.rs TestRunner::run, tools/hypothesis.rs verdict"
+      },
+      "status": "fixed",
+      "evidence": "577d6b0: held / violated / not_evaluated, verdict bounds the held share by what is known, NOT_EVALUATED when no iteration read the condition, game's own message in `examples`, null rate/interval when nothing evaluated. fixture_ground_truth::hypothesis_whose_actions_the_game_refused_is_not_evaluated_not_rejected failed on edce726 (REJECTED, 'Action execution failed') and passes.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-096",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "hypothesis JSON conditions that could not be read parsed to ones every game satisfies (component_types as a string became [], a string inside all was skipped, a non-integer count became 'any'), so the claim was CONFIRMED at 100%",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "tools/hypothesis.rs parse_assertion_from_json"
+      },
+      "status": "fixed",
+      "evidence": "7325dbf: serde with deny_unknown_fields + Assertion::check(). fixture_ground_truth::hypothesis_refuses_a_condition_it_cannot_read_instead_of_confirming_it failed on 577d6b0 (CONFIRMED, 100.0% for component_types: 'fixture_game::Crate').",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-097",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "the string condition 'action_succeeds' invented an action (spawn an empty entity), ran it every iteration, left an entity behind each time and answered CONFIRMED",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "hypothesis_system.rs Assertion::parse"
+      },
+      "status": "fixed",
+      "evidence": "7325dbf: refused with the object form. fixture_ground_truth::hypothesis_action_succeeds_without_an_action_is_refused_and_spawns_nothing.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-098",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "component_equals compared serde_json::Value, where the integer 3 and the float 3.0 differ, so a true claim was REJECTED",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "hypothesis_system.rs Assertion::evaluate"
+      },
+      "status": "fixed",
+      "evidence": "0507dfa: numbers compared as numbers, recursively. fixture_ground_truth::hypothesis_component_equals_does_not_tell_3_from_3_point_0.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-099",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "a component name the game never registered was judged false by entity_exists / component_equals and true by its negation, whatever the game did",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "hypothesis_system.rs component_value"
+      },
+      "status": "fixed",
+      "evidence": "0507dfa: world.list_components pre-flight before any action, close names offered, ambiguous short names refused; 611f2cc extends it to action_succeeds' components (B-107). fixture_ground_truth::hypothesis_refuses_a_component_the_game_never_registered_instead_of_judging_the_claim.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-100",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "one iteration reported confidence_interval [1.0, 1.0] and confidence_level '100.0%' (Wald interval; the level was a linear remap of its bound)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "hypothesis_system.rs calculate_confidence_interval, confidence_level"
+      },
+      "status": "fixed",
+      "evidence": "cdcac6d: 95% Wilson interval labelled with level and method, confidence_level removed. fixture_ground_truth::hypothesis_read_once_does_not_claim_certainty.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-101",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "a refused action (empty component type) was an Err that escaped execute's loop: the spawns that had already happened were lost from the reply, and in an atomic batch the '?' skipped rollback and the transaction pop, so no later action in the process was recorded for undo",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "experiment_system.rs execute_batch, tools/experiment.rs handle_execute"
+      },
+      "status": "fixed",
+      "evidence": "3506ce6: refused actions are failed results in dispatch; atomic batch stops at its first failure and marks rolled_back. fixture_ground_truth::experiment_reports_a_refused_action_beside_the_ones_that_ran failed on 794c301's parent (tool error 'Component type ID cannot be empty').",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-102",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "a batch was its own history entry with no reverse, so undo answered '`batch` cannot be undone' forever and earlier entries were unreachable; a batch's reply named no spawned entity",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "experiment_system.rs execute_action, execute_batch"
+      },
+      "status": "fixed",
+      "evidence": "3506ce6: a batch is not an entry, its actions are (an atomic batch's on commit), and its reply lists each action's result. fixture_ground_truth::experiment_batch_names_what_it_spawned_and_can_be_undone.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-103",
+      "kind": "change",
+      "area": "experiment",
+      "title": "the archetypes action advertised player/enemy/projectile/static_mesh, hard-coded lists of short component names and {x,y,z} objects that BRP refuses against any game",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "experiment_system.rs apply_archetype, EntityFactory"
+      },
+      "status": "fixed",
+      "evidence": "160c564 (assumed decision: delete, recorded in the commit): archetypes action, archetype field and EntityFactory removed. fixture_ground_truth::experiment_offers_no_archetypes_and_refuses_fields_it_does_not_read.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-104",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "Action and ComponentSpec ignored fields they did not read: a path on a component was dropped and the whole component overwritten",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "experiment_system.rs Action, ComponentSpec"
+      },
+      "status": "fixed",
+      "evidence": "160c564: deny_unknown_fields. Same test as B-103.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-105",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "random variation with numeric_min >= numeric_max, or fuzz with max_mutations 0, panicked the generator ('cannot sample empty range') so the tool call never answered; probabilities outside 0..1 were accepted",
+      "must_fix": {
+        "misleads": false,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "hypothesis_system.rs:757,637"
+      },
+      "status": "fixed",
+      "evidence": "b065da2: refused naming the argument before any action runs. fixture_ground_truth::hypothesis_refuses_variation_settings_that_would_panic_the_generator panicked on 794c301's parent.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-106",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "rollback skipped failed results without looking inside them, so a batch inside an atomic batch that half-succeeded kept its spawn under a reply saying 'rolled back', unrecorded for undo (found by the independent review)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "experiment_system.rs rollback_transaction"
+      },
+      "status": "fixed",
+      "evidence": "611f2cc: a batch cannot contain a batch. fixture_ground_truth::experiment_refuses_a_batch_inside_a_batch_instead_of_half_reversing_it.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-107",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "action_succeeds' action was outside the registry pre-flight and an empty type_id was not refused: not(action_succeeds spawn Crat) was CONFIRMED at 100% (found by the independent review)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "hypothesis_system.rs component_names"
+      },
+      "status": "fixed",
+      "evidence": "611f2cc: Action::component_types feeds component_names; check() refuses an empty type_id.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-108",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "threshold 0 passed validation and confirmed a claim that failed every time it was read (found by the independent review)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tools/hypothesis.rs"
+      },
+      "status": "fixed",
+      "evidence": "611f2cc: threshold must be above 0.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }
