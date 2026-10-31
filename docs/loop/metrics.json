@@ -1,12 +1,12 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "420019e",
+  "sha": "525ee7e",
   "server": {
-    "loc": 19720,
+    "loc": 20106,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
-    "release_binary_bytes": 104828456,
+    "release_binary_bytes": 104850880,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
@@ -80,7 +80,8 @@
     "2026-10-30: server loc 51207 -> 47558 (find src/server -name '*.rs' | cat | wc -l): cli.rs (426, never compiled), brp_client_v2.rs (383), brp_client_refactored.rs (278) deleted, plus earlier observability removal; clippy ratchet OK, known_red unchanged.",
     "2026-10-30 (fa6a556): server loc 19811 -> 19788 (find src/server -name '*.rs' | xargs cat | wc -l) for the observe fixes B-071..B-073: reflection path removed (-~60), show-entity fill-in and query-scoped diff baseline added (+~70). known_red re-recorded: manual_strip 2 -> 0 (observe.rs), vec_init_then_push 1 -> 0 and dead_code 14 -> 12 (anomaly_detector.rs, under-recorded by 42bad35). A `observe_diff...|FAILED` entry the --record run captured while the test was being edited mid-run was removed: the test passes at fa6a556 (fixture_ground_truth 20/20).",
     "2026-10-30 (acbe1c4): server loc 19788 -> 19632 (find src/server -name '*.rs' | xargs cat | wc -l): observe's semantic path and unreachable snapshot history removed (B-077, B-076), the find-N limit carried and applied (B-079, +~40). known_red lowered by hand from the same clippy --workspace --all-targets JSON the ratchet reads (86 -> 79): field_reassign_with_default 24 -> 20 and unused_mut 1 -> 0 (state_diff.rs, test_state_diff.rs), dead_code 12 -> 10 (query_parser.rs: the never-read `description` now builds the help text, the semantic field is gone). Tool count unchanged (15).",
-    "2026-10-30 (7505991, v0.9.0): release_binary_bytes 99925248 -> 105777312 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked`). The old number was recorded once at 9b4a317 (2026-10-21) and never re-measured, so the increase spans every iteration since, including the `image` dependency `burst` added; this pass removed code and added no dependency. Measure it each release from here."
+    "2026-10-30 (7505991, v0.9.0): release_binary_bytes 99925248 -> 105777312 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked`). The old number was recorded once at 9b4a317 (2026-10-21) and never re-measured, so the increase spans every iteration since, including the `image` dependency `burst` added; this pass removed code and added no dependency. Measure it each release from here.",
+    "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",

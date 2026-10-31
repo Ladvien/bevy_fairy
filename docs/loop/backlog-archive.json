@@ -1135,6 +1135,86 @@
       "evidence": "1661e39: handle_configure checks the merged config with check_window_holds_min_samples and refuses with an error naming both fields. tools/anomaly.rs::configure_refuses_a_window_below_min_samples answered success before and is refused after; a_window_smaller_than_the_samples_a_detector_needs_is_refused pins the boundary (window == min_samples ok, 2/1 ok, 5/10, 9/10, 1/1, 0/1 refused).",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-087",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "PhysicsDetector and PerformanceDetector severity was always 1.0: severity = (value / threshold).min(1.0) was computed only when value > threshold, so the min clamped the ratio to exactly 1.0 and min_severity could not separate their detections",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "src/server/anomaly_detector.rs: both severities were computed inside `if value > threshold`"
+      },
+      "status": "fixed",
+      "evidence": "c1d3cad: severity_past = 1 - threshold / value. entity_growth_severity_rises_with_how_far_past_the_threshold_it_is failed with `1 1 1` before and pins 0.5 at twice the threshold; physics_severity_rises_with_how_far_past_the_z_score_threshold_it_is is metamorphic.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-088",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly configure accepted iqr_multiplier and performance_threshold (described as a frame time in ms) and echoed them while no detector read either; status listed three anomaly types no detector emits",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "grep: iqr_multiplier and performance_threshold are written by configure and read nowhere; PotentialMemoryLeak, PerformanceSpike and RapidValueChange appear only in the enum and in status"
+      },
+      "status": "fixed",
+      "evidence": "c1d3cad: both arguments and the three variants removed; supported_anomaly_types derives from AnomalyDetector::emits. tools::anomaly::tests::status_lists_the_anomaly_types_the_detectors_emit_and_no_others failed (six listed, three emitted) and passes; tool_contract::detect_anomaly_refuses_thresholds_no_detector_reads.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-089",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect answered anomalies: [] and entities_analyzed: N for a game in which no detector found a component it reads, so an empty result read as a clean one",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "live against the fixture: entities_analyzed 102 while PhysicsDetector and ConsistencyDetector read nothing"
+      },
+      "status": "fixed",
+      "evidence": "c1d3cad plus the review fix: detect returns detectors (reads, examined, evaluated, status) and a note; entities_analyzed is entities_read; physics reports not evaluated while its threshold is unreachable at the samples held. fixture_ground_truth::detect_anomaly_reports_what_the_detectors_could_not_read_in_the_fixture, tool_contract::detect_anomaly_says_what_each_detector_could_read, anomaly_detector::tests::physics_coverage_says_when_the_threshold_cannot_be_reached_with_the_samples_held.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-090",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "the physics and consistency detectors looked up the literal component key Velocity/Health/Alive and an {x,y,z} object, but BRP keys a component by its full type path and sends a Vec3 as [x,y,z], so they could not fire against a real game; an entity with no Alive component was reported as marked as alive",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": true,
+        "evidence": "entity_data_from_query_result copies the row's component keys unchanged; the fixture's mover_x helper reads translation[0]"
+      },
+      "status": "fixed",
+      "evidence": "c1d3cad: component_named matches the whole last path segment, vector_of reads both forms, health_and_alive needs both components. the_physics_detector_reads_a_velocity_as_brp_sends_it and the_consistency_detector_reads_health_and_alive_as_brp_sends_them failed before; two guard tests pass on both sides because the old detector read nothing.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-091",
+      "kind": "change",
+      "area": "provenance",
+      "title": "observe and detect_anomaly replies carried no game frame, so an agent could not tell fresh evidence from stale (only watch stamped frames)",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "the tool contract: every result carries its provenance, the frame number and timestamp it was observed at"
+      },
+      "status": "fixed",
+      "evidence": "525ee7e: frame and frame_until from bevy_fairy/status before and after the handler, frame_unavailable plus the reason when the game lacks it. fixture_ground_truth::observe_brackets_the_frame_every_read_was_taken_on failed with 'the reply carries no frame' and passes; tool_contract::a_read_from_a_game_without_the_plugin_says_why_it_has_no_frame.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }

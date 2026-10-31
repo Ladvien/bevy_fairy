@@ -161,18 +161,34 @@
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-087",
+      "id": "B-092",
       "kind": "bug",
       "area": "anomaly",
-      "title": "PhysicsDetector and PerformanceDetector severity is always 1.0: severity = (value / threshold).min(1.0) is computed only when value > threshold, so the ratio is already above 1 and the min clamps it to exactly 1.0; min_severity cannot separate their detections",
+      "title": "PhysicsDetector keeps a velocity history for every entity id it has ever read a Velocity from and never drops one, so a game that spawns and despawns entities grows the server's memory without bound",
       "must_fix": {
-        "misleads": true,
+        "misleads": false,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "src/server/anomaly_detector.rs: PhysicsDetector `(z_score.abs() / self.config.z_score_threshold).min(1.0)` inside `if z_score.abs() > threshold`; PerformanceDetector `(growth_rate / entity_growth_threshold).min(1.0)` inside `if growth_rate > threshold`. Found by the independent review of the #13 fix; follows from the code, not yet reproduced: write the failing test first (feed 20 entities per sample at threshold 10 and 11, expect different severities)."
+        "evidence": "src/server/anomaly_detector.rs PhysicsDetector::velocity_history is a HashMap<u64, RingBuffer> that detect() only inserts into. Follows from the code; not reproduced: write the failing test first (detect over entities 0..N, then over a disjoint set, expect the first set's histories gone)."
+      },
+      "status": "unconfirmed",
+      "evidence": "",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-093",
+      "kind": "change",
+      "area": "anomaly",
+      "title": "the anomaly detectors read components named Velocity, Health and Alive and nothing else; against any game that names its components otherwise detect reports every detector 'not evaluated' (honestly, since B-089). Let the caller name the components and fields.",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "tests/fixture_ground_truth.rs::detect_anomaly_reports_what_the_detectors_could_not_read_in_the_fixture: the fixture has none of the three, so two of three detectors read nothing"
       },
       "status": "open",
-      "evidence": "",
+      "evidence": "needs an eval task that fails today (an agent asked to find the entity whose Mover speed is anomalous cannot with this tool) before it is built",
       "last_failure": "",
       "first_seen": "2026-10-30"
     }
