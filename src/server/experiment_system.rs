@@ -41,6 +41,17 @@ impl Action {
             Self::Batch { .. } => "batch",
         }
     }
+
+    /// The component type paths this action names, looking inside batches.
+    pub fn component_types(&self) -> Vec<&str> {
+        match self {
+            Self::Spawn { components } | Self::Modify { components, .. } => {
+                components.iter().map(|c| c.type_id.as_str()).collect()
+            }
+            Self::Delete { .. } => Vec::new(),
+            Self::Batch { actions, .. } => actions.iter().flat_map(Action::component_types).collect(),
+        }
+    }
 }
 
 /// Component specification for spawn/modify actions
@@ -411,6 +422,16 @@ impl ActionExecutor {
             atomic
         );
 
+        // Reversing a batch that holds a batch would have to look inside it, and a half-reversed
+        // rollback that says "rolled back" is worse than a refusal. Nothing has run yet.
+        if actions.iter().any(|action| matches!(action, Action::Batch { .. })) {
+            return Ok(ActionResult::batch(
+                false,
+                "a batch cannot contain a batch: put all the actions in one batch. Nothing was run".to_string(),
+                Vec::new(),
+            ));
+        }
+
         if atomic {
             // Start transaction. The stack entry marks that one is open; `transaction` is the record.
             let mut transaction = Transaction::new(actions.to_vec());
@@ -496,13 +517,8 @@ impl ActionExecutor {
     /// entries behind for actions it had reversed.
     fn record_committed(&mut self, actions: &[Action], results: &[ActionResult]) {
         for (action, result) in actions.iter().zip(results) {
-            if !result.success {
-                continue;
-            }
-            match (action, &result.results) {
-                (Action::Batch { actions, .. }, Some(inner)) => self.record_committed(actions, inner),
-                (Action::Batch { .. }, None) => {}
-                _ => self.add_to_history(action.clone(), result.clone()),
+            if result.success {
+                self.add_to_history(action.clone(), result.clone());
             }
         }
     }

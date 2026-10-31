@@ -210,7 +210,13 @@ impl Assertion {
                     return Err(Error::Validation(reason.to_string()));
                 }
             }
-            Self::ActionSucceeds { .. } => {}
+            Self::ActionSucceeds { action } => {
+                if action.component_types().iter().any(|name| name.trim().is_empty()) {
+                    return Err(Error::Validation(
+                        "action_succeeds names a component with an empty type_id; the server would refuse the action every time, which reads as the action failing".to_string(),
+                    ));
+                }
+            }
             Self::All { assertions } | Self::Any { assertions } => {
                 if assertions.is_empty() {
                     return Err(Error::Validation(
@@ -234,7 +240,8 @@ impl Assertion {
             }
             Self::ComponentEquals { component_type, .. }
             | Self::ComponentMatches { component_type, .. } => vec![component_type.as_str()],
-            Self::PerformanceWithin { .. } | Self::ActionSucceeds { .. } => Vec::new(),
+            Self::PerformanceWithin { .. } => Vec::new(),
+            Self::ActionSucceeds { action } => action.component_types(),
             Self::All { assertions } | Self::Any { assertions } => {
                 assertions.iter().flat_map(Assertion::component_names).collect()
             }

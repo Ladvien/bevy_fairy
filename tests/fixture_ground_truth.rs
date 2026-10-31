@@ -1177,6 +1177,34 @@ async fn experiment_offers_no_archetypes_and_refuses_fields_it_does_not_read() {
     }
 }
 
+/// An atomic batch rolls back what it ran. Rollback skipped every failed result without looking
+/// inside it, so a batch inside an atomic batch that half-succeeded kept its spawn in the game
+/// while the reply said "rolled back", and nothing recorded it for `undo`. A batch inside a batch
+/// is refused, before anything runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_refuses_a_batch_inside_a_batch_instead_of_half_reversing_it() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+    let before = crate_weights(&tools).await;
+
+    for outer_atomic in [true, false] {
+        let inner = json!({"type": "batch", "actions": [spawn_crate(7.0), {"type": "delete", "entity_id": 999_999}]});
+        let run = experiment(
+            &tools,
+            json!({"action": "execute", "actions": [{"type": "batch", "atomic": outer_atomic, "actions": [spawn_crate(6.0), inner]}]}),
+        )
+        .await;
+        assert_eq!(run["results"][0]["success"], json!(false), "outer atomic {outer_atomic}: {run}");
+        let error = run["results"][0]["error"].as_str().unwrap_or_else(|| panic!("no error: {run}"));
+        assert!(error.contains("batch cannot contain a batch") && error.contains("Nothing was run"), "{error}");
+        assert_eq!(crate_weights(&tools).await, before, "outer atomic {outer_atomic}: nothing may have run");
+    }
+    let history = experiment(&tools, json!({"action": "history"})).await;
+    assert_eq!(history["count"], json!(0), "nothing ran, so nothing is recorded: {history}");
+}
+
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
 async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
     let params: bevy_fairy::server::mcp_tools::HypothesisRequest =
@@ -1313,7 +1341,7 @@ async fn hypothesis_refuses_a_threshold_outside_zero_to_one_before_touching_the_
     let before = crate_weights(&tools).await;
     let entity = *before.keys().next().expect("the fixture spawns crates");
 
-    for threshold in [1.5, -0.1] {
+    for threshold in [1.5, -0.1, 0.0] {
         let (reply, failed) = hypothesis(
             &tools,
             json!({
@@ -1389,6 +1417,10 @@ async fn hypothesis_refuses_a_condition_it_cannot_read_instead_of_confirming_it(
         (json!("entity_exists:"), "component"),
         (json!({"type": "performance_within", "metric": "frame_time", "max_value": 20.0}), "frame time"),
         (json!({"type": "performance_within", "metric": "frame_tim", "max_value": 20.0}), "frame_time"),
+        (
+            json!({"type": "action_succeeds", "action": {"type": "spawn", "components": [{"type_id": "", "value": 1}]}}),
+            "type_id",
+        ),
     ] {
         for action in ["test", "validate"] {
             let (reply, failed) = hypothesis(
@@ -1471,6 +1503,8 @@ async fn hypothesis_refuses_a_component_the_game_never_registered_instead_of_jud
         json!({"type": "any", "assertions": [
             {"type": "entity_exists", "component_types": ["fixture_game::Crate"]},
             {"type": "entity_exists", "component_types": ["fixture_game::Crat"]}]}),
+        json!({"type": "not", "assertion": {"type": "action_succeeds",
+            "action": {"type": "spawn", "components": [{"type_id": "fixture_game::Crat", "value": {"weight": 1.0}}]}}}),
     ] {
         let (reply, failed) = hypothesis(
             &tools,

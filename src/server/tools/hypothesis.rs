@@ -80,9 +80,10 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
         .get("threshold")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.95);
-    if !(0.0..=1.0).contains(&threshold) {
+    // 0 is refused too: "held in at least 0% of iterations" confirms a claim that failed every time.
+    if !(threshold > 0.0 && threshold <= 1.0) {
         return Err(Error::Validation(format!(
-            "'threshold' is the share of iterations in which the condition must hold, from 0 to 1; got {threshold}. Example: \"threshold\": 0.95"
+            "'threshold' is the share of iterations in which the condition must hold, above 0 and at most 1; got {threshold}. Example: \"threshold\": 0.95"
         )));
     }
 

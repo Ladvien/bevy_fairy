@@ -181,8 +181,8 @@ pub struct HypothesisRequest {
     /// so a seed repeats the variation, not the state the game is in.
     #[serde(default)]
     pub seed: Option<u64>,
-    /// The share of iterations, from 0 to 1, in which the condition must hold for the claim to
-    /// count as confirmed. Default 0.95. An iteration that was not evaluated does not count as held.
+    /// The share of iterations, above 0 and at most 1, in which the condition must hold for the
+    /// claim to count as confirmed. Default 0.95. An iteration that was not evaluated does not count as held.
     #[serde(default)]
     pub threshold: Option<f64>,
 }
@@ -807,7 +807,7 @@ impl BevyDebuggerTools {
     }
 
     /// Run controlled experiments on game state
-    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. `undo` and `redo` step through the recorded actions: a delete cannot be reversed, and a modify only when its components existed before. The reply does not read the game back, so a game system may overwrite a modified value on the next frame. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
+    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. `undo` and `redo` step through the recorded actions: a delete cannot be reversed, and a modify only when its components existed before. The reply does not read the game back, so a game system may overwrite a modified value on the next frame. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
     pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running experiment action: {}", req.action);
 
@@ -826,7 +826,7 @@ impl BevyDebuggerTools {
     }
 
     /// Test hypotheses about game behavior
-    #[tool(description = "Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it. The condition is a string (entity_exists:game::Crate or component_equals:game::Score=100) or an object whose type is entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any or not. A condition that cannot be read as written, or that names a component the game never registered, is refused before anything runs. The `actions` run on every iteration and change the live game; they are not undone. The reply's verdict is CONFIRMED, REJECTED, INCONCLUSIVE or NOT_EVALUATED, and statistics counts each iteration as held, violated, or not_evaluated: an action failed first, so the condition was never read, and the examples carry the game's own message. NOT_EVALUATED says nothing about the claim. Without variation there is one iteration, so CONFIRMED means the condition held once when read, and the interval says how little that shows.")]
+    #[tool(description = "Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it. The condition is a string (entity_exists:game::Crate or component_equals:game::Score=100) or an object whose type is entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any or not. A condition that cannot be read as written, or that names a component the game never registered, is refused before anything runs. The `actions` run on every iteration and change the live game; they are not undone. The reply's verdict is CONFIRMED, REJECTED, INCONCLUSIVE or NOT_EVALUATED, and statistics counts each iteration as held, violated, or not_evaluated: an action failed first, so the condition was never read, and the examples carry the game's own message. NOT_EVALUATED says nothing about the claim. success_rate and the interval are over the iterations that read the condition; the verdict counts every iteration, so held plus violated below iterations_run keeps it from CONFIRMED. Without variation there is one iteration, so CONFIRMED means the condition held once when read, and the interval says how little that shows.")]
     pub async fn hypothesis(&self, Parameters(req): Parameters<HypothesisRequest>) -> Result<CallToolResult, McpError> {
         debug!("Testing hypothesis action: {}", req.action);
 
