@@ -1332,6 +1332,38 @@ async fn hypothesis_refuses_a_threshold_outside_zero_to_one_before_touching_the_
     assert_eq!(crate_weights(&tools).await, before, "a refused request must not have changed the game");
 }
 
+/// The variation generators call `random_range` on a range the caller chose, and it panics on an
+/// empty one: `numeric_min` at or above `numeric_max`, or `max_mutations` of 0. A panic in the
+/// handler is a tool call that never answers. Each is refused naming the argument, before any
+/// action runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_variation_settings_that_would_panic_the_generator() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+
+    for (settings, argument) in [
+        (json!({"variation_type": "random", "numeric_min": 5.0, "numeric_max": 5.0}), "numeric_max"),
+        (json!({"variation_type": "random", "numeric_min": 9.0, "numeric_max": 1.0}), "numeric_max"),
+        (json!({"variation_type": "random", "bool_probability": -1.0}), "bool_probability"),
+        (json!({"variation_type": "fuzz", "max_mutations": 0}), "max_mutations"),
+        (json!({"variation_type": "fuzz", "mutation_probability": 1.5}), "mutation_probability"),
+    ] {
+        let mut request = json!({
+            "action": "test",
+            "description": "a crate weighs something",
+            "success_condition": "entity_exists:fixture_game::Crate",
+            "actions": [{"type": "modify", "entity_id": entity,
+                "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]}],
+            "iterations": 3
+        });
+        request.as_object_mut().expect("an object").extend(settings.as_object().expect("an object").clone());
+        let (reply, failed) = hypothesis(&tools, request).await;
+        assert!(failed, "{settings} must be refused: {reply}");
+        assert!(reply.to_string().contains(argument), "the refusal names `{argument}`: {reply}");
+    }
+}
+
 /// A condition the server cannot read as written must be refused, never read as "nothing to
 /// check". Before the fix each of these parsed to a condition that is true of any game with an
 /// entity -- a string where a list belongs became an empty list, a string inside `all` was

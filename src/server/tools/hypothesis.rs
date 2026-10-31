@@ -274,10 +274,14 @@ fn parse_variation_strategy(arguments: &Value) -> Result<VariationStrategy> {
                 })
                 .unwrap_or_default();
 
-            let bool_probability = arguments
-                .get("bool_probability")
-                .and_then(|b| b.as_f64())
-                .unwrap_or(0.5);
+            let bool_probability = probability(arguments, "bool_probability", 0.5)?;
+
+            // `random_range(min..max)` panics on an empty range, and on NaN or an infinity.
+            if !(min.is_finite() && max.is_finite() && min < max) {
+                return Err(Error::Validation(format!(
+                    "'numeric_max' must be a finite number above 'numeric_min'; got numeric_min {min} and numeric_max {max}. Example: \"numeric_min\": 0, \"numeric_max\": 100"
+                )));
+            }
 
             Ok(VariationStrategy::Random {
                 numeric_range: (min, max),
@@ -332,19 +336,37 @@ fn parse_variation_strategy(arguments: &Value) -> Result<VariationStrategy> {
                 .and_then(|e| e.as_bool())
                 .unwrap_or(true),
         }),
-        "fuzz" => Ok(VariationStrategy::Fuzz {
-            max_mutations: arguments
+        "fuzz" => {
+            let max_mutations = arguments
                 .get("max_mutations")
                 .and_then(|m| m.as_u64())
-                .unwrap_or(3) as usize,
-            mutation_probability: arguments
-                .get("mutation_probability")
-                .and_then(|p| p.as_f64())
-                .unwrap_or(0.5),
-        }),
+                .unwrap_or(3);
+            // A run applies between 1 and `max_mutations` mutations; 0 leaves no choice to make.
+            if max_mutations == 0 {
+                return Err(Error::Validation(
+                    "'max_mutations' must be at least 1. Example: \"max_mutations\": 3".to_string(),
+                ));
+            }
+            Ok(VariationStrategy::Fuzz {
+                max_mutations: max_mutations as usize,
+                mutation_probability: probability(arguments, "mutation_probability", 0.5)?,
+            })
+        }
         _ => Err(Error::Validation(format!(
             "Unknown variation type: {variation_type}"
         ))),
+    }
+}
+
+/// A probability argument: `default` when absent, an error naming it when outside 0 to 1.
+fn probability(arguments: &Value, name: &str, default: f64) -> Result<f64> {
+    let value = arguments.get(name).and_then(|p| p.as_f64()).unwrap_or(default);
+    if (0.0..=1.0).contains(&value) {
+        Ok(value)
+    } else {
+        Err(Error::Validation(format!(
+            "'{name}' is a probability, from 0 to 1; got {value}. Example: \"{name}\": 0.5"
+        )))
     }
 }
 

@@ -296,7 +296,7 @@ async fn hypothesis_runs_the_requested_action() {
         .hypothesis(request::<HypothesisRequest>(json!({
             "action": "test",
             "description": "the cube keeps moving",
-            "success_condition": {"type": "entity_exists"},
+            "success_condition": {"type": "performance_within", "metric": "entity_count", "max_value": 1000},
             "iterations": 1,
             "timeout": 5,
             "threshold": 0.5,
@@ -346,7 +346,7 @@ async fn every_advertised_variation_type_runs() {
             .hypothesis(request::<HypothesisRequest>(json!({
                 "action": "test",
                 "description": "variation probe",
-                "success_condition": {"type": "entity_exists"},
+                "success_condition": {"type": "performance_within", "metric": "entity_count", "max_value": 1000},
                 "variation_type": kind,
                 "iterations": 1,
                 "timeout": 5,
