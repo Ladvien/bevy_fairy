@@ -258,7 +258,10 @@ let has_two = app.register_system(|_: In<serde_json::Value>, tile: Res<Tile>| ti
 app.world_mut().resource_mut::<Checkpoints>().register("tile has two members", has_two);
 ```
 
-A step without a checkpoint waits for the person to say it is done. For each step the agent gets
+The plugin runs a step's checkpoint once a frame and moves the step on by itself when it returns
+true, whether or not anything is watching; `bevy_fairy/guide+watch` reports each pass as it happens.
+A script that names a checkpoint the game has not registered is refused when it is posted, and a
+step without a checkpoint waits for the person to say it is done. For each step the agent gets
 back how many times it came up, how many of those its checkpoint passed, and how long it took.
 
 ### Save and replay a session

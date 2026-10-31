@@ -12,8 +12,9 @@
 //! # The file
 //!
 //! `{"format": "bevy_fairy_scene", "version": 1, "steps": [{"method": "...", "params": {...}}, ...]}`.
-//! A file whose format or version differs is refused with one `error!` and nothing is replayed. A bad
-//! file never panics.
+//! A file whose format or version differs is refused with one `error!`, nothing is replayed, and
+//! `bevy_fairy/status` reports it as `replay: {path, rejected: <why>}`, not as `null`. A bad file
+//! never panics.
 //!
 //! # What a scene does not record
 //!
