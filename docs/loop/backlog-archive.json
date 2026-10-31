@@ -1455,6 +1455,22 @@
       "evidence": "611f2cc: threshold must be above 0.",
       "last_failure": "",
       "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-113",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "experiment and hypothesis answered 'not connected to Bevy game' for up to 30 s after a game came up that the server had been started before, because they read the heartbeat's connection state without asking the game",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "found smoke-testing the installed binary: the game had been up for 8 s and every call said 'BRP client not connected'; an MCP client starts its server with the agent's session, the game starts later; a workaround exists (call status first, or wait 30 s)"
+      },
+      "status": "fixed",
+      "evidence": "BrpClient::reachable probes once before refusing; fixture_ground_truth::tools_answer_as_soon_as_the_game_is_up_not_after_the_next_heartbeat failed (experiment: brp_connected false). observe and detect_anomaly were not affected (their frame stamp asks the game first); the test covers all four.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }

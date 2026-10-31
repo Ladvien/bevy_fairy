@@ -1,6 +1,6 @@
-# 2026-10-31 hypothesis and experiment: 14 honesty bugs fixed in the two tools no pass had read end to end
+# 2026-10-31 hypothesis and experiment: 15 honesty bugs fixed in the two tools no pass had read end to end
 
-Focus: none given · Commits: 577d6b0..611f2cc (clippy cleanup 794c301, loop state after) · Outcome: fixes only, no release (6 h rule)
+Focus: none given · Commits: 577d6b0..611f2cc, then B-113 (clippy cleanup 794c301, loop state after) · Outcome: fixes only, no release (6 h rule)
 
 ## Summary
 `hypothesis` and `experiment` were fixed for specific lies in B-001..B-068, but nobody had traced either tool's whole reply against what the game did. Two read-only audits found more than the five-bug budget allows, each reproduced against the fixture before it was fixed: a claim whose actions the game refused was REJECTED, conditions that could not be read were CONFIRMED at 100%, a typo'd component made a claim false and its negation true, one iteration reported "100.0% confidence", a refused action left an atomic batch's transaction open, and `undo` got stuck behind any batch. Per the bug budget (Phase 1), Phase 2 is skipped. An independent review of the fixes found four more gaps; all four were reproduced and fixed.
@@ -37,6 +37,9 @@ A refused action (empty component type) was an `Err` that escaped the loop: the 
 4. `success_rate` is over evaluated iterations while the verdict counts all; the description says so.
 Skeptic pass: each is reproducible by reading and by a test red on 794c301; none had a benign reading. Round 2 not run.
 
+### B-113 (after 611f2cc): "not connected" about a game that was answering
+Found smoke-testing the installed binary: the game had been up 8 s and every `hypothesis` and `experiment` call answered "BRP client not connected". Both gated on `BrpClient::is_connected`, the state the 30 s heartbeat leaves, without asking the game; an MCP client starts its server with the agent's session and the game starts later, so this is the ordinary first call. `BrpClient::reachable` probes once before the refusal. `observe` and `detect_anomaly` were unaffected (their frame stamp asks the game first). Test: `tools_answer_as_soon_as_the_game_is_up_not_after_the_next_heartbeat` (experiment: `brp_connected: false`).
+
 ## Change
 None: five or more must-fix bugs, so Phase 2 is skipped. Candidates logged: B-021's frame ring and the state ring armed by default (last pass's recommendation) stay open.
 
@@ -47,7 +50,7 @@ None: five or more must-fix bugs, so Phase 2 is skipped. Candidates logged: B-02
 | held-out evals | ff29519: 3/3, 4.7 | not run: no release this pass |
 | mutation testing | | not run (host load); each fix was instead shown red on the previous commit by stashing `src/` |
 | ratchet on touched files | | OK at 794c301 (before the review fixes) and again at the final code, see LOG |
-| fixture ground truth | 30 tests | 44 tests, all pass |
+| fixture ground truth | 30 tests | 45 tests, all pass |
 
 Transcript excerpt, live through the real binary over stdio (`/tmp/fairy_live_smoke.py`, removed), fixture game on a free port:
 
@@ -61,7 +64,7 @@ experiment atomic [spawn, refused]      before: tool error, spawn left in the ga
 ```
 
 ## Metrics
-Server LOC 20524 -> 20503 (`git diff --shortstat edce726..HEAD -- src`: 607 added, 628 removed, the removals being the archetypes and the hand-written condition parser); plugin 3561 unchanged; direct dependencies 52 unchanged (serde was already there); public modules 26, MCP tools 14 unchanged; clippy warnings 74 -> 69 (`field_reassign_with_default` 20 -> 15, `src/server/tools/experiment.rs` 5 -> 0, baseline lowered in this pass's loop commit); tests 427 -> 440 (+14 ground truth, +4 unit, -5 removed); release binary size not re-measured (no release).
+Server LOC 20524 -> 20503 (`git diff --shortstat edce726..HEAD -- src`: 607 added, 628 removed, the removals being the archetypes and the hand-written condition parser); plugin 3561 unchanged; direct dependencies 52 unchanged (serde was already there); public modules 26, MCP tools 14 unchanged; clippy warnings 74 -> 69 (`field_reassign_with_default` 20 -> 15, `src/server/tools/experiment.rs` 5 -> 0, baseline lowered in this pass's loop commit); tests 427 -> 441 (+15 ground truth, +4 unit, -5 removed); release binary size not re-measured (no release).
 
 ## Review
 Independent reviewer (fresh context, read-only, diff only): four gaps, listed under B-106..B-108, all survived the skeptic pass and are fixed.
@@ -69,7 +72,7 @@ Independent reviewer (fresh context, read-only, diff only): four gaps, listed un
 ## Test and eval diffs
 - `tests/tool_contract.rs`: `hypothesis_runs_the_requested_action` and `every_advertised_variation_type_runs` sent `{"type": "entity_exists"}`, the vacuous condition B-096 refuses; with it the second stopped reaching the variation parser and passed for the wrong reason. Both send `{"type": "performance_within", "metric": "entity_count", "max_value": 1000}` now. Assertions unchanged.
 - `src/server/hypothesis_system.rs`: `test_test_result_confirmation` (tested `is_confirmed`, replaced by `verdict`) became two verdict tests; `src/server/experiment_system.rs` and `tools/experiment.rs`: `test_entity_factory`, `test_apply_archetype`, `test_action_enum_serialization`, `test_handle_archetypes` deleted with the code they tested.
-- `tests/fixture_ground_truth.rs`: 14 tests added, none edited. No eval task or held-out file changed.
+- `tests/fixture_ground_truth.rs`: 15 tests added, none edited. No eval task or held-out file changed.
 
 ## Release and install
 No release: v0.10.0 was tagged 2026-10-30 21:22 (-0500) and the 6 h rule makes 03:22 the earliest; the changes ride in the next release, which is breaking (0.11.0: `hypothesis` reply shape, `experiment` lost `archetypes`, `Action` refuses unknown fields). v0.10.0 checked at the start: crates.io has it, tag `v0.10.0` is on the remote, docs.rs `doc_status: true`, installed binary 0.10.0.
