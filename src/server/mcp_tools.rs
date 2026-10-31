@@ -108,9 +108,9 @@ pub enum VariationType {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HypothesisRequest {
-    /// The operation to run. One of `test`, `quick_test` (10 iterations, 10 s), `stress_test` (fuzz
-    /// variation, 1000 iterations unless `iterations` or `variation_type` say otherwise), `validate`
-    /// (checks the claim parses; runs nothing).
+    /// The operation to run. One of `test`, `quick_test` (10 iterations, 10 s; refuses `iterations`
+    /// and `timeout`, which `test` takes), `stress_test` (fuzz variation, 1000 iterations unless
+    /// `iterations` or `variation_type` say otherwise), `validate` (checks the claim parses; runs nothing).
     pub action: String,
     /// What the claim is, in words. `test` and `quick_test` require it.
     #[serde(default)]
@@ -181,7 +181,7 @@ pub struct HypothesisRequest {
     /// `boundary` run at most as many times as they have values to try.
     #[serde(default)]
     pub iterations: Option<u64>,
-    /// How long the whole run may take, in seconds. Default 60; `quick_test` always uses 10. When
+    /// How long the whole run may take, in seconds. Default 60; `quick_test` fixes it at 10 and refuses one. When
     /// it passes, the run stops between iterations (one already started finishes) and the
     /// reply's stopped_early says so; iterations that never ran count against CONFIRMED. Other
     /// tools are answered between iterations.
@@ -816,7 +816,7 @@ impl BevyDebuggerTools {
     }
 
     /// Run controlled experiments on game state
-    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. A modify's result carries read_back, the written components read from the game once, a frame or so after the write; its matches is false, and the message says so, when the game does not hold what was written (a system sets the value every frame). A system that changes it later is not seen. `undo` and `redo` step through the recorded actions and answer with action_type undo or redo and of_action, the kind of action they stepped over: a delete cannot be reversed, and a modify only when its components existed before. A redo of a spawn makes a different entity, and the redo entries behind it follow it. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
+    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. A modify's result carries read_back, the written components read from the game once, a frame or so after the write; its matches is false, and the message says so, when the game does not hold what was written (a system sets the value every frame). A system that changes it later is not seen. `undo` and `redo` step through the recorded actions and answer with action_type undo or redo and of_action, the kind of action they stepped over: a delete cannot be reversed, and a modify only when its components existed before. A redo of a spawn makes a different entity, and the redo entries behind it follow it. The history is kept by this server, not the game, and belongs to the game process that ran its first action (the instance in the game's status). After a game restart `undo` and `redo` are refused and the stale history is discarded, because its entity ids now name other entities; `execute` discards it too and says so in history_discarded; `history` says stale. A game that cannot name its process (no plugin, or an older one) leaves the history unverified, and the reply says why in game_instance_unverified. `clear_history` discards the history.")]
     pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running experiment action: {}", req.action);
 
@@ -880,7 +880,7 @@ impl BevyDebuggerTools {
     }
 
     /// Report whether the game is answering and ready for commands
-    #[tool(description = "Report whether the game is answering and ready for commands: its frame, how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none). The reply also carries the URL this server talks to. Call this first.")]
+    #[tool(description = "Report whether the game is answering and ready for commands: its frame, its instance (one value per game process, new after a restart), how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none). The reply also carries the URL this server talks to. Call this first.")]
     pub async fn status(&self, Parameters(_req): Parameters<NoArgs>) -> Result<CallToolResult, McpError> {
         let url = self.game_url().await;
         match self.call_game(STATUS_METHOD, None).await {

@@ -821,6 +821,11 @@ impl ActionExecutor {
         self.undo_stack.iter().cloned().collect()
     }
 
+    /// How many actions the history holds, undoable and redoable together.
+    pub fn entry_count(&self) -> usize {
+        self.undo_stack.len() + self.redo_stack.len()
+    }
+
     /// Clear history
     pub fn clear_history(&mut self) {
         self.undo_stack.clear();
