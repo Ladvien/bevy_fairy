@@ -60,9 +60,9 @@ Guide the HUMAN through something in the running app, and get back what actually
 
 HOW TO COLLABORATE (this part is not optional -- getting it wrong strands them):
 1. Post steps, then TELL THEM IN CHAT that the guide is up and to look at the app window. They will not know otherwise; nothing pops up to get their attention.
-2. Poll with {read:true}. When it answers waiting_on_a_person:true, that step has NO machine check and will never advance on its own. STOP AND ASK THEM IN CHAT, in words, naming the step. The card tells them 'tell the agent' -- that promise is yours to keep. Only after they answer, call {skip:true}.
+2. Poll with {read:true}. When it answers waiting_on_a_person:true, that step has NO machine check and will never advance on its own. STOP AND ASK THEM IN CHAT, in words, naming the step. The card tells them 'tell the agent' -- that promise is yours to keep. Only after they answer, call {skip:true}. Any other step is being checked by the app every frame: read names that checkpoint, the app moves the step on itself when it passes, and read carries checkpoint_error when the app cannot run it.
 3. When they say a step made no sense or did not work, that is DATA, not a detour. Record it and fix the step or the app. The transcript is k/n per step -- passes over attempts -- because a boolean 'it worked' is the thing people get wrong.
-4. Never post a step whose checkpoint the app has not registered. The app refuses it by name and lists what would have worked, but the person is already standing there by then.
+4. Never post a step whose checkpoint the app has not registered. The app refuses the whole script by name, lists what would have worked, and posts nothing. One verb per call: steps, read, skip or clear; a call naming two is refused.
 
 Write steps the way you would brief a colleague: say WHY before what (people ignore a suggestion whose reason they cannot see), two to four short imperatives, and always fill in recovery -- what to do when the step does not work is the field that makes this better than a list in a chat window.
 

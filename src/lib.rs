@@ -100,8 +100,8 @@ pub use plugin::{
 // The guide overlay and the capture target, which are their own features.
 #[cfg(feature = "plugin-guide")]
 pub use plugin::{
-    handle_guide, watch_guide, Checkpoints, Guide, GuideOverlay, GuideOverlayPlugin, GuideParams,
-    GuidePlacement, Step, StepRecord, BEAT_SECONDS,
+    evaluate_checkpoint, handle_guide, watch_guide, Checkpoints, Guide, GuideOverlay,
+    GuideOverlayPlugin, GuideParams, GuidePlacement, Step, StepRecord, BEAT_SECONDS,
 };
 
 #[cfg(feature = "plugin-screenshot")]
