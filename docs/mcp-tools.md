@@ -146,7 +146,7 @@ Capture the game to a PNG file on this machine and return its path, size, the so
 | `region` | any | no | Crop to this rectangle before saving. |
 | `save_to` | string | no | File to write on this machine. Default: `$BEVY_FAIRY_CAPTURE_DIR/capture-<unix_ms>.png`, or `./debug_captures/` when that variable is unset. |
 | `source` | string | no | `offscreen` (the default) renders the game's own image and leaves out UI. `window` captures the game window, UI included. |
-| `zoom` | number | no | Magnify the captured image by this factor. Default 1. |
+| `zoom` | number | no | Magnify the captured image, after the crop, by this factor. Default 1. The result is at most 4096 x 4096 pixels; a zoom that would make it larger is refused, so crop with `region` first. |
 
 ## `status`
 

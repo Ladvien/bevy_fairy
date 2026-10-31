@@ -214,6 +214,9 @@ The agent sends input through `brp` with the method `bevy_fairy/input`:
 Input is written into Bevy's own input messages before its input systems run, so `just_pressed`,
 text fields and `ButtonInput` all see it like a real key.
 
+A field the chosen `kind` does not read is refused by name, never ignored: there is no `modifiers`, a
+`Mouse` call takes no `x`/`y` (aim with a `Cursor` call first), and a `Scroll` needs `x` and/or `y`.
+
 **The pointer reaches picking.** `Cursor` and `Mouse` also write the `WindowEvent` messages a real
 mouse produces, so `bevy_ui` buttons, `Interaction` and `On<Pointer<Click | Over | Out | Drag..>>`
 observers fire with no code on your side. A press at one position, a `Cursor` move and a release
