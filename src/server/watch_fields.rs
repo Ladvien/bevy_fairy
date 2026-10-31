@@ -34,13 +34,19 @@ pub struct Movement {
 }
 
 impl Movement {
-    /// 0 for a value that moved and then stopped, 1 for one that moved and is still moving (or is
-    /// gone), 2 for one that never moved: the order a reply lists them in.
+    /// 0 for a value that moved between values it held and then stopped, 1 for any other value
+    /// that changed (still moving, appeared, or gone), 2 for one that never moved: the order a
+    /// reply lists them in. A value that was merely absent for a while is not one that stopped.
     fn rank(&self) -> u8 {
-        match (self.changed, self.constant_since_frame) {
-            (true, Some(_)) => 0,
-            (true, None) => 1,
-            (false, _) => 2,
+        if !self.changed {
+            return 2;
+        }
+        // `distinct_values` counts "absent" as a value; the ones the field actually held are the rest.
+        let held = self.distinct_values - usize::from(self.absent_samples > 0);
+        if held >= 2 && self.constant_since_frame.is_some() {
+            0
+        } else {
+            1
         }
     }
 
@@ -286,6 +292,35 @@ mod tests {
         assert!(y.changed);
         assert_eq!(y.constant_since_frame, Some(101));
         assert_eq!(y.absent_samples, 1);
+    }
+
+    /// A value that only appeared, or only skipped a sample, never moved between values it held,
+    /// so it is not "moved and then stopped" and must not outrank the field that really did.
+    #[test]
+    fn a_field_that_appeared_or_skipped_a_sample_is_not_ranked_as_stopped() {
+        // `w` moves 0 -> 1 and holds; `y` appears at sample 1 and holds; `x` never moves.
+        let values: Vec<Value> = [
+            json!({"w": 0, "x": 1}),
+            json!({"w": 1, "x": 1, "y": 3}),
+            json!({"w": 1, "x": 1, "y": 3}),
+            json!({"w": 1, "x": 1, "y": 3}),
+        ]
+        .to_vec();
+        let (frames, refs) = series(&values);
+        let ranked = fields(&frames, &refs, "").expect("fields");
+        let order: Vec<&str> = ranked.listed.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(order, ["/w", "/y", "/x"], "stopped, then appeared, then never moved");
+        assert_eq!(listed(&ranked, "/w").rank(), 0);
+        assert_eq!(listed(&ranked, "/y").rank(), 1);
+
+        // 5, gap, 5, 5: the value never changed, it was only missing from one sample.
+        let values = [json!({"k": 5, "x": 1}), json!({"x": 1}), json!({"k": 5, "x": 1}), json!({"k": 5, "x": 1})];
+        let (frames, refs) = series(&values);
+        let fields = fields(&frames, &refs, "").expect("fields");
+        let k = listed(&fields, "/k");
+        assert_eq!(k.constant_since_frame, Some(102));
+        assert_eq!(k.absent_samples, 1);
+        assert_eq!(k.rank(), 1, "a gap is not a stop: {k:?}");
     }
 
     #[test]
