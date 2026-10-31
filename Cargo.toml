@@ -273,6 +273,10 @@ name = "plugin_input_edges"
 required-features = ["plugin"]
 
 [[test]]
+name = "plugin_input_params"
+required-features = ["plugin"]
+
+[[test]]
 name = "plugin_ui_text"
 required-features = ["plugin-ui-text"]
 
