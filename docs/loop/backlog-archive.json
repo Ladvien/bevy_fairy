@@ -1583,6 +1583,102 @@
       "evidence": "AnomalyState::settle drops the detectors' samples (configuration kept) when the game's instance changed and says so in history_discarded; unverified games are judged with game_instance_unverified. a462b09; mutant killed. The fake-endpoint test is the only one: the fixture has no Velocity.",
       "last_failure": "",
       "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-120",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "a history recorded against a game that could not name itself (no plugin, or a plugin older than this server) stays 'unverified' after the game is restarted with a plugin that names itself, though a process cannot gain a plugin: the same game was certainly not the one that ran the actions",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "independent review of e35dd4b (P2): experiment.rs standing_of arm (_, Recorded::Unverifiable(why), _); observe.rs and anomaly.rs have the same arm. The reply carries game_instance_unverified, so an agent is told; it is not silent"
+      },
+      "status": "fixed",
+      "evidence": "b876744, 0af488b, 67fa91d: BrpClient::game_instance returns Unnamed {why, answered_without_a_name}; certainly_another_game is the one comparison; experiment standing_of, observe Baseline and detect_anomaly settle use it. A game that answered status without an instance (no plugin, or an older one) is another process than one that names itself; a game that was not asked successfully (timeout, internal error, HTTP failure) stays unverified. tests/restart_unnamed.rs (fake endpoint: no plugin, older plugin, failing status) and tests/anomaly_restart.rs were red before; 4 manual mutants killed",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-121",
+      "kind": "bug",
+      "area": "input",
+      "title": "bevy_fairy/input accepted fields it does not know and fields its kind does not read, and answered success: true (modifiers, a Mouse x/y, a Scroll with no amount, Cursor clear with a position, params sent as an array)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tests/plugin_input_params.rs red on 3540366: {Keyboard, KeyS, modifiers:[ControlLeft]} answered success true; the review found the clear+x/y and array-params gaps"
+      },
+      "status": "fixed",
+      "evidence": "0fabe1c, 67fa91d: deny_unknown_fields, fields_read_by / refuse_unread_fields, a scroll needs x and/or y, params must be an object, clear takes no position. Live: brp bevy_fairy/input against the fixture refuses each, the plain key is accepted",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-122",
+      "kind": "bug",
+      "area": "ring",
+      "title": "a ring trigger {equals: 9} never matched a float field holding 9.0 (serde_json: 9 != 9.0), nor 0.1 an f32 field (0.10000000149011612), so triggered_at_frame stayed null",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tests/plugin_ring.rs a_trigger_written_as_an_integer_matches_a_float_field_holding_that_number red on 3540366"
+      },
+      "status": "fixed",
+      "evidence": "1f40a68, 67fa91d: same_value / same_number; two integers exact, an f32-exact sample matches the shortest decimal of that f32 (16777217 does not match 16777216.0, 1e-50 does not match 0.0). Live: equals 4 on a crate weight 4.0 triggered on the first frame",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-123",
+      "kind": "bug",
+      "area": "ui_text",
+      "title": "bevy_fairy/ui_text region x + width summed in u32: a debug game panicked, a release game wrapped to an empty region and answered matched 0",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "tests/plugin_ui_text.rs a_region_reaching_past_the_u32_range_is_a_region_not_an_overflow panicked at ui_text.rs:182 'attempt to add with overflow'"
+      },
+      "status": "fixed",
+      "evidence": "b2f613f: the sum is taken in f32",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-124",
+      "kind": "bug",
+      "area": "screenshot",
+      "title": "screenshot zoom had no upper bound: zoom 1e9 aborted the game on a 256 GB allocation inside its own observer",
+      "must_fix": {
+        "misleads": false,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "screenshot::tests::a_zoom_that_would_make_a_huge_image_is_refused_before_it_is_allocated died with 'memory allocation of 256000000000 bytes failed'"
+      },
+      "status": "fixed",
+      "evidence": "738f113, 67fa91d: zoomed_size refuses a zoom in that would make more than 4096 x 4096 pixels (a failed capture naming region); a zoom out is never refused (the review found the first draft refused an 8K window at 0.9)",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-125",
+      "kind": "bug",
+      "area": "transport",
+      "title": "run, brp, quit, status and watch said 'no game answering' for a request that timed out and for any non-2xx reply, so an agent restarted a running game or sent the request twice",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tests/slow_game.rs red on 3540366: a fake endpoint that sleeps 7 s / answers 500, both answered 'no game answering'; the review found watch and a connect timeout still wrong"
+      },
+      "status": "fixed",
+      "evidence": "4ff1e19, 67fa91d: Error::Timeout and Error::Brp, why_no_reply shared by call_game and the batch sampler, a 2 s connect timeout (a host that drops packets is still 'no game answering'). Live against a stub game: brp and watch say it may still run and to check status",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }
