@@ -281,7 +281,7 @@ pub struct ScreenshotRequest {
     /// Crop to this rectangle before saving.
     #[serde(default)]
     pub region: Option<CaptureRegion>,
-    /// Magnify the captured image by this factor. Default 1.
+    /// Magnify the captured image, after the crop, by this factor. Default 1. The result is at most 4096 x 4096 pixels; a zoom that would make it larger is refused, so crop with `region` first.
     #[serde(default)]
     pub zoom: Option<f32>,
     /// Also return the PNG inline, so the agent sees the image as well as the saved file.
