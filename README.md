@@ -263,6 +263,9 @@ true, whether or not anything is watching; `bevy_fairy/guide+watch` reports each
 A script that names a checkpoint the game has not registered is refused when it is posted, and a
 step without a checkpoint waits for the person to say it is done. For each step the agent gets
 back how many times it came up, how many of those its checkpoint passed, and how long it took.
+The agent moves a step that only the person can judge on with `{"skip": true, "step": "<its label>"}`;
+a skip that names a step the script has already moved past is refused and skips nothing, because the
+app advances by itself and the step the agent last read can be gone by the time the skip arrives.
 
 ### Save and replay a session
 
@@ -285,7 +288,7 @@ reports ready. Scenes record commands, not raw input: keys, text and clicks sent
 | `bevy_fairy/input` | `plugin` | Inject keyboard, text, mouse, scroll and cursor input |
 | `bevy_fairy/scene` | `plugin` | Show or clear the recorded commands |
 | `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed (above 0, at most 1000); the request is re-applied every frame and the reply says whether it `held`, and whether the engine cut the last frame to the clock's `max_delta` (`clamped_by_max_delta`) (a built-in command). A host that owns `Time<Virtual>` adds `.host_owns_clock()` and reads `ClockRequest` |
-| `bevy_fairy/ring` | `plugin` | Record the newest N frames (1-600) of a `world.query` result inside the game, with an optional trigger that freezes the buffer on the frame it matches; `dump` returns the samples with frame numbers (a built-in command, called with `run`) |
+| `bevy_fairy/ring` | `plugin` | Record the newest N frames (1-600) of a `world.query` result inside the game, with an optional trigger that freezes the buffer on the frame it matches; `dump` returns the samples with frame numbers; a second `start` says what it replaced, and a field an action does not read is refused (a built-in command, called with `run`) |
 | `bevy_fairy/quit` | `plugin` | Ask the game to exit |
 | `bevy_fairy/ui_text` | `plugin-ui-text` | The `bevy_ui` text the player can read, with each node's rect (a built-in command, called with `run`) |
 | `bevy_fairy/screenshot`, `bevy_fairy/capture` | `plugin-screenshot` | Capture a frame and fetch it as PNG |
