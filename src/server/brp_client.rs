@@ -335,26 +335,7 @@ impl BrpClient {
     pub async fn game_instance(&mut self) -> GameName {
         const METHOD: &str = "bevy_fairy/status";
         let request = BrpRequest { method: METHOD.to_string(), id: Some(Value::from(1)), params: None };
-        match self.send_request(&request).await {
-            Ok(response) => match response.payload {
-                BrpPayload::Result(status) => status
-                    .get("instance")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .ok_or_else(|| Unnamed {
-                        why: format!("`{METHOD}` names no `instance`: the game's plugin is older than this server"),
-                        answered_without_a_name: true,
-                    }),
-                BrpPayload::Error(error) => Err(Unnamed {
-                    why: refusal_text(METHOD, &error),
-                    answered_without_a_name: error.code == bevy_remote::error_codes::METHOD_NOT_FOUND,
-                }),
-            },
-            Err(e) => Err(Unnamed {
-                why: format!("the game did not answer `{METHOD}`: {e}"),
-                answered_without_a_name: false,
-            }),
-        }
+        instance_from(self.send_request(&request).await.map(|response| response.payload))
     }
 
     /// Disconnect: with HTTP there is no persistent connection to drop, so
@@ -362,5 +343,78 @@ impl BrpClient {
     pub async fn disconnect(&mut self) {
         self.connected.store(false, Ordering::Relaxed);
         info!("Disconnected from BRP");
+    }
+}
+
+/// Read the process out of the answer to `bevy_fairy/status`, or say why it cannot be read.
+fn instance_from(answer: Result<BrpPayload>) -> GameName {
+    const METHOD: &str = "bevy_fairy/status";
+    match answer {
+        Ok(BrpPayload::Result(status)) => {
+            status.get("instance").and_then(Value::as_str).map(str::to_string).ok_or_else(|| Unnamed {
+                why: format!("`{METHOD}` names no `instance`: the game's plugin is older than this server"),
+                answered_without_a_name: true,
+            })
+        }
+        Ok(BrpPayload::Error(error)) => Err(Unnamed {
+            why: refusal_text(METHOD, &error),
+            answered_without_a_name: error.code == bevy_remote::error_codes::METHOD_NOT_FOUND,
+        }),
+        Err(e) => Err(Unnamed {
+            why: format!("the game did not answer `{METHOD}`: {e}"),
+            answered_without_a_name: false,
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::brp::BrpError;
+    use serde_json::json;
+
+    fn refusal(code: i16) -> Result<BrpPayload> {
+        Ok(BrpPayload::Error(BrpError { code, message: "no".to_string(), data: None }))
+    }
+
+    #[test]
+    fn a_status_that_names_an_instance_names_the_game() {
+        let answer = Ok(BrpPayload::Result(json!({"ready": true, "instance": "p1-n2-c3"})));
+        assert_eq!(instance_from(answer), Ok("p1-n2-c3".to_string()));
+    }
+
+    /// These two say the game answered, and what it answered cannot be the plugin's of this
+    /// version: no process gains a plugin, so a game that names itself later is another one.
+    #[test]
+    fn a_status_with_no_instance_or_no_such_method_is_a_game_that_answered_without_a_name() {
+        let older = instance_from(Ok(BrpPayload::Result(json!({"ready": true, "frame": 4}))));
+        assert!(older.expect_err("an older plugin names no instance").answered_without_a_name);
+        let absent = instance_from(refusal(bevy_remote::error_codes::METHOD_NOT_FOUND));
+        assert!(absent.expect_err("no plugin, no method").answered_without_a_name);
+    }
+
+    /// A game that was not asked successfully says nothing about which process it is.
+    #[test]
+    fn a_game_that_gave_no_usable_answer_is_not_known_to_have_no_plugin() {
+        let internal = instance_from(refusal(bevy_remote::error_codes::INTERNAL_ERROR));
+        assert!(!internal.expect_err("an internal error names nothing").answered_without_a_name);
+        let down = instance_from(Err(Error::Connection("BRP server returned HTTP 500".to_string())));
+        let down = down.expect_err("a game that is down names nothing");
+        assert!(!down.answered_without_a_name);
+        assert!(down.why.contains("did not answer"), "{}", down.why);
+    }
+
+    #[test]
+    fn only_a_game_that_answered_without_a_name_is_another_process_than_one_that_names_itself() {
+        let named = |id: &str| -> GameName { Ok(id.to_string()) };
+        let nameless = |answered_without_a_name| -> GameName {
+            Err(Unnamed { why: "no".to_string(), answered_without_a_name })
+        };
+        assert!(certainly_another_game(&named("a"), &named("b")));
+        assert!(!certainly_another_game(&named("a"), &named("a")));
+        assert!(certainly_another_game(&nameless(true), &named("a")));
+        assert!(!certainly_another_game(&nameless(false), &named("a")));
+        assert!(!certainly_another_game(&named("a"), &nameless(true)));
+        assert!(!certainly_another_game(&nameless(true), &nameless(true)));
     }
 }
