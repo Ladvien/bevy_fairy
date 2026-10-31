@@ -1,8 +1,8 @@
 {
   "measured_at": "2026-10-31",
-  "sha": "b681d29",
+  "sha": "9afe28b",
   "server": {
-    "loc": 20936,
+    "loc": 21266,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
@@ -10,7 +10,7 @@
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
-    "loc": 3561,
+    "loc": 3588,
     "direct_dependencies": 4,
     "closure_packages": 319,
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
@@ -19,14 +19,14 @@
     "clippy_warnings_default": 69,
     "clippy_warnings_all_features_errors": 42,
     "all_features_build": "fails: src/observability/ (42 errors); 'full-debugging' includes observability, so it fails too",
-    "server_tests_passed": 460,
+    "server_tests_passed": 470,
     "server_tests_failed": 0,
     "server_tests_ignored": 1,
     "plugin_tests_passed": 59,
     "plugin_tests_failed": 0,
     "plugin_tests_ignored": 0,
     "clippy_warnings_note": "Counted by the ratchet: lint occurrences across the workspace and all targets. An earlier grep counted distinct warning lines and undercounted (707 vs 1462). The ratchet number is what the gate uses.",
-    "server_tests_note": "460 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at b681d29, with 1 ignored. Since 453e6da this pass added 12 fixture ground-truth tests (7 for B-110..B-112, 4 for the review's gaps, 1 for newest-first reversal; fixture_ground_truth 45 -> 57) and 7 unit tests in hypothesis_system.rs, and replaced none.",
+    "server_tests_note": "470 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at 9afe28b, with 1 ignored. Since b681d29 this pass added 5 fixture ground-truth tests (status instance, experiment undo refused after a restart, execute drops a stale history, quick_test refuses what it would ignore, observe diff across a restart), 4 unit tests for the standing_of decision table in tools/experiment.rs and tests/anomaly_restart.rs (1), and replaced none.",
     "ignored_tests_note": "1 ignored at ff29519 (`cargo test --workspace -- --list --ignored`), the one name in known_red: the BrpCommandHandler doctest. The earlier notes of 4 and 5 predate the removal of test_profiling_history and the other doctests with their code.",
     "direct_dependencies_note": "The baseline said 50; the manifest at e93da67 actually had 51. The count is the number of entries in [dependencies], by name. The one added since is `schemars`, which `rmcp` already depended on and which resolves to 0.8.22 in the lockfile, so there is one copy, not two."
   },
@@ -44,11 +44,11 @@
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
     "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
     "last_dev_run": {
-      "sha": "ff29519",
+      "sha": "b3b693e",
       "success": "6/6",
-      "mean_tool_calls": 5.5,
+      "mean_tool_calls": 4.7,
       "invalid_calls": 0,
-      "note": "The release build (v0.10.0, installed). Calls 2, 5, 3, 3, 6, 14. spinner_stops is the known spread (4-21): 9/10 calls on the first pair of runs that were discarded because the 'after' binary was a mutant build, then 13 (old server, 7d2e7a1) and 12 (587587e), 14 here. The same-session old server (7d2e7a1) scored 6/6 at 5.7 calls with 1 invalid; the watch change moved no eval, since the agent could already read the freeze off the raw samples."
+      "note": "Calls 2, 6, 3, 3, 6, 8 (spinner_stops 8). The server binary was the b3b693e debug build run through scripts/evals/run.py with the fixture of the same build; no tool-call shape the agents use changed, only descriptions of experiment, status, observe's `diff` and detect_anomaly."
     },
     "last_heldout_run": {
       "sha": "ff29519",
@@ -61,7 +61,7 @@
       "invalid_calls": 0,
       "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
     },
-    "latest": "b681d29 (this pass): dev 5/6 on the first run (spinner_stops failed: the agent answered honestly that it could not give the exact stop frame, 4 calls), 6/6 on 0829adc and on v0.10.0 in the same session; spinner_stops reruns 3/3 on b681d29 (9, 8, 10 calls) and 3/3 on v0.10.0 (16, 13, 10); mean calls 5.0 (v0.10.0), 6.2 (0829adc, spinner 16), 4.0 (b681d29 first run, 5 solved). 0 invalid calls. No held-out run (no release this pass: 6 h rule)."
+    "latest": "9afe28b (this pass): dev 6/6 at 4.7 calls, 0 invalid (b3b693e; v0.10.0 and b681d29 were 5.0 and 4.0-5.5). Held-out run: see the release entry below."
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -83,7 +83,8 @@
     "2026-10-30 (acbe1c4): server loc 19788 -> 19632 (find src/server -name '*.rs' | xargs cat | wc -l): observe's semantic path and unreachable snapshot history removed (B-077, B-076), the find-N limit carried and applied (B-079, +~40). known_red lowered by hand from the same clippy --workspace --all-targets JSON the ratchet reads (86 -> 79): field_reassign_with_default 24 -> 20 and unused_mut 1 -> 0 (state_diff.rs, test_state_diff.rs), dead_code 12 -> 10 (query_parser.rs: the never-read `description` now builds the help text, the semantic field is gone). Tool count unchanged (15).",
     "2026-10-30 (7505991, v0.9.0): release_binary_bytes 99925248 -> 105777312 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked`). The old number was recorded once at 9b4a317 (2026-10-21) and never re-measured, so the increase spans every iteration since, including the `image` dependency `burst` added; this pass removed code and added no dependency. Measure it each release from here.",
     "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c.",
-    "2026-10-31 (0829adc..b681d29, hypothesis-restore): server loc 20503 -> 20936 (find src/server -name '*.rs' | xargs cat | wc -l; +433): hypothesis_system.rs rewrote the four mutate_* functions as leaf-level generators (net about +60 with the Kinds/number helpers), TestRunner::run gained the restore, deadline and plan checks (+90), experiment_system.rs gained read-back, Restoration/restore_all and redo retargeting (+190), and about 120 lines are in-file unit tests. clippy 69 unchanged (touched files clean); known_red unchanged; scripts/ratchet.sh OK on all six touched files at b681d29."
+    "2026-10-31 (0829adc..b681d29, hypothesis-restore): server loc 20503 -> 20936 (find src/server -name '*.rs' | xargs cat | wc -l; +433): hypothesis_system.rs rewrote the four mutate_* functions as leaf-level generators (net about +60 with the Kinds/number helpers), TestRunner::run gained the restore, deadline and plan checks (+90), experiment_system.rs gained read-back, Restoration/restore_all and redo retargeting (+190), and about 120 lines are in-file unit tests. clippy 69 unchanged (touched files clean); known_red unchanged; scripts/ratchet.sh OK on all six touched files at b681d29.",
+    "2026-10-31 (e35dd4b..9afe28b, restart-state): server loc 20936 -> 21266 (+330; find src/server -name '*.rs' | xargs cat | wc -l) and plugin loc 3561 -> 3588 (+27: GameInstance and the status field). About 190 of the server lines are the experiment history's game binding (Recorded/Standing/standing_of/adopt/refusal/annotate and 4 in-file unit tests), +50 observe's Baseline, +45 anomaly's settle, +23 BrpClient::game_instance (shared), the rest tool descriptions. No dependency added (plugin direct dependencies still 4: GameInstance uses std only). Clippy 69 unchanged; the ratchet was OK on every touched file at 9afe28b."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",

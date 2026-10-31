@@ -1519,6 +1519,70 @@
       "evidence": "timeout is one deadline for the run, checked between iterations once the client is held (a started iteration finishes; cutting an action mid-flight leaked an entity in the first draft); the client is taken per iteration; reply has iterations_planned, varied_iterations, stopped_early; unrun iterations count against CONFIRMED. Failing-first: hypothesis_timeout_bounds_the_whole_run_and_leaves_the_client_free (status waited the whole run before).",
       "last_failure": "",
       "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-109",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "experiment's undo/redo history is process-wide and kept by the server, so after the game restarts `undo` deletes or overwrites whatever now has the recorded entity id (a fresh process allocates the same ids in the same order)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "experiment.rs EXPERIMENT_STATE; reproduced 2026-10-31 with a second fixture in the same process (the modify's original was written into the new game)"
+      },
+      "status": "fixed",
+      "evidence": "experiment's history is bound to the game process that ran its first action (`instance` in bevy_fairy/status, new in the plugin): undo/redo refuse a stale history and discard it, execute discards it and says so (history_discarded), history says stale/recorded_against; a game that cannot name itself is unverified (game_instance_unverified). Failing-first: status_names_the_game_instance_and_a_second_game_has_another, experiment_undo_refuses_a_history_recorded_against_another_game, experiment_execute_drops_the_history_of_a_game_that_is_gone_and_says_so (e35dd4b, red against b681d29); unit table standing_of; 8 manual mutants killed.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-116",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "quick_test overrides the caller's iterations and timeout with 10 and 10 s without saying so in the reply (the action's description says it)",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "tools/hypothesis.rs handle_quick_test; the timeout argument now says quick_test always uses 10"
+      },
+      "status": "fixed",
+      "evidence": "quick_test refuses iterations and timeout, naming `test`. Failing-first: hypothesis_quick_test_refuses_the_arguments_it_would_ignore (e35dd4b).",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-118",
+      "kind": "bug",
+      "area": "observe",
+      "title": "observe with diff: true compared a read with the previous read of the same query after the game restarted, and reported the difference between two games (every crate of the new game EntityAdded) as what the game changed",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tests/fixture_ground_truth.rs::observe_diff_does_not_compare_a_read_with_one_of_another_game failed before b3b693e: diff.baseline was null and changes held an EntityAdded"
+      },
+      "status": "fixed",
+      "evidence": "ObserveState records the game's instance with the snapshot; a read of another game process is a Baseline::AnotherGame (new baseline, says why); unverified reads diff with game_instance_unverified. Found while fixing B-109: the same class (server state naming entities by id). b3b693e; mutant on the comparison killed.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-119",
+      "kind": "bug",
+      "area": "anomaly",
+      "title": "detect_anomaly's detectors keep a window of values per entity id across calls, so after a game restart an entity of the new game was scored against the samples of the old one",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "tests/anomaly_restart.rs failed before a462b09: entity 7 at speed 50 flagged 'PhysicsViolation, 3.75 standard deviations from mean 4.06' against fifteen readings of 1.0 from another game"
+      },
+      "status": "fixed",
+      "evidence": "AnomalyState::settle drops the detectors' samples (configuration kept) when the game's instance changed and says so in history_discarded; unverified games are judged with game_instance_unverified. a462b09; mutant killed. The fake-endpoint test is the only one: the fixture has no Velocity.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }
