@@ -209,50 +209,66 @@
       "first_seen": "2026-10-31"
     },
     {
-      "id": "B-110",
+      "id": "B-114",
       "kind": "bug",
       "area": "experiment",
-      "title": "experiment replies are not read back: a modify that a game system overwrites next frame still says success; undo/redo replies describe the reverse operation (action_type 'delete' for an undone spawn) not the undo; redo of a spawn makes a new entity id while later redo entries keep the old one",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "experiment_system.rs execute_modify, undo, redo; seen in the live smoke (undo of a spawn answered action_type delete)"
-      },
-      "status": "open",
-      "evidence": "Fix: re-read with world.get_components after a modify and return before/after; wrap undo/redo results with action_type undo|redo and the entry reversed; remap ids on redo.",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-111",
-      "kind": "bug",
-      "area": "hypothesis",
-      "title": "hypothesis iterations change the live game and nothing restores it (spawns accumulate, modifies stay); fuzz overwrites a delete's entity_id with a random 0..1000 that is almost never a valid entity; variations leave object and array values unvaried (grid, boundary, fuzz), boundary pushes +-infinity which serialises to null, grid turns integers into floats, include_empty only empties strings; seed defaults to the epoch second",
+      "title": "redo of a spawn retargets the redo entries' entity_id, but an entity id stored inside a component value (a relationship or Parent-like component holding an Entity) still names the old entity",
       "must_fix": {
         "misleads": true,
         "blocks": false,
         "common_no_workaround": false,
-        "evidence": "hypothesis_system.rs mutate_component_value, fuzz_value, boundary values; read, not run"
+        "evidence": "independent review of 0829adc, read not run"
       },
-      "status": "open",
-      "evidence": "Fix: record spawned and modified state per run and restore it (or refuse a variation over a delete), report variations_applied, drop non-finite boundary values, recurse into arrays and objects.",
+      "status": "unconfirmed",
+      "evidence": "Needs a fixture component that holds an Entity; the fixture has none. Low: only components that store entity ids.",
       "last_failure": "",
       "first_seen": "2026-10-31"
     },
     {
-      "id": "B-112",
-      "kind": "bug",
+      "id": "B-115",
+      "kind": "change",
       "area": "hypothesis",
-      "title": "timeout bounds one action, not the run, and the BRP client write lock is held for the whole run, so a 1000-iteration stress_test blocks every other tool; iterations does not apply to none, grid and boundary",
+      "title": "whether a number is an integer is read off how the caller wrote it (5 vs 5.0), not off the game's field type; random and fuzz round over an integer literal, so an f32 field written as 5 is varied in whole numbers",
       "must_fix": {
         "misleads": false,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "tools/hypothesis.rs handle_test (client = brp_client.write()), hypothesis_system.rs run"
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "review of 0829adc; documented in the variation_type argument and CLAUDE.md"
       },
       "status": "open",
-      "evidence": "Fix: one deadline for the run, take the client per iteration; documented in the tool text for now.",
+      "evidence": "Fix: read the field's type from the registry (world.registry.schema) or the entity's current value before varying. Needs an eval or ground-truth test where the literal and the field type disagree and rounding hides a bug.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-116",
+      "kind": "bug",
+      "area": "hypothesis",
+      "title": "quick_test overrides the caller's iterations and timeout with 10 and 10 s without saying so in the reply (the action's description says it)",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "tools/hypothesis.rs handle_quick_test; the timeout argument now says quick_test always uses 10"
+      },
+      "status": "open",
+      "evidence": "Fix: refuse iterations/timeout with quick_test, or echo the values used in the reply.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-117",
+      "kind": "change",
+      "area": "evals",
+      "title": "spinner_stops fails about one run in five (25 of 31 runs passed before this pass; this pass 1 failure in 5 runs on the new code, 0 in 4 on v0.10.0): the agent reads the frozen angle once and answers it cannot give the stop frame",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "docs/loop/evals.jsonl b681d29 spinner_stops: answer 'on or before frame 510', 4 calls, fact stop_frame_in_110_130 missed"
+      },
+      "status": "open",
+      "evidence": "Candidate: make the watch tool's description say a freeze frame is read off constant_since_frame. The task is dev, so tuning to it is allowed; the held-out suite must not be tuned.",
       "last_failure": "",
       "first_seen": "2026-10-31"
     }

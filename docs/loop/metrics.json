@@ -1,8 +1,8 @@
 {
   "measured_at": "2026-10-31",
-  "sha": "611f2cc",
+  "sha": "b681d29",
   "server": {
-    "loc": 20503,
+    "loc": 20936,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
@@ -19,14 +19,14 @@
     "clippy_warnings_default": 69,
     "clippy_warnings_all_features_errors": 42,
     "all_features_build": "fails: src/observability/ (42 errors); 'full-debugging' includes observability, so it fails too",
-    "server_tests_passed": 441,
+    "server_tests_passed": 460,
     "server_tests_failed": 0,
     "server_tests_ignored": 1,
     "plugin_tests_passed": 59,
     "plugin_tests_failed": 0,
     "plugin_tests_ignored": 0,
     "clippy_warnings_note": "Counted by the ratchet: lint occurrences across the workspace and all targets. An earlier grep counted distinct warning lines and undercounted (707 vs 1462). The ratchet number is what the gate uses.",
-    "server_tests_note": "441 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at the B-113 commit, with 1 ignored. Since ff29519 this pass added 15 hypothesis, experiment and connection ground-truth tests and 4 unit tests, and removed 5 (is_confirmed, the archetype tests and an enum-serialisation test that named the removed archetype field).",
+    "server_tests_note": "460 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at b681d29, with 1 ignored. Since 453e6da this pass added 12 fixture ground-truth tests (7 for B-110..B-112, 4 for the review's gaps, 1 for newest-first reversal; fixture_ground_truth 45 -> 57) and 7 unit tests in hypothesis_system.rs, and replaced none.",
     "ignored_tests_note": "1 ignored at ff29519 (`cargo test --workspace -- --list --ignored`), the one name in known_red: the BrpCommandHandler doctest. The earlier notes of 4 and 5 predate the removal of test_profiling_history and the other doctests with their code.",
     "direct_dependencies_note": "The baseline said 50; the manifest at e93da67 actually had 51. The count is the number of entries in [dependencies], by name. The one added since is `schemars`, which `rmcp` already depended on and which resolves to 0.8.22 in the lockfile, so there is one copy, not two."
   },
@@ -61,7 +61,7 @@
       "invalid_calls": 0,
       "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
     },
-    "latest": "611f2cc: dev 6/6 twice, mean calls 6.3 and 5.2 (spinner_stops 16 and 10, the task whose cost varies 8-16), 0 invalid calls; no held-out run (no release this pass)"
+    "latest": "b681d29 (this pass): dev 5/6 on the first run (spinner_stops failed: the agent answered honestly that it could not give the exact stop frame, 4 calls), 6/6 on 0829adc and on v0.10.0 in the same session; spinner_stops reruns 3/3 on b681d29 (9, 8, 10 calls) and 3/3 on v0.10.0 (16, 13, 10); mean calls 5.0 (v0.10.0), 6.2 (0829adc, spinner 16), 4.0 (b681d29 first run, 5 solved). 0 invalid calls. No held-out run (no release this pass: 6 h rule)."
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -82,7 +82,8 @@
     "2026-10-30 (fa6a556): server loc 19811 -> 19788 (find src/server -name '*.rs' | xargs cat | wc -l) for the observe fixes B-071..B-073: reflection path removed (-~60), show-entity fill-in and query-scoped diff baseline added (+~70). known_red re-recorded: manual_strip 2 -> 0 (observe.rs), vec_init_then_push 1 -> 0 and dead_code 14 -> 12 (anomaly_detector.rs, under-recorded by 42bad35). A `observe_diff...|FAILED` entry the --record run captured while the test was being edited mid-run was removed: the test passes at fa6a556 (fixture_ground_truth 20/20).",
     "2026-10-30 (acbe1c4): server loc 19788 -> 19632 (find src/server -name '*.rs' | xargs cat | wc -l): observe's semantic path and unreachable snapshot history removed (B-077, B-076), the find-N limit carried and applied (B-079, +~40). known_red lowered by hand from the same clippy --workspace --all-targets JSON the ratchet reads (86 -> 79): field_reassign_with_default 24 -> 20 and unused_mut 1 -> 0 (state_diff.rs, test_state_diff.rs), dead_code 12 -> 10 (query_parser.rs: the never-read `description` now builds the help text, the semantic field is gone). Tool count unchanged (15).",
     "2026-10-30 (7505991, v0.9.0): release_binary_bytes 99925248 -> 105777312 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked`). The old number was recorded once at 9b4a317 (2026-10-21) and never re-measured, so the increase spans every iteration since, including the `image` dependency `burst` added; this pass removed code and added no dependency. Measure it each release from here.",
-    "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c."
+    "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c.",
+    "2026-10-31 (0829adc..b681d29, hypothesis-restore): server loc 20503 -> 20936 (find src/server -name '*.rs' | xargs cat | wc -l; +433): hypothesis_system.rs rewrote the four mutate_* functions as leaf-level generators (net about +60 with the Kinds/number helpers), TestRunner::run gained the restore, deadline and plan checks (+90), experiment_system.rs gained read-back, Restoration/restore_all and redo retargeting (+190), and about 120 lines are in-file unit tests. clippy 69 unchanged (touched files clean); known_red unchanged; scripts/ratchet.sh OK on all six touched files at b681d29."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
@@ -153,7 +154,7 @@
   "fixture": {
     "path": "examples/fixture_game.rs",
     "loc": 162,
-    "ground_truth_tests": 30,
+    "ground_truth_tests": 57,
     "note": "Headless fixture whose state is pub consts. tests/fixture_ground_truth.rs checks the brp and status tools against it; mutants of the brp handler and of the plugin's status handler are each caught."
   }
 }
