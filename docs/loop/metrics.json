@@ -1,8 +1,8 @@
 {
-  "measured_at": "2026-10-30",
-  "sha": "ff29519",
+  "measured_at": "2026-10-31",
+  "sha": "611f2cc",
   "server": {
-    "loc": 20524,
+    "loc": 20503,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
@@ -16,17 +16,17 @@
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
   },
   "quality": {
-    "clippy_warnings_default": 74,
+    "clippy_warnings_default": 69,
     "clippy_warnings_all_features_errors": 42,
     "all_features_build": "fails: src/observability/ (42 errors); 'full-debugging' includes observability, so it fails too",
-    "server_tests_passed": 427,
+    "server_tests_passed": 440,
     "server_tests_failed": 0,
     "server_tests_ignored": 1,
     "plugin_tests_passed": 59,
     "plugin_tests_failed": 0,
     "plugin_tests_ignored": 0,
     "clippy_warnings_note": "Counted by the ratchet: lint occurrences across the workspace and all targets. An earlier grep counted distinct warning lines and undercounted (707 vs 1462). The ratchet number is what the gate uses.",
-    "server_tests_note": "427 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together; the plugin's 59 are inside it) at ff29519, with 1 ignored. The earlier 531 predates the deletions of the replay, stress and dead-module tests. This pass added 15 unit tests (server::watch_fields) and 4 fixture ground-truth tests.",
+    "server_tests_note": "440 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at 611f2cc, with 1 ignored. Since ff29519 this pass added 14 hypothesis and experiment ground-truth tests and 4 unit tests, and removed 5 (is_confirmed, the archetype tests and an enum-serialisation test that named the removed archetype field).",
     "ignored_tests_note": "1 ignored at ff29519 (`cargo test --workspace -- --list --ignored`), the one name in known_red: the BrpCommandHandler doctest. The earlier notes of 4 and 5 predate the removal of test_profiling_history and the other doctests with their code.",
     "direct_dependencies_note": "The baseline said 50; the manifest at e93da67 actually had 51. The count is the number of entries in [dependencies], by name. The one added since is `schemars`, which `rmcp` already depended on and which resolves to 0.8.22 in the lockfile, so there is one copy, not two."
   },
@@ -35,7 +35,7 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 5.5,
+    "mean_tool_calls_per_solved_task": 5.7,
     "dev_is_error_results_per_run": [
       5,
       7,
@@ -60,7 +60,8 @@
       ],
       "invalid_calls": 0,
       "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
-    }
+    },
+    "latest": "611f2cc: dev 6/6 twice, mean calls 6.3 and 5.2 (spinner_stops 16 and 10, the task whose cost varies 8-16), 0 invalid calls; no held-out run (no release this pass)"
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -117,7 +118,7 @@
     "clippy_by_lint": {
       "clippy::assertions_on_constants": 1,
       "clippy::collapsible_match": 2,
-      "clippy::field_reassign_with_default": 20,
+      "clippy::field_reassign_with_default": 15,
       "clippy::inherent_to_string": 2,
       "clippy::len_zero": 1,
       "clippy::needless_borrows_for_generic_args": 8,
@@ -138,13 +139,12 @@
       "src/server/recording_system.rs": 2,
       "src/server/semantic_analyzer.rs": 2,
       "src/server/timeline_branching.rs": 7,
-      "src/server/tools/experiment.rs": 5,
+      "tests/stdio_integration_test.rs": 4,
       "tests/brp_validation_tests.rs": 9,
       "tests/dependency_audit_test.rs": 4,
       "tests/entity_inspector_integration_tests.rs": 22,
       "tests/playback_tests.rs": 2,
-      "tests/rmcp_api_compatibility_test.rs": 5,
-      "tests/stdio_integration_test.rs": 4
+      "tests/rmcp_api_compatibility_test.rs": 5
     },
     "failing_or_ignored_tests": [
       "src/server/brp_command_handler.rs - server::brp_command_handler::BrpCommandHandler (line 62)|ignored"
