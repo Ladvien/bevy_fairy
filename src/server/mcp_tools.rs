@@ -20,6 +20,7 @@ use crate::server::brp_client::BrpClient;
 use crate::server::tools::{observe, experiment, guide, hypothesis, anomaly};
 use crate::server::experiment_system::Action;
 use crate::server::brp::{BrpPayload, BrpRequest};
+use crate::server::watch_fields;
 use base64::Engine;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1088,7 +1089,7 @@ impl BevyDebuggerTools {
     }
 
     /// Sample a BRP method over time
-    #[tool(description = "Sample one BRP method repeatedly and return the series, each sample stamped with the game frames it was read between (\"frame\" to \"frame_until\", usually one apart or equal) and the milliseconds since the first sample. Use it for anything that happens over time: a value that stops changing, a position's speed, a counter that drifts. The reply says whether the value changed, how many distinct values were seen, the frame of the first change, and \"constant_since_frame\" (the frame from which the last value never changed, null when it changed at the last sample). Samples are polled over HTTP at `interval_ms` (20-5000), so changes between samples are not seen; 2-100 samples, 30 s in total at most. Pass `pointer` (JSON pointer into each result) to keep samples small; a pointer that matches nothing is an error. Streaming `+watch` methods are refused.")]
+    #[tool(description = "Sample one BRP method repeatedly and return the series, each sample stamped with the game frames it was read between (\"frame\" to \"frame_until\", usually one apart or equal) and the milliseconds since the first sample. Use it for anything that happens over time: a value that stops changing, a position's speed, a counter that drifts. The reply says whether the value changed, how many distinct values were seen, the frame of the first change, and \"constant_since_frame\" (the frame from which the last value never changed, null when it changed at the last sample). A result with several values changes as a whole when any one of them does, so when the sampled value holds two or more values (a component's fields, the rows of a query) \"fields\" gives each of them those same numbers beside a pointer you can pass back as `pointer`: the ones that changed first, then the ones that did not, at most 40, with \"fields_omitted\" counting the rest. A value that has \"changed\" true and a \"constant_since_frame\" moved and then stopped. An array position is a position, not an identity: a despawn shifts the rows after it. Samples are polled over HTTP at `interval_ms` (20-5000), so changes between samples are not seen; 2-100 samples, 30 s in total at most. Pass `pointer` (JSON pointer into each result) to keep samples small; a pointer that matches nothing is an error. Streaming `+watch` methods are refused.")]
     pub async fn watch(&self, Parameters(req): Parameters<WatchRequest>) -> Result<CallToolResult, McpError> {
         if let Some(one_shot) = req.method.strip_suffix("+watch") {
             return tool_err(format!(
@@ -1155,32 +1156,34 @@ impl BevyDebuggerTools {
             series.push((frame, frame_until, started.elapsed().as_millis(), value));
         }
 
-        let first = &series[0].3;
-        let first_change = series.iter().find(|(_, _, _, v)| v != first).map(|(frame, _, _, _)| *frame);
-        let mut distinct: Vec<&Value> = Vec::new();
-        for (_, _, _, value) in &series {
-            if !distinct.contains(&value) {
-                distinct.push(value);
-            }
-        }
-        let last = &series[series.len() - 1].3;
-        let run_start = series.iter().rposition(|(_, _, _, v)| v != last).map_or(0, |i| i + 1);
-        let constant_since = (run_start + 1 < series.len()).then(|| series[run_start].0);
-        let body = serde_json::json!({
+        let frames: Vec<u64> = series.iter().map(|(frame, _, _, _)| *frame).collect();
+        let values: Vec<&Value> = series.iter().map(|(_, _, _, value)| value).collect();
+        let whole: Vec<Option<&Value>> = values.iter().copied().map(Some).collect();
+        let whole = watch_fields::movement(&frames, &whole);
+        // A result with several fields changes as a whole when any one does, so the summary
+        // above cannot say which of them stopped. `fields` can.
+        let fields = watch_fields::fields(&frames, &values, req.pointer.as_deref().unwrap_or(""));
+        let mut body = serde_json::json!({
             "method": req.method,
             "source": "polled over HTTP. Each sample is bracketed by two bevy_fairy/status reads: the value was read on a frame from `frame` to `frame_until`",
             "interval_ms": interval_ms,
             "samples_taken": series.len(),
-            "changed": first_change.is_some(),
-            "distinct_values": distinct.len(),
-            "first_change_frame": first_change,
-            "constant_since_frame": constant_since,
+            "changed": whole.changed,
+            "distinct_values": whole.distinct_values,
+            "first_change_frame": whole.first_change_frame,
+            "constant_since_frame": whole.constant_since_frame,
             "stopped_early": stopped,
             "samples": series
                 .iter()
                 .map(|(frame, frame_until, t_ms, value)| serde_json::json!({"frame": frame, "frame_until": frame_until, "t_ms": t_ms, "value": value}))
                 .collect::<Vec<_>>(),
         });
+        if let Some(fields) = &fields {
+            body["fields"] = fields.to_json();
+            if fields.omitted() > 0 {
+                body["fields_omitted"] = serde_json::json!(fields.omitted());
+            }
+        }
         tool_ok(body.to_string())
     }
 
