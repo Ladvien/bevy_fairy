@@ -1251,6 +1251,82 @@ async fn hypothesis_action_succeeds_without_an_action_is_refused_and_spawns_noth
     assert_eq!(count(brp(&tools, query).await), before, "the placeholder must not spawn anything");
 }
 
+/// The game reports a crate's weight as `3.0`; an agent writes the whole number `3`. They are the
+/// same number, and the fixture has a crate that weighs 3.0 (`CRATE_WEIGHTS`). Before the fix the
+/// comparison was `serde_json::Value` equality, where an integer and a float differ, so a true
+/// claim was REJECTED.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_component_equals_does_not_tell_3_from_3_point_0() {
+    assert!(CRATE_WEIGHTS.contains(&3.0) && !CRATE_WEIGHTS.contains(&3.5));
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    for (weight, verdict) in [(json!(3), "CONFIRMED"), (json!(3.0), "CONFIRMED"), (json!(3.5), "REJECTED")] {
+        let (reply, failed) = hypothesis(
+            &tools,
+            json!({
+                "action": "test",
+                "description": "some crate weighs this much",
+                "success_condition": {"type": "component_equals", "component_type": "fixture_game::Crate",
+                    "expected_value": {"weight": weight}}
+            }),
+        )
+        .await;
+        assert!(!failed, "{reply}");
+        assert_eq!(reply["verdict"], json!(verdict), "weight {weight}: {reply}");
+    }
+}
+
+/// A component name the game never registered cannot be held by any entity, so a claim about it
+/// is false by construction, and its negation true -- whatever the game does. That is a typo
+/// read as a measurement: before the fix `entity_exists:fixture_game::Crat` was REJECTED and
+/// `not entity_exists Crat` was CONFIRMED. A registered component that no entity holds is a real
+/// answer and stays one.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_a_component_the_game_never_registered_instead_of_judging_the_claim() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    for condition in [
+        json!("entity_exists:fixture_game::Crat"),
+        json!({"type": "not", "assertion": {"type": "entity_exists", "component_types": ["fixture_game::Crat"]}}),
+        json!({"type": "component_equals", "component_type": "Crat", "expected_value": {"weight": 3.0}}),
+        json!({"type": "any", "assertions": [
+            {"type": "entity_exists", "component_types": ["fixture_game::Crate"]},
+            {"type": "entity_exists", "component_types": ["fixture_game::Crat"]}]}),
+    ] {
+        let (reply, failed) = hypothesis(
+            &tools,
+            json!({"action": "test", "description": "a claim", "success_condition": condition}),
+        )
+        .await;
+        assert!(failed, "{condition} names a component the game does not have: {reply}");
+        let text = reply.to_string();
+        assert!(text.contains("Crat") && text.contains("not registered"), "the refusal names it: {text}");
+        assert!(text.contains("fixture_game::Crate"), "and offers the registered name it is close to: {text}");
+    }
+
+    // The control: a registered component that no entity holds.
+    let registered = brp(&tools, json!({"method": "world.list_components"})).await;
+    let mut unheld = None;
+    for path in registered.as_array().expect("world.list_components returns an array") {
+        let path = path.as_str().expect("a component path is a string");
+        let rows = brp(&tools, json!({"method": "world.query", "params": {"data": {"components": [path]}}})).await;
+        if rows.as_array().is_some_and(Vec::is_empty) {
+            unheld = Some(path.to_string());
+            break;
+        }
+    }
+    let unheld = unheld.expect("the fixture registers at least one component that no entity holds");
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({"action": "test", "description": "an entity holds it", "success_condition": format!("entity_exists:{unheld}")}),
+    )
+    .await;
+    assert!(!failed, "{unheld} is registered, so the claim is answerable: {reply}");
+    assert_eq!(reply["verdict"], json!("REJECTED"), "no entity holds {unheld}: {reply}");
+}
+
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
 /// way an agent's client reaches it, so a tool the server does not offer is answered as such.
 struct StdioServer {

@@ -7,7 +7,7 @@ use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
 use crate::server::experiment_system::Action;
 use crate::server::hypothesis_system::{
-    Assertion, Hypothesis, TestRunner, VariationStrategy,
+    registered_components, require_registered, Assertion, Hypothesis, TestRunner, VariationStrategy,
 };
 
 /// Handle hypothesis tool requests
@@ -110,6 +110,14 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
 
     // Run the test
     let mut client = brp_client.write().await;
+
+    // Before any action runs: a component name the game never registered would be judged false.
+    let names = hypothesis.success_condition.component_names();
+    if !names.is_empty() {
+        let registered = registered_components(&mut client).await.map_err(|e| *e)?;
+        require_registered(&names, &registered)?;
+    }
+
     let result = runner.run(&hypothesis, &mut client).await?;
 
     let verdict = result.verdict(threshold);

@@ -226,6 +226,22 @@ impl Assertion {
         Ok(())
     }
 
+    /// Every component name the condition reads from the game.
+    pub fn component_names(&self) -> Vec<&str> {
+        match self {
+            Self::EntityExists { component_types, .. } => {
+                component_types.iter().map(String::as_str).collect()
+            }
+            Self::ComponentEquals { component_type, .. }
+            | Self::ComponentMatches { component_type, .. } => vec![component_type.as_str()],
+            Self::PerformanceWithin { .. } | Self::ActionSucceeds { .. } => Vec::new(),
+            Self::All { assertions } | Self::Any { assertions } => {
+                assertions.iter().flat_map(Assertion::component_names).collect()
+            }
+            Self::Not { assertion } => assertion.component_names(),
+        }
+    }
+
     /// Evaluate assertion against current game state
     pub fn evaluate<'a>(
         &'a self,
@@ -261,7 +277,8 @@ impl Assertion {
                         .iter()
                         .filter(|entity| entity_id.is_none_or(|id| entity.id == id))
                         .any(|entity| {
-                            component_value(entity, component_type) == Some(expected_value)
+                            component_value(entity, component_type)
+                                .is_some_and(|value| same_value(value, expected_value))
                         }))
                 }
                 Self::ComponentMatches { .. } => Err(Error::Validation(
@@ -386,6 +403,91 @@ fn component_value<'e>(
         let short = path.rsplit("::").next().unwrap_or(path);
         (path == name || short == name).then_some(value)
     })
+}
+
+/// Whether two JSON values are the same value. Numbers are compared as numbers: the game writes
+/// a float field as `3.0` and an agent writes `3`, and `serde_json::Value` equality tells them apart.
+fn same_value(game: &serde_json::Value, expected: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (game, expected) {
+        (Value::Number(a), Value::Number(b)) => match (a.as_f64(), b.as_f64()) {
+            (Some(a), Some(b)) => a == b,
+            _ => a == b,
+        },
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_value(a, b))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter().all(|(key, a)| b.get(key).is_some_and(|b| same_value(a, b)))
+        }
+        _ => game == expected,
+    }
+}
+
+/// The component type paths the game has registered.
+pub async fn registered_components(brp_client: &mut BrpClient) -> BoxedResult<Vec<String>> {
+    let request = crate::server::brp::BrpRequest {
+        method: crate::server::brp::builtin_methods::BRP_LIST_COMPONENTS_METHOD.to_string(),
+        id: None,
+        params: None,
+    };
+    let response = brp_client.send_request(&request).await.map_err(Box::new)?;
+    match response.payload {
+        crate::server::brp::BrpPayload::Result(serde_json::Value::Array(paths)) => Ok(paths
+            .into_iter()
+            .filter_map(|path| path.as_str().map(String::from))
+            .collect()),
+        crate::server::brp::BrpPayload::Result(_) => Err(Box::new(Error::Validation(
+            "the game answered world.list_components with something other than a list".to_string(),
+        ))),
+        crate::server::brp::BrpPayload::Error(error) => Err(Box::new(Error::Brp(error.message))),
+    }
+}
+
+/// Refuse a component name the game has not registered, or one that names two registered
+/// components. A name nothing can hold makes a claim false whatever the game does (and its
+/// negation true), which reads as a measurement but is a typo.
+pub fn require_registered(names: &[&str], registered: &[String]) -> Result<()> {
+    let short = |path: &str| path.rsplit("::").next().unwrap_or(path).to_string();
+    for name in names {
+        if registered.iter().any(|path| path == name) {
+            continue;
+        }
+        let sharing: Vec<&String> = registered.iter().filter(|path| short(path) == *name).collect();
+        match sharing.as_slice() {
+            [_] => {}
+            [] => {
+                let wanted = short(name).to_lowercase();
+                let mut close: Vec<&str> = registered
+                    .iter()
+                    .filter(|path| {
+                        let candidate = short(path).to_lowercase();
+                        !wanted.is_empty() && (candidate.contains(&wanted) || wanted.contains(&candidate))
+                    })
+                    .map(String::as_str)
+                    .collect();
+                close.sort_unstable();
+                close.truncate(5);
+                let hint = if close.is_empty() {
+                    "call world.list_components to see what is registered".to_string()
+                } else {
+                    format!("close registered names: {}", close.join(", "))
+                };
+                return Err(Error::Validation(format!(
+                    "component {name} is not registered in the game, so no entity can hold it and a claim about it is false whatever the game does; {hint}"
+                )));
+            }
+            many => {
+                let paths: Vec<&str> = many.iter().map(|path| path.as_str()).collect();
+                return Err(Error::Validation(format!(
+                    "component name {name} is ambiguous: it is the short name of {}. Use the full path",
+                    paths.join(" and ")
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Ask the game for its entities, so a count comes from the game rather than from a constant.
@@ -1227,6 +1329,28 @@ mod tests {
         assert_eq!(counted(0, 100, 900).verdict(0.95), Verdict::Inconclusive);
         // Even if all 3 unread iterations had held, 3 of 100 is below the rejection line.
         assert_eq!(counted(0, 97, 3).verdict(0.95), Verdict::Rejected);
+    }
+
+    #[test]
+    fn numbers_are_the_same_value_however_they_are_written() {
+        use serde_json::json;
+        assert!(same_value(&json!(3.0), &json!(3)));
+        assert!(same_value(&json!({"weight": 3.0, "tags": [1.0, "a"]}), &json!({"tags": [1, "a"], "weight": 3})));
+        assert!(!same_value(&json!(3.5), &json!(3)));
+        assert!(!same_value(&json!(3.0), &json!("3")));
+        assert!(!same_value(&json!({"weight": 3.0}), &json!({"weight": 3, "extra": 1})));
+    }
+
+    #[test]
+    fn a_component_name_must_be_one_registered_component() {
+        let registered: Vec<String> = ["game::Crate", "game::Score", "a::Health", "b::Health"]
+            .map(String::from)
+            .to_vec();
+        assert!(require_registered(&["game::Crate", "Score", "a::Health"], &registered).is_ok());
+        let unknown = require_registered(&["Crat"], &registered).unwrap_err().to_string();
+        assert!(unknown.contains("not registered") && unknown.contains("game::Crate"), "{unknown}");
+        let ambiguous = require_registered(&["Health"], &registered).unwrap_err().to_string();
+        assert!(ambiguous.contains("a::Health") && ambiguous.contains("b::Health"), "{ambiguous}");
     }
 
     #[test]
