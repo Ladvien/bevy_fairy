@@ -6,11 +6,11 @@ Let a coding agent look inside a running Bevy game, drive it, and ask the person
 
 [![crates.io](https://img.shields.io/crates/v/bevy_fairy.svg)](https://crates.io/crates/bevy_fairy) [![docs.rs](https://img.shields.io/docsrs/bevy_fairy)](https://docs.rs/bevy_fairy) [![CI](https://github.com/bevy-coven/bevy_fairy/actions/workflows/ci.yml/badge.svg)](https://github.com/bevy-coven/bevy_fairy/actions/workflows/ci.yml) [![Bevy 0.20](https://img.shields.io/badge/bevy-0.20-purple.svg)](https://bevyengine.org) [![Licence: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#who-and-licence)
 
-![A six-second loop: the agent checks status, reads the spinner and captures the frame, then spawns three cubes through the game's own command](docs/media/hero.gif)
+![A seven-second loop: the agent checks status, reads the spinner and captures the frame, then spawns three cubes through the game's own command](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/hero.gif)
 
-*The whole loop in six seconds: `status`, a `brp` read of the spinner beside the frame its `screenshot` call saved, then three `run` calls spawning cubes. Every reply is the server's own output and every picture is the game's own frame. The still below is that run's `brp` + `screenshot` pair; [the longer tour and a real agent session](docs/media/README.md) sit beside them.*
+*The whole loop in seven seconds: `status`, a `brp` read of the spinner beside the frame its `screenshot` call saved, then three `run` calls spawning cubes. Every reply is the server's own output and every picture is the game's own frame. The still below is that run's `brp` + `screenshot` pair; [the longer tour and a real agent session](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/media/README.md) sit beside them.*
 
-![One tool call beside the frame it captured, from the same recording](docs/media/hero.png)
+![One tool call beside the frame it captured, from the same recording](https://raw.githubusercontent.com/bevy-coven/bevy_fairy/main/docs/media/hero.png)
 
 **Status:** usable · Bevy 0.20 · MSRV 1.95
 
@@ -66,13 +66,13 @@ That is the game the tour was recorded from: six crates, a score, a mover, and a
 
 ## What you can do
 
-- **Read state, and change it and undo it.** `brp` calls any BRP method the game serves; `observe` answers a short phrase query with the entities and their component values, and `diff: true` compares a read with the last one; `experiment` spawns, modifies and deletes entities and steps back through its own history — [tools](docs/guide/tools.md).
-- **Watch a value over time.** `watch` samples a method repeatedly and says which fields moved and which stopped, each sample stamped with the game frame; `burst` returns a sequence of frames as one contact sheet; `bevy_fairy/ring` records N frames inside the game and freezes on a trigger — [tools](docs/guide/tools.md).
-- **Run the game's own commands, and replay them.** `commands` lists what the game registered, with typed params and a worked example; `run` calls one; `scene save` writes the recorded run to a file that `BEVY_FAIRY_SCENE` replays at startup — [commands](docs/guide/commands.md), [scenes](docs/guide/scene.md).
-- **See the screen.** `screenshot` captures a PNG from an offscreen render target or from the window, with a crop and a zoom, and returns the frame numbers it was asked and delivered on — [capture](docs/guide/capture.md).
-- **Press keys, type, click and drag.** `bevy_fairy/input` writes keyboard, text, mouse, scroll and cursor input into the messages Bevy reads, so `ButtonInput`, text fields and `bevy_ui` picking all see it — [input](docs/guide/input.md).
-- **Ask a person.** `guide` posts a script the game draws one step at a time, and the step moves on when a checkpoint your game registered passes — [guide](docs/guide/guide.md).
-- **Test a claim, or look for an anomaly.** `hypothesis` runs a claim against the running game over many iterations and puts the game back after each; `detect_anomaly` scores velocities and state inconsistencies against thresholds you set — [claims](docs/guide/claims.md).
+- **Read state, and change it and undo it.** `brp` calls any BRP method the game serves; `observe` answers a short phrase query with the entities and their component values, and `diff: true` compares a read with the last one; `experiment` spawns, modifies and deletes entities and steps back through its own history — [tools](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/tools.md).
+- **Watch a value over time.** `watch` samples a method repeatedly and says which fields moved and which stopped, each sample stamped with the game frame; `burst` returns a sequence of frames as one contact sheet; `bevy_fairy/ring` records N frames inside the game and freezes on a trigger — [tools](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/tools.md).
+- **Run the game's own commands, and replay them.** `commands` lists what the game registered, with typed params and a worked example; `run` calls one; `scene save` writes the recorded run to a file that `BEVY_FAIRY_SCENE` replays at startup — [commands](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/commands.md), [scenes](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/scene.md).
+- **See the screen.** `screenshot` captures a PNG from an offscreen render target or from the window, with a crop and a zoom, and returns the frame numbers it was asked and delivered on — [capture](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/capture.md).
+- **Press keys, type, click and drag.** `bevy_fairy/input` writes keyboard, text, mouse, scroll and cursor input into the messages Bevy reads, so `ButtonInput`, text fields and `bevy_ui` picking all see it — [input](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/input.md).
+- **Ask a person.** `guide` posts a script the game draws one step at a time, and the step moves on when a checkpoint your game registered passes — [guide](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/guide.md).
+- **Test a claim, or look for an anomaly.** `hypothesis` runs a claim against the running game over many iterations and puts the game back after each; `detect_anomaly` scores velocities and state inconsistencies against thresholds you set — [claims](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/claims.md).
 
 It cannot see frame time, CPU or memory: BRP does not report them, and the tools say so rather than make up a number.
 
@@ -89,16 +89,16 @@ It cannot see frame time, CPU or memory: BRP does not report them, and the tools
 
 ## Learn more
 
-- **[The tools](docs/guide/tools.md)**: every tool and argument, and what it refuses.
-- **[`docs/mcp-tools.md`](docs/mcp-tools.md)**: the same list generated from the server's own `tools/list`, so it cannot drift.
-- **[The guide](docs/guide/README.md)**: installing it into a game, the clients, input, capture, the guide overlay, claims and workflows.
+- **[The tools](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/tools.md)**: every tool and argument, and what it refuses.
+- **[`docs/mcp-tools.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/mcp-tools.md)**: the same list generated from the server's own `tools/list`, so it cannot drift.
+- **[The guide](https://github.com/bevy-coven/bevy_fairy/blob/main/docs/guide/README.md)**: installing it into a game, the clients, input, capture, the guide overlay, claims and workflows.
 - **[The book page](https://bevy-coven.github.io/crates/bevy_fairy.html)**, and the [API on docs.rs](https://docs.rs/bevy_fairy).
-- **[Examples](examples/)**: each prints what happened, and most need no window or GPU.
-- **[`evals/`](evals/README.md)** measures whether an agent with only this server can answer debugging questions about the fixture game.
-- **[`CHANGELOG.md`](CHANGELOG.md)**, and [`CLAUDE.md`](CLAUDE.md) for the design decisions that are easy to undo by accident.
+- **[Examples](https://github.com/bevy-coven/bevy_fairy/tree/main/examples)**: each prints what happened, and most need no window or GPU.
+- **[`evals/`](https://github.com/bevy-coven/bevy_fairy/blob/main/evals/README.md)** measures whether an agent with only this server can answer debugging questions about the fixture game.
+- **[`CHANGELOG.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CHANGELOG.md)**, and [`CLAUDE.md`](https://github.com/bevy-coven/bevy_fairy/blob/main/CLAUDE.md) for the design decisions that are easy to undo by accident.
 
 ## Who and licence
 
 Maintained by [@Ladvien](https://github.com/Ladvien). Issues and pull requests are welcome at [github.com/bevy-coven/bevy_fairy/issues](https://github.com/bevy-coven/bevy_fairy/issues); read the org's [CONTRIBUTING.md](https://github.com/bevy-coven/.github/blob/main/CONTRIBUTING.md) first.
 
-Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+Licensed under either of [MIT](https://github.com/bevy-coven/bevy_fairy/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/bevy-coven/bevy_fairy/blob/main/LICENSE-APACHE), at your option.
