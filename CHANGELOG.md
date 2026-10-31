@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-10-30
 
-Breaking: the `replay` MCP tool is removed, and `detect_anomaly` lost two arguments it never read. Migration is below.
+Covers everything since 0.9.0 (semver-checks: 6 major checks). Breaking: the `replay` MCP tool is removed, and `detect_anomaly` lost two arguments it never read. Migration is below.
 
 ### Removed
 
