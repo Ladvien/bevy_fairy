@@ -4,6 +4,10 @@
 
 Breaking: `hypothesis` replies changed shape and a variation that changes nothing is refused, `experiment` lost its `archetypes` action and its `archetype` field, and `Action` and `ComponentSpec` refuse fields they do not read.
 
+### Added
+
+- `bevy_fairy/status` reports `instance`: one value per game process (process id, start time, a per-process counter), unchanged for the game's life and different after a restart. The `status` tool passes it through. A server that keeps state about a game by entity id uses it to tell the game from another that gave the same ids to other entities. `BrpClient::game_instance` reads it.
+
 ### Removed
 
 - `experiment`'s `archetypes` action and a spawn's `archetype` field, with `EntityFactory`. The four archetypes (player, enemy, projectile, static_mesh) were hard-coded lists of short component names (`Transform`, `Health`, `Mesh`) and `{x, y, z}` objects. BRP takes full type paths and arrays, and no game is guaranteed to have a `Health`, so no spawn from the list could work against any game while `archetypes` advertised them. Spawn with the components a game has, written as full paths (`game::Crate`). Asking for `archetypes` now answers "Unknown action" and lists `execute, undo, redo, history, clear_history`.
@@ -34,10 +38,13 @@ Breaking: `hypothesis` replies changed shape and a variation that changes nothin
 - `experiment` and `hypothesis` answered "not connected to Bevy game" for up to 30 s after a game came up that the server had been started before: they read the connection state the heartbeat leaves every 30 s without asking the game. They probe once before giving that answer (`BrpClient::reachable`). An MCP client that starts its server with the agent's session and a game started a moment later is the ordinary case.
 - `hypothesis` with `grid`, `boundary` or `fuzz` over a component varied nothing: the check was for a bare number, string or boolean, and a component's value is an object. Every iteration ran the base action and was counted as a separate trial. A `variation_type` that changes nothing in `actions` (no actions, or none that write a value it varies) is refused before anything runs, because identical iterations are not independent trials.
 - `hypothesis` `fuzz` replaced a `delete`'s `entity_id` with a random number below 1000, which is never a live entity.
+- `experiment` `undo` and `redo` wrote one game's history into another. The history is kept by the server, which outlives the game, and a restarted game gives its entities other ids, so `undo` put the old game's original values on the new game's entities (or despawned whatever now had a recorded spawn's id). The history belongs to the game process that ran its first action (the `instance` of `bevy_fairy/status`): after a restart `undo` and `redo` are refused and discard it, `execute` discards it and says so in `history_discarded`, and `history` reports `stale` and `recorded_against`. A game that cannot name its process (no plugin, or a plugin older than this server) leaves the history unverified and the reply says why in `game_instance_unverified`; a game that named itself and no longer answers `bevy_fairy/status` refuses.
+- `observe` with `diff: true` compared a read with the previous read of the same query even when the game had restarted in between, and reported the difference between the two games (every crate of the new game `EntityAdded`) as what the game changed. The first read after a restart is a new baseline and says why. A game that cannot name its process still diffs, and the diff says so in `game_instance_unverified`.
+- `hypothesis` `quick_test` overwrote a caller's `iterations` and `timeout` with 10 and 10 s and answered as if the arguments had been read. It refuses them now, naming `test` as the action that takes them.
 
 ### Not yet fixed
 
-- `experiment`'s history is kept by the server and goes stale when the game restarts: `undo` can then delete the entity that now has the recorded id. Call `clear_history` after a restart.
+- `detect_anomaly`'s physics detector keeps a velocity history per entity id across calls, and nothing ties it to a game, so after a restart samples of two games are scored together (B-119, read in `anomaly_detector.rs`, not yet reproduced).
 
 ## 0.10.0 - 2026-10-30
 

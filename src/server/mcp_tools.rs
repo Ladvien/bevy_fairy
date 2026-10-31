@@ -44,8 +44,9 @@ pub struct ObserveRequest {
     /// resource, use `brp`.
     pub query: String,
     /// Compare this read with the previous `diff: true` read of the same query in this server
-    /// session. The first such read is the baseline and says so. With find N entities the diff
-    /// compares every matched entity, not only the N rows returned.
+    /// session. The first such read is the baseline and says so, and so is the first read after a
+    /// game restart (the earlier read was of another game, whose entity ids are not comparable).
+    /// With find N entities the diff compares every matched entity, not only the N rows returned.
     #[serde(default)]
     pub diff: bool,
 }

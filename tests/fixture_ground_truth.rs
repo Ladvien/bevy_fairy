@@ -895,6 +895,43 @@ async fn observe_diff_with_a_limit_reports_only_what_the_game_changed() {
     assert_eq!(second["result"].as_array().map(Vec::len), Some(2), "the rows are still cut to 2: {second}");
 }
 
+/// `diff: true` compares a read with the previous read of the same query, and the server outlives
+/// the game: after a restart the previous read is another game's, and the same entity ids name
+/// other entities. Diffing across them reports the difference between two games as something the
+/// game changed. A read of another game process is a new baseline, and says why.
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_diff_does_not_compare_a_read_with_one_of_another_game() {
+    let _turn = OBSERVE_DIFF_TURN.lock().await;
+    let query = "find entities with component fixture_game::Crate";
+    let before_restart = tools_for(start_fixture());
+    wait_until_ready(&before_restart).await;
+    let first = observe_diff(&before_restart, query).await;
+    assert_eq!(first["diff"]["baseline"], true, "{first}");
+
+    let after_restart = tools_for(start_fixture());
+    wait_until_ready(&after_restart).await;
+    let spawned = brp(
+        &after_restart,
+        json!({"method": "world.spawn_entity", "params": {"components": {"fixture_game::Crate": {"weight": 7.0}}}}),
+    )
+    .await["entity"]
+        .as_u64()
+        .expect("the game names the entity it spawned");
+    let read = observe_diff(&after_restart, query).await;
+    assert_eq!(read["diff"]["baseline"], true, "the earlier read was of another game: {read}");
+    assert!(read["diff"].get("changes").is_none(), "nothing is compared across games: {read}");
+    assert!(
+        read["diff"]["message"].as_str().is_some_and(|m| m.contains("another game")),
+        "the reply says why it is a baseline: {read}"
+    );
+
+    // Within the new game the next read is compared as usual.
+    brp(&after_restart, json!({"method": "world.despawn_entity", "params": {"entity": spawned}})).await;
+    let next = observe_diff(&after_restart, query).await;
+    assert_eq!(next["diff"]["summary"]["entities_removed"], 1, "the crate the new game spawned was despawned: {next}");
+    assert!(next["diff"].get("baseline").is_none(), "{next}");
+}
+
 /// `show entity N` shows that entity: the mover has a `Transform` and a `fixture_game::Mover`. It
 /// asked `world.get_components` for no components and answered `{"components": {}}` with an
 /// entity_count of 1, so every entity read as one with no components at all.

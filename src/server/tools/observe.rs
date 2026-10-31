@@ -14,6 +14,17 @@ use crate::server::mcp_tools::ObserveRequest;
 use crate::server::query_parser::{QueryParser, RegexQueryParser};
 use crate::server::state_diff::{StateDiff, StateDiffResult, StateSnapshot};
 
+/// How a `diff` read relates to the one before it.
+pub enum Baseline {
+    /// There is no earlier read of this query.
+    None,
+    /// The earlier read of this query was of another game process: entity ids are not comparable.
+    AnotherGame,
+    /// The earlier read of this query, compared with. The text says why the two reads could not be
+    /// confirmed as one game's, when one of them could not name its game.
+    Earlier(Box<StateDiffResult>, Option<String>),
+}
+
 /// Shared state for the observe tool
 pub struct ObserveState {
     parser: RegexQueryParser,
@@ -21,6 +32,8 @@ pub struct ObserveState {
     last_snapshot: Option<StateSnapshot>,
     /// The query `last_snapshot` answered. A read of another query is not comparable with it.
     last_query: Option<String>,
+    /// The game process `last_snapshot` was read from (`Err`: why it could not say).
+    last_game: std::result::Result<String, String>,
 }
 
 impl ObserveState {
@@ -34,26 +47,41 @@ impl ObserveState {
             diff_engine: StateDiff::new(),
             last_snapshot: None,
             last_query: None,
+            last_game: Err("no read yet".to_string()),
         })
     }
 
-    /// Keep `snapshot`, the answer to `query`, as the read the next `diff` read of the same query
-    /// is compared with.
-    pub fn add_snapshot(&mut self, query: &str, snapshot: StateSnapshot) {
+    /// Keep `snapshot`, the answer to `query` read from `game`, as the read the next `diff` read of
+    /// the same query is compared with.
+    pub fn add_snapshot(&mut self, query: &str, snapshot: StateSnapshot, game: std::result::Result<String, String>) {
         self.last_snapshot = Some(snapshot);
         self.last_query = Some(query.to_string());
+        self.last_game = game;
     }
 
-    /// Diff against the last snapshot only when it answered the same `query`. Two queries cover
-    /// different entities and components, so comparing them would report what the queries left out
-    /// as entities and components the game added or removed.
-    pub fn diff_against_last_read_of(&self, query: &str, current_snapshot: &StateSnapshot) -> Option<StateDiffResult> {
+    /// Diff against the last snapshot only when it answered the same `query` and came from the
+    /// same game. Two queries cover different entities and components, so comparing them would
+    /// report what the queries left out as entities and components the game added or removed. Two
+    /// games (a restart) give the same entity ids to other entities, so comparing them would
+    /// report the difference between the games as a change.
+    pub fn diff_against_last_read_of(
+        &self,
+        query: &str,
+        current_snapshot: &StateSnapshot,
+        game: &std::result::Result<String, String>,
+    ) -> Baseline {
         if self.last_query.as_deref() != Some(query) {
-            return None;
+            return Baseline::None;
         }
-        self.last_snapshot
-            .as_ref()
-            .map(|last| self.diff_engine.diff_snapshots(last, current_snapshot))
+        let Some(last) = self.last_snapshot.as_ref() else {
+            return Baseline::None;
+        };
+        let unverified = match (&self.last_game, game) {
+            (Ok(then), Ok(now)) if then != now => return Baseline::AnotherGame,
+            (Ok(_), Ok(_)) => None,
+            (Err(why), _) | (_, Err(why)) => Some(why.clone()),
+        };
+        Baseline::Earlier(Box::new(self.diff_engine.diff_snapshots(last, current_snapshot)), unverified)
     }
 
     /// Number `entities` as the diff engine's next snapshot, without keeping it
@@ -253,13 +281,14 @@ pub async fn handle(request: &ObserveRequest, brp_client: Arc<RwLock<BrpClient>>
             // the next one's baseline. Keeping it first compared every read with itself: "no
             // changes", always.
             let diff_result = if diff_mode {
+                let game = brp_client.write().await.game_instance().await;
                 let mut state_guard = state.write().await;
                 let current_snapshot = state_guard.create_snapshot(decoded_entities);
-                let diff = state_guard.diff_against_last_read_of(query, &current_snapshot);
-                state_guard.add_snapshot(query, current_snapshot);
-                diff
+                let baseline = state_guard.diff_against_last_read_of(query, &current_snapshot, &game);
+                state_guard.add_snapshot(query, current_snapshot, game);
+                baseline
             } else {
-                None
+                Baseline::None
             };
 
             (value, count, matched, diff_result)
@@ -298,27 +327,45 @@ pub async fn handle(request: &ObserveRequest, brp_client: Arc<RwLock<BrpClient>>
     }
 
     // Add diff information if available
-    if let Some(diff_result) = diff_result {
-        let grouped_changes = {
-            let state_guard = state.read().await;
-            state_guard.diff_engine.group_changes(&diff_result.changes)
-        };
+    match diff_result {
+        Baseline::Earlier(diff_result, unverified) => {
+            let grouped_changes = {
+                let state_guard = state.read().await;
+                state_guard.diff_engine.group_changes(&diff_result.changes)
+            };
 
-        response["diff"] = json!({
-            "summary": diff_result.summary,
-            "changes": diff_result.changes,
-            "grouped_changes": grouped_changes,
-            "before_timestamp": diff_result.before_snapshot.timestamp.to_rfc3339(),
-            "after_timestamp": diff_result.after_snapshot.timestamp.to_rfc3339(),
-            "colored_output": diff_result.format_colored(),
-            "unexpected_changes_count": diff_result.unexpected_changes().len(),
-        });
-    } else if diff_mode {
-        response["diff"] = json!({
-            "baseline": true,
-            "message": "No earlier `diff` read of this exact query to compare with. This read is the \
-                        baseline: repeat the same query with `diff: true` to see what changed.",
-        });
+            response["diff"] = json!({
+                "summary": diff_result.summary,
+                "changes": diff_result.changes,
+                "grouped_changes": grouped_changes,
+                "before_timestamp": diff_result.before_snapshot.timestamp.to_rfc3339(),
+                "after_timestamp": diff_result.after_snapshot.timestamp.to_rfc3339(),
+                "colored_output": diff_result.format_colored(),
+                "unexpected_changes_count": diff_result.unexpected_changes().len(),
+            });
+            if let Some(why) = unverified {
+                response["diff"]["game_instance_unverified"] = json!(format!(
+                    "the two reads could not be confirmed as one game's: {why}"
+                ));
+            }
+        }
+        Baseline::AnotherGame => {
+            response["diff"] = json!({
+                "baseline": true,
+                "message": "The earlier `diff` read of this query was of another game (the game restarted \
+                            since): entity ids name other entities there, so the two are not compared. \
+                            This read is the new baseline: repeat the same query with `diff: true` to see \
+                            what changed.",
+            });
+        }
+        Baseline::None if diff_mode => {
+            response["diff"] = json!({
+                "baseline": true,
+                "message": "No earlier `diff` read of this exact query to compare with. This read is the \
+                            baseline: repeat the same query with `diff: true` to see what changed.",
+            });
+        }
+        Baseline::None => {}
     }
     if let (Some((_, matched)), Some(diff)) = (matched, response.get_mut("diff")) {
         diff["compares"] = json!(format!(

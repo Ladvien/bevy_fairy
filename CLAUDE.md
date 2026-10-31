@@ -192,6 +192,14 @@ The `timeout` is a deadline for the run, checked **between** iterations once the
 
 Variation is leaf-level: `for_each_written_leaf` reaches every number, string and bool at any depth (a component's value is an object, and the first generators only tested a bare number), and a variation that changes nothing is refused, because N identical iterations narrow the interval and test nothing. Whether a number is an integer is read off how the caller wrote it (`5`, not `5.0`): `random` and `fuzz` round their draws then, `grid` and `boundary` write what they were given. `experiment`'s `modify` carries `read_back`, one read a frame or so after the write; a system that changes the value later is not seen.
 
+## The server outlives the game, so what it remembers about one carries the game's `instance`
+
+`experiment` keeps one process-wide undo history and `observe` with `diff: true` keeps the previous read of a query. Both name entities by id, and a restarted game gives the same ids to other entities: before `instance` existed, `undo` wrote the old game's original values into the new game, and a diff reported the difference between two games as a change (B-109, B-118). `bevy_fairy/status` reports `instance` (`src/plugin/ready.rs::GameInstance`: process id, start nanoseconds, a per-process counter, because two apps started in one process -- a test does -- would otherwise share the first two); `BrpClient::game_instance` reads it; a store that keeps state by entity id records it beside the state and compares before it acts.
+
+The rule for a game that cannot name itself is **never silent**: no plugin, or an older one, makes the state `unverified` and the reply carries `game_instance_unverified` with the reason; a game that named itself and now cannot be asked refuses `undo`/`redo`. Anything new that keeps entity ids across calls (the anomaly detectors still do, B-119) takes the same comparison, and a test that restarts the game by starting a second fixture in the same process (`experiment_undo_refuses_a_history_recorded_against_another_game`).
+
+The history is also process-wide, so **every test that calls `experiment` takes `EXPERIMENT_TURN`**: `tools_answer_as_soon_as_the_game_is_up_not_after_the_next_heartbeat` did not, its `undo` raced the others and, once the guard existed, cleared a history that belonged to a test in progress (3 of 5 full runs failed).
+
 ## The fixture game is the ground truth
 
 `examples/fixture_game.rs` is a headless Bevy app whose state is known from its own `pub const`s:
