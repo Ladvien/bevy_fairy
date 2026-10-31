@@ -33,7 +33,7 @@ No arguments.
 
 ## `detect_anomaly`
 
-Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (compared with that entity's own recent speeds), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity is how far past its threshold a reading is, from 0 to 1. A detection is a lead to check, not a verdict.
+Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
@@ -41,9 +41,9 @@ Look for anomalies in the game's entities. `action` picks the operation: `detect
 | `entity_growth_threshold` | number | no | The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally. |
 | `limit` | integer | no | How many anomalies to report at most. |
 | `min_samples` | integer | no | The fewest samples needed before a verdict is possible; at most `window_size`. |
-| `min_severity` | number | no | The lowest severity to report, from 0 to 1. Severity is how far past its threshold a reading is: 0.5 at twice the threshold. |
+| `min_severity` | number | no | The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement. |
 | `window_size` | integer | no | How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window. |
-| `z_score_threshold` | number | no | How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. |
+| `z_score_threshold` | number | no | How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated. |
 
 ## `experiment`
 
@@ -105,7 +105,7 @@ Test a claim about your game against the running game. `action` picks the operat
 
 ## `observe`
 
-Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.
+Read the game's entities with a short phrase query and return them with their component values: every entity, one entity by id, the entities with or without a component, or the registered component types. `diff` compares a read with the previous `diff` read of the same query. The reply says which game frames the read lies between ("frame" to "frame_until", the counter before and after; the game serves each request on a frame of its own), or "frame_unavailable" with the reason when the game does not serve the plugin's status method. Entities only: for a resource use `brp` with world.get_resources, and for a component's fields and their types use `brp` with registry.schema.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|

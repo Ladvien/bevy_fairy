@@ -1089,9 +1089,16 @@ async fn detect_anomaly_reports_what_the_detectors_could_not_read_in_the_fixture
     let entities_in_the_game = everything.as_array().expect("world.query returns rows").len() as u64;
 
     let mut held = Vec::new();
+    let mut frames_seen: Vec<u64> = Vec::new();
     for call in 1..=2u64 {
         let reply = detect_anomaly(&tools, json!({"action": "detect"})).await;
         assert_eq!(reply["summary"]["entities_read"], entities_in_the_game, "{reply}");
+        let (from, until) = (reply["frame"].as_u64(), reply["frame_until"].as_u64());
+        assert!(from.is_some() && until >= from, "the detection says which frames it was read between: {reply}");
+        if let Some(previous) = frames_seen.last() {
+            assert!(from.unwrap() > *previous, "a later call is on a later frame: {reply}");
+        }
+        frames_seen.push(from.unwrap());
         assert_eq!(reply["anomalies"], json!([]), "the fixture is steady: {reply}");
         let detectors = reply["detectors"].as_array().expect("coverage per detector");
         let named = |name: &str| detectors.iter().find(|d| d["detector"] == name).unwrap_or_else(|| panic!("{name}: {reply}"));
@@ -1105,4 +1112,35 @@ async fn detect_anomaly_reports_what_the_detectors_could_not_read_in_the_fixture
         assert!(reply["note"].as_str().unwrap().contains("says nothing about the game"), "{reply}");
     }
     assert_ne!(held[0], held[1], "each call adds one sample");
+}
+
+/// An `observe` reply carries no frame, so an agent that reads twice cannot tell fresh evidence
+/// from stale, or how far apart two reads were. Each reply says which frames the read lies
+/// between. The spinner counts its own frames, so with the constant offset `c` between the two
+/// counters every read must satisfy `frame <= frames - c <= frame_until` for one `c`
+/// (`watch_brackets_the_frame_every_sample_was_read_on` argues the same bracket).
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_brackets_the_frame_every_read_was_taken_on() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let (mut lowest, mut highest) = (i64::MIN, i64::MAX);
+    let mut firsts = Vec::new();
+    for _ in 0..10 {
+        let (text, failed) = observe(&tools, "find entities with component fixture_game::Spinner").await;
+        assert!(!failed, "{text}");
+        let reply: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("observe returned non-JSON ({e}): {text}"));
+        let counted = reply["result"][0]["components"]["fixture_game::Spinner"]["frames"]
+            .as_i64()
+            .unwrap_or_else(|| panic!("no spinner frame counter in: {text}"));
+        let from = reply["frame"].as_i64().unwrap_or_else(|| panic!("the reply carries no frame: {text}"));
+        let until = reply["frame_until"].as_i64().unwrap_or_else(|| panic!("the reply carries no frame_until: {text}"));
+        assert!(from <= until, "bracket reversed: {text}");
+        lowest = lowest.max(counted - until);
+        highest = highest.min(counted - from);
+        firsts.push(from);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(lowest <= highest, "no constant offset fits every bracket ({lowest} > {highest})");
+    assert!(firsts.windows(2).all(|w| w[0] < w[1]), "reads 100 ms apart are on later frames: {firsts:?}");
 }

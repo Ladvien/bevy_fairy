@@ -16,6 +16,7 @@ use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
     AnomalyRequest, BevyDebuggerTools, BrpCallRequest, ExperimentRequest, HypothesisRequest,
+    ObserveRequest,
 };
 use rmcp::handler::server::tool::Parameters;
 use rmcp::model::CallToolResult;
@@ -250,6 +251,35 @@ fn detect_anomaly_refuses_thresholds_no_detector_reads() {
         let refused = serde_json::from_value::<AnomalyRequest>(json!({"action": "configure", field: 2.0}));
         let message = refused.expect_err("a threshold nothing reads must be refused").to_string();
         assert!(message.contains(field), "the refusal names `{field}`: {message}");
+    }
+}
+
+/// A game that serves BRP but not this crate's plugin has no `bevy_fairy/status`, so there is no
+/// frame to stamp a read with. The reply says why, and carries no frame, rather than a made-up one
+/// or none at all without a word. (The fake game answers `world.query` and nothing of ours.)
+#[tokio::test]
+async fn a_read_from_a_game_without_the_plugin_says_why_it_has_no_frame() {
+    let game: SharedGame = Arc::new(Mutex::new(FakeGame::default()));
+    let port = start_fake_game(game.clone()).await;
+    let tools = tools_for(port);
+    connect(&tools).await;
+
+    let observed = tools
+        .observe(request::<ObserveRequest>(json!({"query": "list all entities"})))
+        .await
+        .expect("observe returns a result");
+    let detected = tools
+        .detect_anomaly(request::<AnomalyRequest>(json!({"action": "detect"})))
+        .await
+        .expect("detect_anomaly returns a result");
+    for (tool, result) in [("observe", observed), ("detect_anomaly", detected)] {
+        let text = text_of(&result);
+        let value: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{tool} returned non-JSON ({e}): {text}"));
+        assert!(value.get("frame").is_none() && value.get("frame_until").is_none(), "{tool} invented a frame: {text}");
+        assert!(
+            value["frame_unavailable"].as_str().is_some_and(|why| why.contains("bevy_fairy/status")),
+            "{tool} must say why it has no frame: {text}"
+        );
     }
 }
 
