@@ -239,7 +239,7 @@ fn a_scene_file_with_the_wrong_format_replays_nothing_and_does_not_panic() {
     let why = status["replay"]["rejected"].as_str().unwrap_or_else(|| panic!("replay does not say it was rejected: {status}"));
     assert!(why.contains("format"), "says why: {why}");
     assert_eq!(status["replay"]["path"], path.to_str().expect("utf-8 path"), "{status}");
-    assert_eq!(status["replay"]["total"], 0, "{status}");
+    assert!(status["replay"].get("total").is_none(), "no counts for a file that never ran: {status}");
     std::fs::remove_file(path).ok();
 }
 

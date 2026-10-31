@@ -70,13 +70,11 @@ pub(crate) fn handle_status(
             "total": p.steps.len(),
             "failed": p.failed,
         }),
-        // A scene was asked for and refused: not the same answer as no scene at all.
+        // A scene was asked for and refused: not the same answer as no scene at all, and no counts,
+        // because nothing ran and `0 of 0` is what an accepted empty file says.
         (None, Some(r)) => json!({
             "path": r.path,
             "rejected": r.why,
-            "done": 0,
-            "total": 0,
-            "failed": 0,
         }),
         (None, None) => Value::Null,
     };

@@ -176,11 +176,13 @@ fn handle_time(
             // request like any other (B-129): it used to be skipped, so a host holding its own pause
             // or running its own slow motion read as `held: true` beside `paused: true`.
             let pause_held = if request.pause { seen.delta.is_zero() } else { !seen.paused };
-            // A paused clock has no effective speed to read; the speed it holds for when it resumes
-            // is the one to compare. A frame the engine clamped advanced slower than the speed in
-            // force, so the request held when the speed in force is the request's.
+            // A paused clock has no effective speed to read. A request of 1.0 asks for no speed (the
+            // plugin never writes 1.0 over a host's own), so a pause beside a host's slow motion is
+            // held; any other speed is compared with the one the clock holds for when it resumes.
+            // A frame the engine clamped advanced slower than the speed in force, so the request
+            // held when the speed in force is the request's.
             let speed_held = if seen.paused {
-                near(seen.relative_speed)
+                request.speed == 1.0 || near(seen.relative_speed)
             } else {
                 near(seen.effective_speed) || (seen.clamped && near(seen.relative_speed))
             };

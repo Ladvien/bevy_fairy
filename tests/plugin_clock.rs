@@ -248,3 +248,19 @@ fn an_unpause_and_a_speed_of_one_nobody_overrides_are_held() {
     assert_eq!(read["paused"], false, "{read}");
     assert_eq!(read["held"], true, "{read}");
 }
+
+/// A pause asks for no speed (the request's speed stays 1.0, which the plugin never writes over a
+/// host's own), so a host that runs slow motion of its own does not make a pause that worked read as
+/// not held. While the clock is frozen the speed it will resume at is not what was asked about.
+#[test]
+fn a_pause_is_held_beside_a_hosts_own_slow_motion() {
+    let mut app = app_with(DebuggerPlugin::default());
+    app.add_systems(Update, host_slows_to_half);
+    run(&mut app, 5);
+
+    call(&mut app, Some(json!({ "pause": true }))).expect("answers");
+    assert_eq!(run(&mut app, 30), Duration::ZERO, "the pause froze the clock");
+    let read = call(&mut app, None).expect("read");
+    assert_eq!(read["paused"], true, "{read}");
+    assert_eq!(read["held"], true, "a frozen clock obeyed a pause: {read}");
+}
