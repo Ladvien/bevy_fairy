@@ -22,6 +22,10 @@ use crate::server::error::{Error, Result};
 /// Request timeout for a single BRP call.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long to wait for a connection to the game's port. A host that does not answer the connection
+/// is not a game that took a request, and the reply says so.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// A game that did not say which process it is (see [`BrpClient::game_instance`]), and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unnamed {
@@ -97,6 +101,7 @@ impl BrpClient {
         let command_registry = Arc::new(CommandHandlerRegistry::new());
         let http = Client::builder()
             .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .expect("reqwest client builder with rustls must succeed");
 
@@ -267,7 +272,7 @@ impl BrpClient {
             .await
             .map_err(|e| {
                 self.connected.store(false, Ordering::Relaxed);
-                if e.is_timeout() {
+                if e.is_timeout() && !e.is_connect() {
                     Error::Timeout(format!("the game did not answer within {} s", REQUEST_TIMEOUT.as_secs()))
                 } else {
                     Error::Connection(format!("BRP HTTP request failed: {e}"))
@@ -291,7 +296,7 @@ impl BrpClient {
     pub async fn send_batch(&mut self, requests: &[BrpRequest]) -> Result<Vec<BrpResponse>> {
         let response = self.http.post(&self.url).json(requests).send().await.map_err(|e| {
             self.connected.store(false, Ordering::Relaxed);
-            if e.is_timeout() {
+            if e.is_timeout() && !e.is_connect() {
                 Error::Timeout(format!("the game did not answer within {} s", REQUEST_TIMEOUT.as_secs()))
             } else {
                 Error::Connection(format!("BRP HTTP request failed: {e}"))
@@ -358,6 +363,10 @@ fn instance_from(answer: Result<BrpPayload>) -> GameName {
             why: refusal_text(METHOD, &error),
             answered_without_a_name: error.code == bevy_remote::error_codes::METHOD_NOT_FOUND,
         }),
+        Err(Error::Brp(why)) => Err(Unnamed {
+            why: format!("the game answered `{METHOD}` with a failure: {why}"),
+            answered_without_a_name: false,
+        }),
         Err(e) => Err(Unnamed {
             why: format!("the game did not answer `{METHOD}`: {e}"),
             answered_without_a_name: false,
@@ -396,10 +405,14 @@ mod tests {
     fn a_game_that_gave_no_usable_answer_is_not_known_to_have_no_plugin() {
         let internal = instance_from(refusal(bevy_remote::error_codes::INTERNAL_ERROR));
         assert!(!internal.expect_err("an internal error names nothing").answered_without_a_name);
-        let down = instance_from(Err(Error::Connection("BRP server returned HTTP 500".to_string())));
+        let down = instance_from(Err(Error::Timeout("the game did not answer within 5 s".to_string())));
         let down = down.expect_err("a game that is down names nothing");
         assert!(!down.answered_without_a_name);
         assert!(down.why.contains("did not answer"), "{}", down.why);
+        let failing = instance_from(Err(Error::Brp("the game's BRP server answered with HTTP 500".to_string())));
+        let failing = failing.expect_err("an HTTP failure names nothing");
+        assert!(!failing.answered_without_a_name);
+        assert!(failing.why.contains("answered") && failing.why.contains("500"), "{}", failing.why);
     }
 
     #[test]
