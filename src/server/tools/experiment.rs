@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::server::brp::{refusal_text, BrpPayload, BrpRequest};
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
 use crate::server::experiment_system::{Action, ActionExecutor};
@@ -133,24 +132,6 @@ fn standing_of(recorded: &Recorded, entries: usize, now: &std::result::Result<St
     }
 }
 
-/// Which game process answers at the client's URL: the `instance` of `bevy_fairy/status`. The
-/// `Err` says why it cannot tell.
-async fn game_instance(client: &mut BrpClient) -> std::result::Result<String, String> {
-    const METHOD: &str = "bevy_fairy/status";
-    let request = BrpRequest { method: METHOD.to_string(), id: Some(Value::from(1)), params: None };
-    match client.send_request(&request).await {
-        Ok(response) => match response.payload {
-            BrpPayload::Result(status) => status
-                .get("instance")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .ok_or_else(|| format!("`{METHOD}` names no `instance`: the game's plugin is older than this server")),
-            BrpPayload::Error(error) => Err(refusal_text(METHOD, &error)),
-        },
-        Err(e) => Err(format!("the game did not answer `{METHOD}`: {e}")),
-    }
-}
-
 impl Default for ExperimentState {
     fn default() -> Self {
         Self::new()
@@ -241,7 +222,7 @@ async fn handle_execute(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) ->
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
-    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    let standing = state_guard.adopt(&client.game_instance().await);
     if let Some(refusal) = standing.refusal("execute", client.url(), false) {
         return Ok(refusal);
     }
@@ -289,7 +270,7 @@ async fn handle_undo(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
-    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    let standing = state_guard.adopt(&client.game_instance().await);
     if let Some(refusal) = standing.refusal("undo", client.url(), true) {
         return Ok(refusal);
     }
@@ -311,7 +292,7 @@ async fn handle_redo(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
-    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    let standing = state_guard.adopt(&client.game_instance().await);
     if let Some(refusal) = standing.refusal("redo", client.url(), true) {
         return Ok(refusal);
     }
@@ -334,7 +315,7 @@ async fn handle_history(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
 
     let now = {
         let mut client = brp_client.write().await;
-        game_instance(&mut client).await
+        client.game_instance().await
     };
     let standing = state_guard.standing(&now);
     let history = state_guard.executor.get_history();

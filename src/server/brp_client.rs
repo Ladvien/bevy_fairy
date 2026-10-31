@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::server::brp::{builtin_methods, BrpRequest, BrpResponse};
+use crate::server::brp::{builtin_methods, refusal_text, BrpPayload, BrpRequest, BrpResponse};
 use crate::server::brp_command_handler::{CommandHandlerRegistry, CoreBrpHandler, BrpCommandHandler};
 use crate::server::config::Config;
 use crate::server::debug_command_processor::DebugCommandRouter;
@@ -297,6 +297,27 @@ impl BrpClient {
     /// amortize; this preserves the interface for existing callers.
     pub async fn send_batched_request(&mut self, request: BrpRequest) -> Result<BrpResponse> {
         self.send_request(&request).await
+    }
+
+    /// Which game process answers at this client's URL: the `instance` of `bevy_fairy/status`, new
+    /// after a restart. State a server keeps about a game (an undo history, a diff baseline) names
+    /// entities by id, and a restarted game gives the same ids to other entities; this is how that
+    /// state tells its own game from another. The `Err` says why the game cannot say: it does not
+    /// answer, it serves BRP without this crate's plugin, or its plugin is older than this server.
+    pub async fn game_instance(&mut self) -> std::result::Result<String, String> {
+        const METHOD: &str = "bevy_fairy/status";
+        let request = BrpRequest { method: METHOD.to_string(), id: Some(Value::from(1)), params: None };
+        match self.send_request(&request).await {
+            Ok(response) => match response.payload {
+                BrpPayload::Result(status) => status
+                    .get("instance")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .ok_or_else(|| format!("`{METHOD}` names no `instance`: the game's plugin is older than this server")),
+                BrpPayload::Error(error) => Err(refusal_text(METHOD, &error)),
+            },
+            Err(e) => Err(format!("the game did not answer `{METHOD}`: {e}")),
+        }
     }
 
     /// Disconnect: with HTTP there is no persistent connection to drop, so
