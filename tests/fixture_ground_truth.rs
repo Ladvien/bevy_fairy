@@ -1055,6 +1055,93 @@ async fn experiment_delete_does_not_claim_a_rollback_undo_cannot_perform() {
     }
 }
 
+/// A spawn of one more crate, as an `experiment` action.
+fn spawn_crate(weight: f64) -> Value {
+    json!({"type": "spawn", "components": [{"type_id": "fixture_game::Crate", "value": {"weight": weight}}]})
+}
+
+/// A spawn the server refuses before it reaches the game: its component has no type.
+fn refused_spawn() -> Value {
+    json!({"type": "spawn", "components": [{"type_id": "", "value": 1}]})
+}
+
+/// An action the server refuses is a failed action, reported beside the ones that ran. Before the
+/// fix the refusal was an `Err` that escaped the loop: the reply was one tool error, the spawn
+/// that had already happened was not in it, and for an atomic batch the `?` skipped the
+/// transaction's rollback and its pop, so the first spawn stayed in the game and no later action
+/// in the process was recorded for `undo`.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_reports_a_refused_action_beside_the_ones_that_ran() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+    let crates = CRATE_WEIGHTS.len();
+
+    // Not atomic: the spawn before the refusal stays, and the reply says so.
+    let run = experiment(&tools, json!({"action": "execute", "actions": [spawn_crate(9.0), refused_spawn()]})).await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+    assert!(run["results"][0]["entity_id"].is_u64(), "the spawned entity is named: {run}");
+    assert_eq!(run["results"][1]["success"], json!(false), "{run}");
+    assert!(run["results"][1]["error"].as_str().is_some_and(|e| e.contains("empty")), "{run}");
+    assert_eq!(crate_weights(&tools).await.len(), crates + 1, "the first spawn reached the game");
+    experiment(&tools, json!({"action": "undo"})).await;
+    assert_eq!(crate_weights(&tools).await.len(), crates, "and it was recorded, so undo removes it");
+
+    // Atomic: the refusal rolls the whole batch back.
+    let run = experiment(
+        &tools,
+        json!({"action": "execute", "actions": [{"type": "batch", "atomic": true, "actions": [spawn_crate(9.0), refused_spawn()]}]}),
+    )
+    .await;
+    assert_eq!(run["results"][0]["success"], json!(false), "{run}");
+    assert_eq!(crate_weights(&tools).await.len(), crates, "the atomic batch must leave no spawn behind: {run}");
+
+    // And history still works afterwards: an open transaction would have disabled it.
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+    let original = crate_weights(&tools).await[&entity];
+    let modify = json!({"type": "modify", "entity_id": entity,
+        "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]});
+    experiment(&tools, json!({"action": "execute", "actions": [modify]})).await;
+    let undo = experiment(&tools, json!({"action": "undo"})).await;
+    assert_eq!(undo["result"]["success"], json!(true), "{undo}");
+    assert_eq!(crate_weights(&tools).await[&entity], original, "undo must still restore after a failed batch");
+}
+
+/// A batch that succeeds reports what each action did (the spawned entities are the only way to
+/// target them afterwards), and `undo` steps back through the actions it ran. Before the fix the
+/// reply was "Successfully executed all 2 actions" with no entity, and the batch itself was the
+/// history entry: a batch has no reverse, so `undo` answered "`batch` cannot be undone" forever
+/// and every earlier entry was out of reach.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_batch_names_what_it_spawned_and_can_be_undone() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+    let before = crate_weights(&tools).await;
+
+    for atomic in [true, false] {
+        let run = experiment(
+            &tools,
+            json!({"action": "execute", "actions": [{"type": "batch", "atomic": atomic, "actions": [spawn_crate(8.0), spawn_crate(8.5)]}]}),
+        )
+        .await;
+        assert_eq!(run["results"][0]["success"], json!(true), "atomic {atomic}: {run}");
+        let inner = run["results"][0]["results"].as_array().unwrap_or_else(|| panic!("the batch lists its actions: {run}"));
+        let named: Vec<u64> = inner.iter().filter_map(|r| r["entity_id"].as_u64()).collect();
+        assert_eq!(named.len(), 2, "each spawn names its entity: {run}");
+        let now = crate_weights(&tools).await;
+        assert!(named.iter().all(|id| now.contains_key(id)), "the named entities are in the game: {run}");
+
+        for _ in 0..2 {
+            let undo = experiment(&tools, json!({"action": "undo"})).await;
+            assert_eq!(undo["result"]["success"], json!(true), "atomic {atomic}: {undo}");
+        }
+        assert_eq!(crate_weights(&tools).await, before, "atomic {atomic}: two undos remove the two spawns");
+    }
+}
+
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
 async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
     let params: bevy_fairy::server::mcp_tools::HypothesisRequest =

@@ -35,6 +35,18 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// The name an action's result carries as its `action_type`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Spawn { .. } => "spawn",
+            Self::Modify { .. } => "modify",
+            Self::Delete { .. } => "delete",
+            Self::Batch { .. } => "batch",
+        }
+    }
+}
+
 /// Component specification for spawn/modify actions
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ComponentSpec {
@@ -54,6 +66,12 @@ pub struct ActionResult {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rollback_available: Option<bool>,
+    /// What each action of a batch did, in order. Only a batch has this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub results: Option<Vec<ActionResult>>,
+    /// The action ran, and was then reversed because its atomic batch failed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rolled_back: bool,
     /// How to undo this action; kept for `undo`, never sent to the caller.
     #[serde(skip)]
     reverse: Option<Action>,
@@ -68,32 +86,37 @@ impl ActionResult {
             entity_id: None,
             error: None,
             rollback_available: None,
+            results: None,
+            rolled_back: false,
             reverse: None,
         }
     }
 
     fn success_with_entity(action_type: &str, message: String, entity_id: EntityId) -> Self {
         Self {
-            success: true,
-            action_type: action_type.to_string(),
-            message,
             entity_id: Some(entity_id),
-            error: None,
-            rollback_available: None,
-            reverse: None,
+            ..Self::success(action_type, message)
         }
     }
 
     fn failure(action_type: &str, error: String) -> Self {
         Self {
             success: false,
-            action_type: action_type.to_string(),
             message: format!("Action failed: {error}"),
-            entity_id: None,
             error: Some(error),
-            rollback_available: None,
-            reverse: None,
+            ..Self::success(action_type, String::new())
         }
+    }
+
+    /// A batch's outcome, with what each of its actions did.
+    fn batch(success: bool, message: String, results: Vec<ActionResult>) -> Self {
+        let mut batch = if success {
+            Self::success("batch", message)
+        } else {
+            Self::failure("batch", message)
+        };
+        batch.results = Some(results);
+        batch
     }
 }
 
@@ -174,9 +197,14 @@ impl ActionExecutor {
         Box::pin(async move {
             let result = self.dispatch(action, brp_client).await;
 
-            // Add to history if successful and not in a transaction
+            // Add to history if successful and not in a transaction. A batch is not an entry: it
+            // has no reverse of its own, and an entry `undo` cannot step past would block every
+            // earlier one. The batch's actions are recorded instead (see `record_committed`).
             if let Ok(action_result) = &result {
-                if action_result.success && self.transaction_stack.is_empty() {
+                if action_result.success
+                    && self.transaction_stack.is_empty()
+                    && !matches!(action, Action::Batch { .. })
+                {
                     self.add_to_history(action.clone(), action_result.clone());
                 }
             }
@@ -195,7 +223,7 @@ impl ActionExecutor {
         Box::pin(async move {
             debug!("Executing action: {:?}", action);
 
-            let mut result = match action {
+            let result = match action {
                 Action::Spawn {
                     components,
                     archetype,
@@ -216,13 +244,18 @@ impl ActionExecutor {
                 }
             };
 
+            // An action the server refuses (an empty component type, an unknown archetype) is a
+            // failed action, reported with the rest. As an `Err` it escaped the caller's loop:
+            // the results so far were lost, and a batch's transaction was left open.
+            let mut result =
+                result.unwrap_or_else(|e| ActionResult::failure(action.kind(), e.to_string()));
+
             // `rollback_available` is derived from what `undo` will actually run.
-            if let Ok(r) = &mut result {
-                if r.success && !matches!(action, Action::Batch { .. }) {
-                    r.rollback_available = Some(self.create_reverse_action(action, r).is_some());
-                }
+            if result.success && !matches!(action, Action::Batch { .. }) {
+                result.rollback_available =
+                    Some(self.create_reverse_action(action, &result).is_some());
             }
-            result
+            Ok(result)
         })
     }
 
@@ -394,44 +427,59 @@ impl ActionExecutor {
         );
 
         if atomic {
-            // Start transaction
+            // Start transaction. The stack entry marks that one is open; `transaction` is the record.
             let mut transaction = Transaction::new(actions.to_vec());
             self.transaction_stack.push(transaction.clone());
 
-            let mut all_results = Vec::new();
-
+            // An atomic batch stops at its first failure: what follows would only be undone.
             for action in actions {
                 let result = self.execute_action(action, brp_client).await?;
-                transaction.add_result(result.clone());
-                all_results.push(result);
+                let failed = !result.success;
+                transaction.add_result(result);
+                if failed {
+                    break;
+                }
             }
 
             // Check if rollback needed
             if transaction.should_rollback() {
                 warn!("Transaction failed, rolling back {} actions", actions.len());
-                let not_reversed = self.rollback_transaction(&transaction, brp_client).await?;
+                let not_reversed = self.rollback_transaction(&mut transaction, brp_client).await?;
 
                 self.transaction_stack.pop();
+                let reason = transaction
+                    .results
+                    .iter()
+                    .position(|r| !r.success)
+                    .map(|i| {
+                        let error = transaction.results[i].error.as_deref().unwrap_or("no reason given");
+                        format!("action {i} failed: {error}")
+                    })
+                    .unwrap_or_default();
                 let message = if not_reversed == 0 {
-                    "Transaction rolled back due to failures".to_string()
+                    format!("Transaction rolled back ({reason})")
                 } else {
                     format!(
-                        "Transaction failed; {not_reversed} successful action(s) could not be reversed and are still applied in the game"
+                        "Transaction failed ({reason}); {not_reversed} successful action(s) could not be reversed and are still applied in the game"
                     )
                 };
-                return Ok(ActionResult::failure("batch", message));
+                return Ok(ActionResult::batch(false, message, transaction.results));
             }
 
             self.transaction_stack.pop();
+            // The batch committed: its actions become history entries, so `undo` steps back through them.
+            if self.transaction_stack.is_empty() {
+                self.record_committed(actions, &transaction.results);
+            }
 
-            let success_count = all_results.iter().filter(|r| r.success).count();
-            Ok(ActionResult::success(
-                "batch",
+            Ok(ActionResult::batch(
+                true,
                 format!(
                     "Successfully executed {}/{} actions",
-                    success_count,
+                    transaction.results.len(),
                     actions.len()
                 ),
+                transaction.results,
             ))
         } else {
             // Non-atomic batch - execute all regardless of failures
@@ -445,44 +493,60 @@ impl ActionExecutor {
             let success_count = all_results.iter().filter(|r| r.success).count();
             let all_success = success_count == actions.len();
 
-            if all_success {
-                Ok(ActionResult::success(
-                    "batch",
-                    format!("Successfully executed all {} actions", actions.len()),
-                ))
+            let message = if all_success {
+                format!("Successfully executed all {} actions", actions.len())
             } else {
-                Ok(ActionResult::failure(
-                    "batch",
-                    format!(
-                        "Executed {}/{} actions successfully",
-                        success_count,
-                        actions.len()
-                    ),
-                ))
+                format!(
+                    "Executed {}/{} actions successfully",
+                    success_count,
+                    actions.len()
+                )
+            };
+            Ok(ActionResult::batch(all_success, message, all_results))
+        }
+    }
+
+    /// Record the actions of a committed atomic batch, in order. Actions that ran inside the
+    /// transaction were kept out of history while it was open, so a rollback could not leave
+    /// entries behind for actions it had reversed.
+    fn record_committed(&mut self, actions: &[Action], results: &[ActionResult]) {
+        for (action, result) in actions.iter().zip(results) {
+            if !result.success {
+                continue;
+            }
+            match (action, &result.results) {
+                (Action::Batch { actions, .. }, Some(inner)) => self.record_committed(actions, inner),
+                (Action::Batch { .. }, None) => {}
+                _ => self.add_to_history(action.clone(), result.clone()),
             }
         }
     }
 
-    /// Rollback a transaction
+    /// Rollback a transaction, marking each result that was reversed. Returns how many
+    /// successful actions could not be.
     async fn rollback_transaction(
         &mut self,
-        transaction: &Transaction,
+        transaction: &mut Transaction,
         brp_client: &mut BrpClient,
     ) -> Result<usize> {
         let mut not_reversed = 0;
-        for (action, result) in transaction.actions.iter().zip(&transaction.results).rev() {
-            if result.success {
-                match self.create_reverse_action(action, result) {
-                    Some(reverse_action) => {
-                        let reversed = self.dispatch(&reverse_action, brp_client).await;
-                        if !matches!(&reversed, Ok(r) if r.success) {
-                            not_reversed += 1;
-                        }
+        for i in (0..transaction.results.len()).rev() {
+            if !transaction.results[i].success {
+                continue;
+            }
+            match self.create_reverse_action(&transaction.actions[i], &transaction.results[i]) {
+                Some(reverse_action) => {
+                    let reversed = self.dispatch(&reverse_action, brp_client).await;
+                    if matches!(&reversed, Ok(r) if r.success) {
+                        transaction.results[i].rolled_back = true;
+                    } else {
+                        not_reversed += 1;
                     }
-                    None => not_reversed += 1,
                 }
+                None => not_reversed += 1,
             }
         }
+        transaction.rolled_back = not_reversed == 0;
         Ok(not_reversed)
     }
 
