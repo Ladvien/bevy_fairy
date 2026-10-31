@@ -119,6 +119,8 @@ Two consequences worth knowing before you touch this:
 
 `text` refuses control characters by name (`use key: "Enter"`), and a space becomes `Key::Space` rather than `Key::Character(" ")`, because that is what a space bar produces and text handlers match the former.
 
+**A field the call's `kind` does not read is refused by name, never ignored** (`fields_read_by` in `input.rs`; `tests/plugin_input_params.rs`). The method used to answer `success: true` to `modifiers: ["ControlLeft"]` (a plain S was tapped) and to a `Mouse` call with `x`/`y` (the click landed where the cursor already was). `Cursor` still ignores `action` by design; `Scroll` needs `x` and/or `y`.
+
 ## The cursor is a resource, not the window's
 
 `bevy_fairy/input` accepts `kind: "Cursor"` with `x`/`y` in logical window pixels, or `clear: true`. It writes `DebugCursor`, **not** `Window::set_cursor_position`.
@@ -158,6 +160,13 @@ UPDATE_TOOL_REFERENCE=1 cargo test --test tool_list
 The plugin's examples need their own features: `plugin-screenshot` for the capture example,
 `plugin-guide` for the guided-steps example, plain `plugin` for the rest.
 
+`cargo test --workspace` runs the default features only (`server`, `plugin`), so the plugin tests that need a
+heavier feature are **not in it**: `plugin_pointer` (`plugin-screenshot`), `plugin_ui_text`
+(`plugin-ui-text`), `plugin_guide_steps` (`plugin-guide`), and the unit tests in `plugin/screenshot.rs`.
+Run them with `cargo test --features plugin-screenshot,plugin-ui-text,plugin-guide --test plugin_pointer
+--test plugin_ui_text --test plugin_guide_steps`, and `cargo test --features plugin-screenshot --lib screenshot`.
+A change to `input.rs`, `ui_text.rs`, `screenshot.rs` or `guide.rs` is not proven by the default gate.
+
 ## `watch` samples by polling, and brackets its frames
 
 The `watch` tool does not use bevy_remote's `+watch` streams: those report only changes to one entity's components, and `brp` refuses them. `watch` polls a one-shot method, sending `bevy_fairy/status`, the method and `bevy_fairy/status` as one JSON-RPC batch. **A batch is not one frame**: `bevy_remote::http::process_request_batch` awaits each request's answer before sending the next, so the requests can land on different frames (measured: the value was one frame off the first status in about half of the runs). Each sample therefore carries `frame` and `frame_until`, the two status readings, and claims only that the value was read between them. `tests/fixture_ground_truth.rs::watch_brackets_the_frame_every_sample_was_read_on` pins that against the spinner's own frame counter. A single-frame stamp needs a plugin-side method; none exists. No progress notifications yet (30 s cap instead).
@@ -182,7 +191,7 @@ The command writes `ClockRequest`; `time.rs` re-applies it in `First`, `.before(
 
 ## `bevy_fairy/ring` records state inside the game, so it samples every frame
 
-It runs `process_remote_query_request` (public in bevy_remote) from an exclusive system in `Last`, after `tick_frames`, so a sample's `frame` is the same counter `status` reports. The query is made `strict` unless the caller says otherwise: non-strict `world.query` silently matches nothing for an unknown component path, and a buffer of empty arrays reads as "no entity has it". `tests/plugin_ring.rs` checks each sample against a counter the test itself bumps. Samples are query results, not pixels; the frame half of the old B-021 idea (a frame ring beside `burst`) is not built.
+It runs `process_remote_query_request` (public in bevy_remote) from an exclusive system in `Last`, after `tick_frames`, so a sample's `frame` is the same counter `status` reports. The query is made `strict` unless the caller says otherwise: non-strict `world.query` silently matches nothing for an unknown component path, and a buffer of empty arrays reads as "no entity has it". `tests/plugin_ring.rs` checks each sample against a counter the test itself bumps. Samples are query results, not pixels; the frame half of the old B-021 idea (a frame ring beside `burst`) is not built. A trigger's `equals` compares numbers as numbers (`serde_json` calls `9` and `9.0` different, and an `f32` reads back widened: `0.1` is `0.10000000149011612`), so `triggered_at_frame: null` can be trusted to mean the value was never that.
 
 ## `hypothesis` puts the game back after every iteration, and never abandons an action mid-flight
 
