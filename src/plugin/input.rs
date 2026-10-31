@@ -55,7 +55,7 @@ use serde_json::{json, Value};
 /// Parameters for the `bevy_fairy/input` BRP method.
 ///
 /// A field this does not name is refused by `deny_unknown_fields`, and a field it names that the
-/// chosen `kind` does not read is refused by [`refuse_unread_fields`]: a modifier or a position that
+/// chosen `kind` does not read is refused by `refuse_unread_fields` (private): a modifier or a position that
 /// changes nothing must not come back as `success: true`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
