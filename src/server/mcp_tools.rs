@@ -20,6 +20,7 @@ use crate::server::brp_client::BrpClient;
 use crate::server::tools::{observe, experiment, guide, hypothesis, anomaly};
 use crate::server::experiment_system::Action;
 use crate::server::brp::{BrpPayload, BrpRequest};
+use crate::server::watch_fields;
 use base64::Engine;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1155,32 +1156,34 @@ impl BevyDebuggerTools {
             series.push((frame, frame_until, started.elapsed().as_millis(), value));
         }
 
-        let first = &series[0].3;
-        let first_change = series.iter().find(|(_, _, _, v)| v != first).map(|(frame, _, _, _)| *frame);
-        let mut distinct: Vec<&Value> = Vec::new();
-        for (_, _, _, value) in &series {
-            if !distinct.contains(&value) {
-                distinct.push(value);
-            }
-        }
-        let last = &series[series.len() - 1].3;
-        let run_start = series.iter().rposition(|(_, _, _, v)| v != last).map_or(0, |i| i + 1);
-        let constant_since = (run_start + 1 < series.len()).then(|| series[run_start].0);
-        let body = serde_json::json!({
+        let frames: Vec<u64> = series.iter().map(|(frame, _, _, _)| *frame).collect();
+        let values: Vec<&Value> = series.iter().map(|(_, _, _, value)| value).collect();
+        let whole: Vec<Option<&Value>> = values.iter().copied().map(Some).collect();
+        let whole = watch_fields::movement(&frames, &whole);
+        // A result with several fields changes as a whole when any one does, so the summary
+        // above cannot say which of them stopped. `fields` can.
+        let fields = watch_fields::fields(&frames, &values, req.pointer.as_deref().unwrap_or(""));
+        let mut body = serde_json::json!({
             "method": req.method,
             "source": "polled over HTTP. Each sample is bracketed by two bevy_fairy/status reads: the value was read on a frame from `frame` to `frame_until`",
             "interval_ms": interval_ms,
             "samples_taken": series.len(),
-            "changed": first_change.is_some(),
-            "distinct_values": distinct.len(),
-            "first_change_frame": first_change,
-            "constant_since_frame": constant_since,
+            "changed": whole.changed,
+            "distinct_values": whole.distinct_values,
+            "first_change_frame": whole.first_change_frame,
+            "constant_since_frame": whole.constant_since_frame,
             "stopped_early": stopped,
             "samples": series
                 .iter()
                 .map(|(frame, frame_until, t_ms, value)| serde_json::json!({"frame": frame, "frame_until": frame_until, "t_ms": t_ms, "value": value}))
                 .collect::<Vec<_>>(),
         });
+        if let Some(fields) = &fields {
+            body["fields"] = fields.to_json();
+            if fields.omitted() > 0 {
+                body["fields_omitted"] = serde_json::json!(fields.omitted());
+            }
+        }
         tool_ok(body.to_string())
     }
 
