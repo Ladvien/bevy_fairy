@@ -893,7 +893,7 @@ impl BevyDebuggerTools {
     }
 
     /// Report whether the game is answering and ready for commands
-    #[tool(description = "Report whether the game is answering and ready for commands: its frame, its instance (one value per game process, new after a restart), how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none). The reply also carries the URL this server talks to. Call this first.")]
+    #[tool(description = "Report whether the game is answering and ready for commands: its frame, its instance (one value per game process, new after a restart), how many commands it registered, where captures come from, and the progress of a scene file the game is replaying (null when none was asked for; a scene file the game refused is reported with the reason under \"rejected\"). The reply also carries the URL this server talks to. Call this first.")]
     pub async fn status(&self, Parameters(_req): Parameters<NoArgs>) -> Result<CallToolResult, McpError> {
         let url = self.game_url().await;
         match self.call_game(STATUS_METHOD, None).await {
