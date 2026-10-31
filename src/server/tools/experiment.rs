@@ -212,8 +212,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_without_connection() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config { mcp_port: 3000, ..Config::default() };
         let brp_client = Arc::new(RwLock::new(crate::server::brp_client::BrpClient::new(&config)));
 
         let args = json!({
@@ -227,8 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_unknown_action() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config { mcp_port: 3000, ..Config::default() };
         let brp_client = Arc::new(RwLock::new(crate::server::brp_client::BrpClient::new(&config)));
 
         let args = json!({
@@ -241,8 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_history() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config { mcp_port: 3000, ..Config::default() };
         let brp_client = Arc::new(RwLock::new(crate::server::brp_client::BrpClient::new(&config)));
 
         let args = json!({
@@ -256,8 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_clear_history() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config { mcp_port: 3000, ..Config::default() };
         let brp_client = Arc::new(RwLock::new(crate::server::brp_client::BrpClient::new(&config)));
 
         let args = json!({
