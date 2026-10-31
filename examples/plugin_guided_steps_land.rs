@@ -5,8 +5,9 @@
 //! to look away from their work to read, and every answer came back as prose the agent then had to
 //! guess its way from.
 //!
-//! `bevy_fairy/guide` posts a script; the app renders one step; `bevy_fairy/guide+watch` waits
-//! on a condition the *host* named, advances itself, and records what actually happened.
+//! `bevy_fairy/guide` posts a script; the app renders one step and, every frame, runs the condition
+//! the *host* named for it, advances itself and records what actually happened;
+//! `bevy_fairy/guide+watch` reports each pass as it happens.
 //!
 //! Run it:
 //!
@@ -32,7 +33,7 @@
 //!    ran the steps twice and saw it twice will report 100%, and it is just as likely to be 50%.
 
 use bevy::prelude::*;
-use bevy_fairy::{handle_guide, watch_guide, Checkpoints, Guide, GuideOverlayPlugin};
+use bevy_fairy::{evaluate_checkpoint, handle_guide, watch_guide, Checkpoints, Guide, GuideOverlayPlugin};
 use bevy::ecs::system::RunSystemOnce;
 use serde_json::{json, Value};
 
@@ -47,11 +48,13 @@ struct Tile {
 fn main() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
-        // In a real host this is `DebuggerPlugin`, which inits both resources and adds the overlay.
-        // Spelled out here so the example shows what a host actually needs.
+        // In a real host this is `DebuggerPlugin`, which inits both resources, adds the overlay and
+        // evaluates each step's checkpoint once a frame. Spelled out here so the example shows what
+        // a host actually needs.
         .init_resource::<Guide>()
         .init_resource::<Checkpoints>()
         .add_plugins(GuideOverlayPlugin)
+        .add_systems(Last, evaluate_checkpoint)
         .init_resource::<Tile>();
 
     // The seam: one-shot systems answering `bool`, registered under the host's own words.

@@ -44,7 +44,7 @@
 //! [`StepRecord`] counts runs and passes across every run of a script, which is the single thing a
 //! machine watching the checkpoint buys that asking the person does not.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::ecs::system::SystemId;
 use bevy::prelude::*;
@@ -175,6 +175,22 @@ pub struct Guide {
     /// stream is a notification channel; `bevy_fairy/guide` with `{"read": true}` is the state, and
     /// anything that needs to be sure asks for that.
     announced: Option<usize>,
+    /// Passes the app recorded that the watch stream has not told anyone about yet, oldest first.
+    ///
+    /// **The checkpoint is evaluated by [`evaluate_checkpoint`], once a frame, whether or not anyone
+    /// is watching.** It used to be evaluated only by the watch stream, and the MCP `guide` tool can
+    /// open no stream, so through it a step with a checkpoint never advanced while its description
+    /// said the app moved on by itself (B-127). The stream is now a pure reporter: it drains this.
+    unreported: VecDeque<String>,
+    /// Why the current step's checkpoint could not be run on the last frame that tried: a name no
+    /// host registered (only a script posted from Rust can say one; the BRP method refuses it) or a
+    /// checkpoint system that failed. `report` says it, so a `read` is not silent about a step that
+    /// will never move.
+    checkpoint_error: Option<String>,
+    /// How many scripts have been posted. The overlay's render key includes it, because a script
+    /// re-posted while step 1 is up has the same `at` and the same phase as the one it replaced, so
+    /// the card kept the old step's text.
+    generation: u64,
     /// Whether the overlay draws. Public so a host may bind a key to it — this crate claims none,
     /// because the host's own key census owns that space.
     pub visible: bool,
@@ -205,6 +221,9 @@ impl Guide {
         self.beat = 0.0;
         self.finished = None;
         self.announced = None;
+        self.unreported.clear();
+        self.checkpoint_error = None;
+        self.generation += 1;
         self.visible = true;
         self.enter();
     }
@@ -216,6 +235,8 @@ impl Guide {
         self.visible = false;
         self.finished = None;
         self.beat = 0.0;
+        self.unreported.clear();
+        self.checkpoint_error = None;
     }
 
     /// The step being worked on, if any.
@@ -256,6 +277,7 @@ impl Guide {
             }
         }
         self.at += 1;
+        self.checkpoint_error = None;
         self.finished = Some((label.clone(), passed));
         self.beat = BEAT_SECONDS;
         if self.at < self.steps.len() {
@@ -294,13 +316,20 @@ impl Guide {
             .current()
             .map(|s| s.checkpoint.is_none())
             .unwrap_or(false);
-        json!({
+        let mut report = json!({
             "at": step,
             "of": of,
             "step": self.current().map(|s| s.label.clone()),
             "waiting_on_a_person": waiting,
+            // The condition the app is evaluating every frame for this step; null when only a person
+            // can judge it.
+            "checkpoint": self.current().and_then(|s| s.checkpoint.clone()),
             "steps": rows,
-        })
+        });
+        if let Some(why) = &self.checkpoint_error {
+            report["checkpoint_error"] = json!(why);
+        }
+        report
     }
 }
 
@@ -382,13 +411,46 @@ pub struct GuideParams {
 /// Posts, reads, skips, clears. The reply says what was **accepted**, never what has happened — the
 /// convention `handle_input` and `handle_screenshot` already hold to, and for the same reason: a
 /// method that claims the person has done something is the failure this crate exists to prevent.
-pub fn handle_guide(In(params): In<Option<Value>>, mut guide: ResMut<Guide>) -> BrpResult {
+///
+/// One verb per call (`steps`, `read`, `clear` or `skip`); a call naming two is refused, because the
+/// handler used to run the first it met and answer `success: true` for all of them. `visible` goes
+/// with `steps` or `skip` and is applied after them, so `{steps, visible: false}` posts a hidden
+/// script; with `read` or `clear` it has nothing to act on and is refused.
+pub fn handle_guide(
+    In(params): In<Option<Value>>,
+    mut guide: ResMut<Guide>,
+    checkpoints: Res<Checkpoints>,
+) -> BrpResult {
     // `serde_json::Error` has no `From` into `BrpError`, so `?` cannot carry it.
     let p: GuideParams = match params.as_ref() {
         Some(v) => serde_json::from_value(v.clone())
             .map_err(|e| invalid_params(format!("invalid guide params: {e}")))?,
         None => GuideParams::default(),
     };
+
+    let verbs: Vec<&str> = [
+        p.steps.is_some().then_some("steps"),
+        p.read.then_some("read"),
+        p.clear.then_some("clear"),
+        p.skip.then_some("skip"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if verbs.len() > 1 {
+        return Err(invalid_params(format!(
+            "one verb per call, got {}: only the first would have run and the reply would have \
+             said success for all of them. Send them as separate calls. Example: {{\"skip\": true}}",
+            verbs.join(" and ")
+        )));
+    }
+    if p.visible.is_some() && (p.read || p.clear) {
+        return Err(invalid_params(format!(
+            "`visible` does nothing with `{}`: read changes nothing and clear already takes the \
+             card down. Use it alone, or with `steps` or `skip`. Example: {{\"visible\": false}}",
+            if p.read { "read" } else { "clear" }
+        )));
+    }
 
     if p.read {
         return Ok(json!({ "success": true, "guide": guide.report() }));
@@ -397,10 +459,18 @@ pub fn handle_guide(In(params): In<Option<Value>>, mut guide: ResMut<Guide>) -> 
         guide.clear();
         return Ok(json!({ "success": true, "message": "script taken down" }));
     }
-    if let Some(v) = p.visible {
-        guide.visible = v;
-    }
     if p.skip {
+        // Checked before anything is applied: a refused call changes nothing.
+        if guide.current().is_none() {
+            return Err(invalid_params(
+                "no current step to skip: no script is posted, or it is finished. Read the guide \
+                 to see where it is. Example: {\"read\": true}"
+                    .to_string(),
+            ));
+        }
+        if let Some(v) = p.visible {
+            guide.visible = v;
+        }
         let label = guide.advance(false);
         return Ok(json!({
             "success": true,
@@ -414,61 +484,137 @@ pub fn handle_guide(In(params): In<Option<Value>>, mut guide: ResMut<Guide>) -> 
                 "a script needs at least one step; use clear to take one down".to_string(),
             ));
         }
+        // A name nobody registered would wait for ever: the app evaluates a step's checkpoint every
+        // frame and has nothing to evaluate. Refused here, while the person is not yet standing in
+        // front of the card.
+        if let Some((label, name)) = steps.iter().find_map(|s| {
+            let name = s.checkpoint.as_deref()?;
+            checkpoints.get(name).is_none().then(|| (s.label.as_str(), name))
+        }) {
+            let known = checkpoints.names();
+            return Err(invalid_params(format!(
+                "step \"{label}\" names checkpoint `{name}`, which this app has not registered, so \
+                 it would wait for ever. This app registers: {}. Name one of those, or use \
+                 checkpoint: null for a step only the person can judge. Nothing was posted.",
+                if known.is_empty() { "none".to_string() } else { known.join(", ") }
+            )));
+        }
         let n = steps.len();
         guide.post(steps);
+        if let Some(v) = p.visible {
+            guide.visible = v;
+        }
         return Ok(json!({
             "success": true,
             "message": format!("{n} step(s) posted; the app shows the first one"),
         }));
     }
+    if let Some(v) = p.visible {
+        guide.visible = v;
+    }
     Ok(json!({ "success": true, "guide": guide.report() }))
+}
+
+/// Runs the current step's checkpoint, once per frame while a step with one is current, and advances
+/// the step when it passes. Registered by [`crate::DebuggerPlugin`] in `Last`, so it sees the frame's
+/// finished state and runs ahead of the BRP handlers in `RemoteLast`.
+///
+/// **This is the one place a checkpoint is evaluated.** It is a plain system that queues the
+/// exclusive work only when a step with a checkpoint is current, so an app with no script (the
+/// resting state of every host that has the plugin on) pays for one `Res` read.
+pub fn evaluate_checkpoint(guide: Res<Guide>, mut commands: Commands) {
+    if guide.current().is_some_and(|step| step.checkpoint.is_some()) {
+        commands.queue(|world: &mut World| {
+            let outcome = run_current_checkpoint(world);
+            if let Some(mut guide) = world.get_resource_mut::<Guide>() {
+                guide.checkpoint_error = outcome.err().map(|e| e.message);
+            }
+        });
+    }
+}
+
+/// The refusal for a checkpoint name nothing registered.
+fn unregistered(world: &World, name: &str) -> BrpError {
+    let known = world.get_resource::<Checkpoints>().map(Checkpoints::names).unwrap_or_default();
+    invalid_params(format!(
+        "no checkpoint named `{name}`. This host registers: {}. A script naming a condition \
+         nobody watches would wait for ever.",
+        if known.is_empty() { "none".to_string() } else { known.join(", ") }
+    ))
+}
+
+/// Evaluates the current step's checkpoint once. A pass advances the step, records it, and queues it
+/// for the watch stream; a false answer changes nothing; an error is returned for the caller to keep.
+fn run_current_checkpoint(world: &mut World) -> Result<(), BrpError> {
+    let Some((name, label, args)) = world.get_resource::<Guide>().and_then(|guide| {
+        let step = guide.current()?;
+        Some((step.checkpoint.clone()?, step.label.clone(), step.with.clone().unwrap_or(Value::Null)))
+    }) else {
+        return Ok(());
+    };
+    let Some(system) = world.get_resource::<Checkpoints>().and_then(|c| c.get(&name)) else {
+        return Err(unregistered(world, &name));
+    };
+    match world.run_system_with(system, args) {
+        Ok(true) => {
+            let mut guide = world.resource_mut::<Guide>();
+            guide.advance(true);
+            guide.unreported.push_back(label);
+            Ok(())
+        }
+        Ok(false) => Ok(()),
+        Err(e) => Err(BrpError {
+            code: error_codes::INTERNAL_ERROR,
+            message: format!("checkpoint `{name}` could not run: {e}"),
+            data: None,
+        }),
+    }
 }
 
 /// BRP handler: `bevy_fairy/guide+watch`.
 ///
 /// **A watching method**, so the engine owns the waiting. `RemotePlugin` re-runs this every frame in
 /// `RemoteLast` with exclusive `World`, parks the request while it answers `Ok(None)`, and reaps it
-/// if the caller goes away (`bevy_remote-0.20.1/src/lib.rs:1559`). That is a condition-watcher with
-/// lifecycle management already written, tested by the engine, and costing no new dependency — which
-/// is what keeps `tests/leaf.rs` green.
+/// if the caller goes away (`bevy_remote-0.20.1/src/lib.rs:1559`). That is a notification channel
+/// with lifecycle management already written, tested by the engine, and costing no new dependency —
+/// which is what keeps `tests/leaf.rs` green.
 ///
-/// Answers when the current step's checkpoint passes, with the step just completed and the running
-/// `k/n`. A step with no checkpoint answers immediately, naming itself as needing a human call: there
-/// is nothing to watch, and pretending otherwise would park the request forever.
+/// **It reports; it does not evaluate.** [`evaluate_checkpoint`] advances a step on the frame its
+/// checkpoint passes, watched or not, and this answers `passed` for each pass the app recorded that
+/// no earlier turn of the stream told anyone about (a watcher that attaches late is told what it
+/// missed, in order, with `guide.at` showing where the script is now). A step with no checkpoint
+/// answers once, naming itself as needing a human call: there is nothing to watch, and pretending
+/// otherwise would park the request forever.
 pub fn watch_guide(In(_params): In<Option<Value>>, world: &mut World) -> BrpResult<Option<Value>> {
-    // Read what is needed and drop the borrow: running the checkpoint needs the World back.
-    let (name, label, done) = {
-        let Some(guide) = world.get_resource::<Guide>() else {
-            return Err(BrpError {
-                code: error_codes::INTERNAL_ERROR,
-                message: "no Guide resource; add DebuggerPlugin or init_resource::<Guide>()"
-                    .to_string(),
-                data: None,
-            });
-        };
-        match guide.current() {
-            Some(step) => (
-                step.checkpoint.clone().map(|n| (n, step.with.clone().unwrap_or(Value::Null))),
-                step.label.clone(),
-                false,
-            ),
-            None => (None, String::new(), true),
+    let Some(mut guide) = world.get_resource_mut::<Guide>() else {
+        return Err(BrpError {
+            code: error_codes::INTERNAL_ERROR,
+            message: "no Guide resource; add DebuggerPlugin or init_resource::<Guide>()".to_string(),
+            data: None,
+        });
+    };
+
+    if let Some(label) = guide.unreported.pop_front() {
+        let report = guide.report();
+        return Ok(Some(json!({ "passed": label, "guide": report })));
+    }
+
+    let (name, label) = match guide.current() {
+        Some(step) => (step.checkpoint.clone(), step.label.clone()),
+        None => {
+            // Announce the end once. Answering it every frame would push sixty identical frames a
+            // second down a stream whose whole contract is "something happened".
+            if !announce_once(world) {
+                return Ok(None);
+            }
+            let report = world.resource::<Guide>().report();
+            return Ok(Some(json!({ "done": true, "guide": report })));
         }
     };
 
-    if done {
-        // Announce the end once. Answering it every frame would push sixty identical frames a second
-        // down a stream whose whole contract is "something happened".
-        if !announce_once(world) {
-            return Ok(None);
-        }
-        let report = world.resource::<Guide>().report();
-        return Ok(Some(json!({ "done": true, "guide": report })));
-    }
-
     // No checkpoint: only a person can judge this one. Say so once, then park — the step is advanced
     // by an explicit `skip`, which moves `at` and re-arms this.
-    let Some((name, args)) = name else {
+    let Some(name) = name else {
         if !announce_once(world) {
             return Ok(None);
         }
@@ -479,29 +625,20 @@ pub fn watch_guide(In(_params): In<Option<Value>>, world: &mut World) -> BrpResu
         })));
     };
 
-    let Some(system) = world.resource::<Checkpoints>().get(&name) else {
-        let known = world.resource::<Checkpoints>().names();
-        return Err(invalid_params(format!(
-            "no checkpoint named `{name}`. This host registers: {}. A script naming a condition \
-             nobody watches would wait for ever.",
-            if known.is_empty() { "none".to_string() } else { known.join(", ") }
-        )));
-    };
-
-    match world.run_system_with(system, args) {
-        Ok(true) => {
-            let mut guide = world.resource_mut::<Guide>();
-            guide.advance(true);
-            let report = guide.report();
-            Ok(Some(json!({ "passed": label, "guide": report })))
-        }
-        // Not yet. The request stays open and this runs again next frame.
-        Ok(false) => Ok(None),
-        Err(e) => Err(BrpError {
+    // A checkpoint the app cannot run is said once per step, not once per frame.
+    let problem = if world.get_resource::<Checkpoints>().is_some_and(|c| c.get(&name).is_some()) {
+        world.resource::<Guide>().checkpoint_error.clone().map(|message| BrpError {
             code: error_codes::INTERNAL_ERROR,
-            message: format!("checkpoint `{name}` could not run: {e}"),
+            message,
             data: None,
-        }),
+        })
+    } else {
+        Some(unregistered(world, &name))
+    };
+    match problem {
+        Some(error) if announce_once(world) => Err(error),
+        // Not yet, or already said. The request stays open and this runs again next frame.
+        _ => Ok(None),
     }
 }
 
@@ -545,7 +682,7 @@ struct GuideBody;
 
 /// What the overlay was last built for, so it is rebuilt on a change and not per frame.
 #[derive(Resource, Default, PartialEq, Eq)]
-struct Showing(Option<(usize, bool)>);
+struct Showing(Option<(usize, bool, u64)>);
 
 /// Where the card sits, in logical pixels from the top of the window.
 ///
@@ -652,7 +789,7 @@ fn paint_guide(
     }
 
     // Rebuilt on a change of step or of phase, never per frame.
-    let key = want.then_some((guide.at, guide.finished.is_some()));
+    let key = want.then_some((guide.at, guide.finished.is_some(), guide.generation));
     if showing.0 == key {
         return;
     }

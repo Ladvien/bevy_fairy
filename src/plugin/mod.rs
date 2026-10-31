@@ -94,8 +94,8 @@ pub use scene::{SceneLog, ScenePlayback, SceneStep};
 
 #[cfg(feature = "plugin-guide")]
 pub use guide::{
-    handle_guide, watch_guide, Checkpoints, Guide, GuideOverlay, GuideOverlayPlugin, GuideParams,
-    GuidePlacement, Step, StepRecord, BEAT_SECONDS,
+    evaluate_checkpoint, handle_guide, watch_guide, Checkpoints, Guide, GuideOverlay,
+    GuideOverlayPlugin, GuideParams, GuidePlacement, Step, StepRecord, BEAT_SECONDS,
 };
 #[cfg(feature = "plugin-screenshot")]
 pub use screenshot::{
@@ -187,7 +187,10 @@ impl Plugin for DebuggerPlugin {
         #[cfg(feature = "plugin-guide")]
         app.add_plugins(guide::GuideOverlayPlugin)
             .init_resource::<guide::Guide>()
-            .init_resource::<guide::Checkpoints>();
+            .init_resource::<guide::Checkpoints>()
+            // After the host's frame, so a checkpoint reads the state this frame ended with, and
+            // ahead of `RemoteLast`, where the watch stream reports what this recorded.
+            .add_systems(Last, guide::evaluate_checkpoint);
 
         // Injected keys and clicks are written as messages. `apply_pending_input` runs
         // before `InputSystems`, which folds those messages into `ButtonInput`.

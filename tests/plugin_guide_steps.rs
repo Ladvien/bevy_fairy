@@ -32,7 +32,8 @@
 
 use bevy::prelude::*;
 use bevy_fairy::{
-    handle_guide, watch_guide, Checkpoints, Guide, GuideOverlayPlugin, BEAT_SECONDS,
+    evaluate_checkpoint, handle_guide, watch_guide, Checkpoints, DebuggerPlugin, Guide,
+    GuideOverlayPlugin, Step, BEAT_SECONDS,
 };
 use bevy::ecs::system::RunSystemOnce;
 use serde_json::{json, Value};
@@ -48,14 +49,32 @@ fn app() -> App {
     app.add_plugins(MinimalPlugins)
         .init_resource::<Guide>()
         .init_resource::<Checkpoints>()
-        .init_resource::<Ready>();
-    // Every checkpoint takes `In<Value>`. This one reads it, so the suite exercises the path that
-    // makes a condition as strong as the step claiming it: `{"want": false}` asks for the opposite.
+        .init_resource::<Ready>()
+        // The one place a checkpoint is evaluated. The stream below only reports what it recorded,
+        // so a test that wants a step to pass runs a frame.
+        .add_systems(Last, evaluate_checkpoint);
+    register_ready(&mut app);
+    app
+}
+
+/// Every checkpoint takes `In<Value>`. This one reads it, so the suite exercises the path that
+/// makes a condition as strong as the step claiming it: `{"want": false}` asks for the opposite.
+fn register_ready(app: &mut App) {
     let id = app.register_system(|args: In<Value>, ready: Res<Ready>| {
         let want = args.0.get("want").and_then(|v| v.as_bool()).unwrap_or(true);
         ready.0 == want
     });
     app.world_mut().resource_mut::<Checkpoints>().register("ready", id);
+}
+
+/// An app built the way a host builds one: the whole plugin, so a frame runs exactly what the plugin
+/// registers and nothing the test added. Still no transport, no window, no GPU.
+fn plugin_app() -> App {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, DebuggerPlugin::default()))
+        .init_resource::<Ready>();
+    register_ready(&mut app);
+    app.update();
     app
 }
 
@@ -83,6 +102,13 @@ fn watch(app: &mut App) -> Option<Value> {
         Ok(Err(e)) => panic!("watch refused: {}", e.message),
         Err(e) => panic!("could not run watch: {e}"),
     }
+}
+
+/// Posts a script the way a host's own Rust does, straight into [`Guide`]. The BRP method refuses a
+/// checkpoint nobody registered, so this is the only way to get one in.
+fn post_from_rust(app: &mut App, params: Value) {
+    let steps: Vec<Step> = serde_json::from_value(params["steps"].clone()).expect("steps");
+    app.world_mut().resource_mut::<Guide>().post(steps);
 }
 
 fn watch_refusal(app: &mut App) -> String {
@@ -123,6 +149,7 @@ fn a_checkpoint_that_passes_advances_and_records_it() {
     let mut app = app();
     post(&mut app, script(json!("ready")));
     app.world_mut().resource_mut::<Ready>().0 = true;
+    app.update();
 
     let answer = watch(&mut app).expect("the checkpoint passed, so the stream answers");
     assert_eq!(answer["passed"], "drop a floor", "names the step that just completed");
@@ -138,7 +165,7 @@ fn a_checkpoint_that_passes_advances_and_records_it() {
 #[test]
 fn a_checkpoint_nobody_registered_is_refused_by_name() {
     let mut app = app();
-    post(&mut app, script(json!("tile is saved")));
+    post_from_rust(&mut app, script(json!("tile is saved")));
 
     let message = watch_refusal(&mut app);
     assert!(message.contains("tile is saved"), "names what was asked for: {message}");
@@ -178,6 +205,7 @@ fn the_end_of_the_script_is_announced_once_not_every_frame() {
     let mut app = app();
     post(&mut app, json!({"steps": [{"label": "the only step", "checkpoint": "ready"}]}));
     app.world_mut().resource_mut::<Ready>().0 = true;
+    app.update();
 
     assert_eq!(watch(&mut app).expect("the step passes")["passed"], "the only step");
 
@@ -187,6 +215,63 @@ fn the_end_of_the_script_is_announced_once_not_every_frame() {
 
     assert_eq!(watch(&mut app), None, "once, not sixty times a second");
     assert_eq!(watch(&mut app), None);
+}
+
+// ── 1b. the app advances a step by itself, watched or not ────────────────────────────────────────
+
+/// **B-127.** The MCP `guide` tool can open no watch stream, so when the checkpoint was evaluated
+/// only by the stream a step with a checkpoint never advanced through it, while the tool's
+/// description told the agent the app moves on by itself. Every test above drove the stream, so
+/// none saw it.
+#[test]
+fn a_checkpoint_that_passes_advances_the_step_with_nobody_watching() {
+    let mut app = plugin_app();
+    post(&mut app, script(json!("ready")));
+    app.update();
+    let before = post(&mut app, json!({"read": true}));
+    assert_eq!(before["guide"]["at"], 1, "its condition is false, so it stays: {before}");
+    assert_eq!(before["guide"]["checkpoint"], "ready", "a read names what the app is waiting for");
+
+    app.world_mut().resource_mut::<Ready>().0 = true;
+    app.update();
+    let after = post(&mut app, json!({"read": true}));
+    assert_eq!(after["guide"]["at"], 2, "the condition is true, so the app moved on: {after}");
+    assert_eq!(after["guide"]["steps"][0]["passes"], 1);
+    assert_eq!(after["guide"]["steps"][0]["runs"], 1, "1/1");
+}
+
+/// The stream is a reporter now: a pass the app recorded before anyone watched is still told, once,
+/// to the first watcher that asks, and the next step is announced after it.
+#[test]
+fn the_watch_stream_reports_a_pass_the_app_recorded_before_it_attached() {
+    let mut app = plugin_app();
+    post(&mut app, script(json!("ready")));
+    app.world_mut().resource_mut::<Ready>().0 = true;
+    app.update();
+
+    let passed = watch(&mut app).expect("the pass is reported to the first watcher");
+    assert_eq!(passed["passed"], "drop a floor");
+    assert_eq!(passed["guide"]["at"], 2, "with the script's position now");
+
+    let next = watch(&mut app).expect("then the next step names itself");
+    assert_eq!(next["waiting_on_a_person"], true);
+    assert_eq!(watch(&mut app), None, "and nothing is repeated");
+}
+
+/// A checkpoint the app cannot run leaves the step where it is, so a `read` has to say why: before,
+/// only the watch stream knew, and a client that never opened one saw a step that did not move.
+#[test]
+fn a_checkpoint_the_app_cannot_run_is_said_by_a_read() {
+    let mut app = plugin_app();
+    // Posted from Rust, as a host's own startup code might: the BRP method refuses an unknown name.
+    let step: Step = serde_json::from_value(json!({"label": "save it", "checkpoint": "tile is saved"}))
+        .expect("a step");
+    app.world_mut().resource_mut::<Guide>().post(vec![step]);
+    app.update();
+
+    let read = post(&mut app, json!({"read": true}));
+    let why = read["guide"]["checkpoint_error"].as_str().unwrap_or_else(|| panic!("a read is silent: {read}"));
+    assert!(why.contains("tile is saved") && why.contains("ready"), "names it and what would work: {why}");
 }
 
 // ── 3. k/n, and it survives a re-post ────────────────────────────────────────────────────────────
@@ -213,7 +298,7 @@ fn re_running_the_same_script_accumulates_the_counts() {
     let mut app = app();
     post(&mut app, script(json!("ready")));
     app.world_mut().resource_mut::<Ready>().0 = true;
-    watch(&mut app);
+    app.update();
 
     // The same script again — the tester having another go, which is the entire point of `k/n`.
     post(&mut app, script(json!("ready")));
@@ -221,7 +306,7 @@ fn re_running_the_same_script_accumulates_the_counts() {
     assert_eq!(after["guide"]["steps"][0]["runs"], 2, "n counts every attempt");
     assert_eq!(after["guide"]["steps"][0]["passes"], 1, "k counts the ones that worked");
 
-    watch(&mut app);
+    app.update();
     let again = post(&mut app, json!({"read": true}));
     assert_eq!(again["guide"]["steps"][0]["passes"], 2, "2/2");
 }
@@ -250,7 +335,7 @@ fn clearing_takes_the_script_down_and_keeps_the_answer() {
     let mut app = app();
     post(&mut app, script(json!("ready")));
     app.world_mut().resource_mut::<Ready>().0 = true;
-    watch(&mut app);
+    app.update();
 
     post(&mut app, json!({"clear": true}));
     let report = post(&mut app, json!({"read": true}));
@@ -258,6 +343,66 @@ fn clearing_takes_the_script_down_and_keeps_the_answer() {
         report["guide"]["steps"][0]["passes"], 1,
         "the transcript survives, because it is what the exercise was for"
     );
+}
+
+// ── 3b. a call that is refused changes nothing, and a call that is accepted did what it said ─────
+
+/// **B-128.** The description tells the agent an unregistered checkpoint is refused by name; only
+/// the unreachable watch stream did.
+#[test]
+fn a_script_naming_an_unregistered_checkpoint_is_refused_when_posted() {
+    let mut app = app();
+    let message = refusal(&mut app, script(json!("tile is saved")));
+    assert!(message.contains("tile is saved"), "names what was asked for: {message}");
+    assert!(message.contains("drop a floor"), "and the step that asked: {message}");
+    assert!(message.contains("ready"), "and what would have worked: {message}");
+    assert!(message.contains("Nothing was posted"), "{message}");
+
+    let read = post(&mut app, json!({"read": true}));
+    assert_eq!(read["guide"]["of"], 0, "nothing was posted: {read}");
+}
+
+/// **B-128.** `{clear, skip}` ran `clear` and answered `success: true` for both.
+#[test]
+fn a_call_naming_two_verbs_is_refused_and_does_nothing() {
+    let mut app = app();
+    post(&mut app, script(json!("ready")));
+
+    let message = refusal(&mut app, json!({"clear": true, "skip": true}));
+    assert!(message.contains("one verb per call"), "{message}");
+    assert!(message.contains("clear") && message.contains("skip"), "names both: {message}");
+    let message = refusal(&mut app, json!({"read": true, "steps": [{"label": "x"}]}));
+    assert!(message.contains("read") && message.contains("steps"), "{message}");
+
+    let read = post(&mut app, json!({"read": true}));
+    assert_eq!(read["guide"]["of"], 2, "a refused call changed nothing: {read}");
+    assert_eq!(read["guide"]["at"], 1);
+}
+
+/// **B-128.** `skip` with no step to move past answered `success: true, skipped: null`.
+#[test]
+fn skipping_with_nothing_to_skip_is_refused() {
+    let mut app = app();
+    let message = refusal(&mut app, json!({"skip": true}));
+    assert!(message.contains("no current step"), "{message}");
+
+    post(&mut app, json!({"steps": [{"label": "the only step"}]}));
+    post(&mut app, json!({"skip": true}));
+    let message = refusal(&mut app, json!({"skip": true}));
+    assert!(message.contains("no current step"), "a finished script has none either: {message}");
+}
+
+/// **B-128.** `{steps, visible: false}` posted a visible script: `post` set `visible` after the
+/// field was applied. And `visible` beside a verb it cannot act on was ignored.
+#[test]
+fn visible_is_honoured_with_a_post_and_refused_where_it_cannot_act() {
+    let mut app = app();
+    post(&mut app, json!({"steps": [{"label": "quiet"}], "visible": false}));
+    assert!(!app.world().resource::<Guide>().visible, "the script was posted hidden");
+
+    let message = refusal(&mut app, json!({"read": true, "visible": true}));
+    assert!(message.contains("visible") && message.contains("read"), "{message}");
+    assert!(!app.world().resource::<Guide>().visible, "and the refusal changed nothing");
 }
 
 // ── 4. the overlay ───────────────────────────────────────────────────────────────────────────────
@@ -312,7 +457,7 @@ fn a_finished_step_is_confirmed_before_the_next_one_arrives() {
     let mut app = ui_app();
     post(&mut app, script(json!("ready")));
     app.world_mut().resource_mut::<Ready>().0 = true;
-    watch(&mut app);
+    app.update();
     app.update();
 
     let held = on_screen(&mut app).join("\n");
@@ -348,6 +493,22 @@ fn hiding_the_overlay_keeps_the_script() {
 
     let report = post(&mut app, json!({"read": true}));
     assert_eq!(report["guide"]["at"], 1, "still on step one, just not saying so");
+}
+
+/// **B-128.** A script re-posted while step 1 is up has the same step index and the same phase as
+/// the one it replaced, which was the overlay's whole render key, so the card kept the old text.
+#[test]
+fn re_posting_a_script_while_step_one_is_up_replaces_the_card() {
+    let mut app = ui_app();
+    post(&mut app, script(json!("ready")));
+    app.update();
+    assert!(on_screen(&mut app).join("\n").contains("drop a floor"));
+
+    post(&mut app, json!({"steps": [{"label": "a different first step", "do": ["press Tab"]}]}));
+    app.update();
+    let lines = on_screen(&mut app).join("\n");
+    assert!(lines.contains("a different first step"), "the card still shows the old script: {lines}");
+    assert!(!lines.contains("drop a floor"), "{lines}");
 }
 
 /// **The step text has to be ASCII**, because Bevy's embedded default font is 95 codepoints and this
@@ -450,7 +611,7 @@ fn a_skipped_step_is_not_confirmed_as_a_pass() {
     let mut app = ui_app();
     post(&mut app, script(json!("ready")));
     app.world_mut().resource_mut::<Ready>().0 = true;
-    watch(&mut app);
+    app.update();
     app.update();
     let passed = on_screen(&mut app).join("\n");
     assert!(passed.contains("OK"), "a real pass still reads as one: {passed}");

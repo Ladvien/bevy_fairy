@@ -233,8 +233,32 @@ fn a_scene_file_with_the_wrong_format_replays_nothing_and_does_not_panic() {
 
     assert!(app.world().resource::<Counted>().0.is_empty());
     let status = call(&mut app, "bevy_fairy/status", None).expect("status answers");
-    assert!(status["replay"].is_null(), "{status}");
+    // B-130: the rejection is said in the reply. `null` here meant "no scene was asked for", the same
+    // answer a game with no BEVY_FAIRY_SCENE gives, so an agent could not tell a typo'd path from
+    // nothing; the `error!` line went to a log nobody reads.
+    let why = status["replay"]["rejected"].as_str().unwrap_or_else(|| panic!("replay does not say it was rejected: {status}"));
+    assert!(why.contains("format"), "says why: {why}");
+    assert_eq!(status["replay"]["path"], path.to_str().expect("utf-8 path"), "{status}");
+    assert_eq!(status["replay"]["total"], 0, "{status}");
     std::fs::remove_file(path).ok();
+}
+
+/// **B-130.** A scene file that does not exist is as invisible as one with the wrong format, and
+/// no scene requested at all is still `null`: the two are different answers.
+#[test]
+fn a_scene_file_that_cannot_be_read_is_reported_and_no_scene_stays_null() {
+    let missing = std::env::temp_dir().join("bevy_fairy_scene_that_does_not_exist.json");
+    std::fs::remove_file(&missing).ok();
+    let mut app = new_app(false, Some(&missing));
+    app.update();
+    let status = call(&mut app, "bevy_fairy/status", None).expect("status answers");
+    let why = status["replay"]["rejected"].as_str().unwrap_or_else(|| panic!("{status}"));
+    assert!(why.contains("cannot read"), "{why}");
+
+    let mut app = new_app(false, None);
+    app.update();
+    let status = call(&mut app, "bevy_fairy/status", None).expect("status answers");
+    assert!(status["replay"].is_null(), "no scene was asked for: {status}");
 }
 
 #[test]
