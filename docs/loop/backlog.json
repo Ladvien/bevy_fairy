@@ -257,86 +257,6 @@
       "first_seen": "2026-10-31"
     },
     {
-      "id": "B-127",
-      "kind": "bug",
-      "area": "guide",
-      "title": "no checkpoint is ever evaluated through the MCP guide tool: only bevy_fairy/guide+watch runs one, and neither brp nor watch can open a +watch stream, so a step with a checkpoint never advances while the description says the app advances itself when the named condition arrives",
-      "must_fix": {
-        "misleads": true,
-        "blocks": true,
-        "common_no_workaround": false,
-        "evidence": "AuditCapture scout, 2026-10-31, code read not run: src/server/tools/guide.rs sends only bevy_fairy/guide; Guide::report sets waiting_on_a_person from checkpoint.is_none(); tick_guide never runs checkpoints"
-      },
-      "status": "open",
-      "evidence": "Repro: tests/plugin_guide_steps.rs, post a checkpointed step whose registered system returns true, run app.update() many times, read: at stays 1. Design fork: evaluate checkpoints in a plugin system (and let +watch only report), or make the server hold the stream",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-128",
-      "kind": "bug",
-      "area": "guide",
-      "title": "guide honesty: a step naming an unregistered checkpoint is accepted at post time (the description says it is refused; only the unreachable watch refuses, and a_checkpoint_nobody_registered_is_refused_by_name pins that), steps+read/clear/skip in one call drop all but one verb with success true, skip with no current step reports success, and re-posting a script while step 1 shows leaves the old card (the render key (at, finished) does not change)",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "AuditCapture scout, code read: guide.rs handle_guide if-chain, Guide::advance returns None, the render key in paint_guide"
-      },
-      "status": "open",
-      "evidence": "Fixing the first means the existing watch-refusal test posts through Guide::post directly; list that as a test change",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-129",
-      "kind": "bug",
-      "area": "time",
-      "title": "bevy_fairy/time reports held: true for an unpause or speed 1.0 the clock did not obey (time.rs:171-175: pause_held = !request.pause || ..., speed_held = request.pause || request.speed == 1.0 || ...) while paused / speed in the same reply say otherwise",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "AuditControl scout, code read: a host system that pauses Time<Virtual> in Update; call {pause:false}, run 3 frames, held true, paused true"
-      },
-      "status": "open",
-      "evidence": "Repro with the tests/plugin_clock.rs helpers",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-130",
-      "kind": "bug",
-      "area": "status",
-      "title": "status reports replay: null when the BEVY_FAIRY_SCENE file was rejected (scene.rs logs and inserts no ScenePlayback), the same as no scene requested",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "AuditControl and AuditCapture scouts, code read: ready.rs None => Null"
-      },
-      "status": "open",
-      "evidence": "Repro: tests/plugin_commands.rs new_app with a bad scene file, call bevy_fairy/status, replay is Null",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-131",
-      "kind": "bug",
-      "area": "input",
-      "title": "on the image route (DebugCaptureTarget) a Back, Forward or Other mouse button is dropped by pointer.rs (_ => return) with success: true, and an unaimed click lands at the image origin while the note says where the pointer last was",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "AuditControl scout, code read, not run"
-      },
-      "status": "open",
-      "evidence": "Repro with the plugin_pointer.rs drive-through",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
       "id": "B-132",
       "kind": "bug",
       "area": "burst",
@@ -349,22 +269,6 @@
       },
       "status": "open",
       "evidence": "The text reply carries the true values; the image does not",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
-      "id": "B-133",
-      "kind": "bug",
-      "area": "run",
-      "title": "the run description says every command that runs is recorded; commands registered read_only (bevy_fairy/ring, bevy_fairy/ui_text) and failed ones are not, and commands does not say which, so scene save can silently lack steps",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "AuditControl scout, code read: commands.rs records only when info.records; handle_commands does not return it"
-      },
-      "status": "open",
-      "evidence": "Repro: call bevy_fairy/ui_text, then bevy_fairy/scene get: steps is empty",
       "last_failure": "",
       "first_seen": "2026-10-31"
     },
@@ -397,6 +301,22 @@
       },
       "status": "unconfirmed",
       "evidence": "Each needs its own failing test before it is a bug",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-136",
+      "kind": "bug",
+      "area": "guide",
+      "title": "guide skip cannot say which step it means: with checkpoints advancing by themselves, a skip sent after a read of step k lands on step k+1 if k's checkpoint passed in between, and records k+1 as attempted and not passed though the person never saw it",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": false,
+        "evidence": "Review round 1, 2026-10-31, code read: evaluate_checkpoint advances in Last, handle_guide skip acts on whatever step is current in RemoteLast. The reply's `skipped` names the step actually skipped, so the call does not lie; the damage is one wrong k/n entry. GuideRequest.skip's schema text ('Move past the current step WITHOUT its condition passing') describes skipping a checkpointed step, so the race is reachable."
+      },
+      "status": "open",
+      "evidence": "Fix: an optional `step` (label) guard on skip, refused when it is not the current step; failing test: post a checkpointed script, make the checkpoint true, run a frame, skip with step = the first label, expect a refusal and at unchanged.",
       "last_failure": "",
       "first_seen": "2026-10-31"
     }

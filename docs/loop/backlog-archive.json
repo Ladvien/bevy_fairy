@@ -1679,6 +1679,102 @@
       "evidence": "4ff1e19, 67fa91d: Error::Timeout and Error::Brp, why_no_reply shared by call_game and the batch sampler, a 2 s connect timeout (a host that drops packets is still 'no game answering'). Live against a stub game: brp and watch say it may still run and to check status",
       "last_failure": "",
       "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-127",
+      "kind": "bug",
+      "area": "guide",
+      "title": "no checkpoint is ever evaluated through the MCP guide tool: only bevy_fairy/guide+watch runs one, and neither brp nor watch can open a +watch stream, so a step with a checkpoint never advances while the description says the app advances itself when the named condition arrives",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "AuditCapture scout, 2026-10-31, code read not run: src/server/tools/guide.rs sends only bevy_fairy/guide; Guide::report sets waiting_on_a_person from checkpoint.is_none(); tick_guide never runs checkpoints"
+      },
+      "status": "fixed",
+      "evidence": "ee2dd84: evaluate_checkpoint (Last) runs the current step's checkpoint once a frame, watched or not; guide+watch only reports. tests/plugin_guide_steps.rs a_checkpoint_that_passes_advances_the_step_with_nobody_watching red on the old src. Live through a real MCP client against a throwaway game: a registered checkpoint passed after `run tmp/set_flag`, read answered at 2/2 with 1/1 for the first step, no watch stream opened.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-128",
+      "kind": "bug",
+      "area": "guide",
+      "title": "guide honesty: a step naming an unregistered checkpoint is accepted at post time (the description says it is refused; only the unreachable watch refuses, and a_checkpoint_nobody_registered_is_refused_by_name pins that), steps+read/clear/skip in one call drop all but one verb with success true, skip with no current step reports success, and re-posting a script while step 1 shows leaves the old card (the render key (at, finished) does not change)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditCapture scout, code read: guide.rs handle_guide if-chain, Guide::advance returns None, the render key in paint_guide"
+      },
+      "status": "fixed",
+      "evidence": "ee2dd84: unregistered checkpoint refused at post time, one verb per call, skip with no current step refused, visible applied after steps and refused beside read/clear, Guide::generation in the render key. Five new tests red on the old src (plugin_guide_steps.rs).",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-129",
+      "kind": "bug",
+      "area": "time",
+      "title": "bevy_fairy/time reports held: true for an unpause or speed 1.0 the clock did not obey (time.rs:171-175: pause_held = !request.pause || ..., speed_held = request.pause || request.speed == 1.0 || ...) while paused / speed in the same reply say otherwise",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read: a host system that pauses Time<Virtual> in Update; call {pause:false}, run 3 frames, held true, paused true"
+      },
+      "status": "fixed",
+      "evidence": "2e66277, c1ba0f3: held means the clock matched the request (paused iff asked, at the asked speed); a pause that names no speed (1.0) is judged on the pause alone (review round 1 found the regression). plugin_clock.rs an_unpause_the_host_overrides_is_not_held, a_speed_of_one_the_host_overrides_is_not_held, a_pause_is_held_beside_a_hosts_own_slow_motion red first.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-130",
+      "kind": "bug",
+      "area": "status",
+      "title": "status reports replay: null when the BEVY_FAIRY_SCENE file was rejected (scene.rs logs and inserts no ScenePlayback), the same as no scene requested",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl and AuditCapture scouts, code read: ready.rs None => Null"
+      },
+      "status": "fixed",
+      "evidence": "9ff2b23, c1ba0f3: status.replay is {path, rejected} for a refused scene file (no counts), null only when none was asked for. plugin_commands.rs two tests red first. Live: BEVY_FAIRY_SCENE=/nonexistent/scene.json answers rejected: 'cannot read: No such file or directory'. The old test asserted replay.is_null() for the rejected file, which pinned the bug.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-131",
+      "kind": "bug",
+      "area": "input",
+      "title": "on the image route (DebugCaptureTarget) a Back, Forward or Other mouse button is dropped by pointer.rs (_ => return) with success: true, and an unaimed click lands at the image origin while the note says where the pointer last was",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read, not run"
+      },
+      "status": "fixed",
+      "evidence": "cf41a10: The audit was half wrong: bevy_picking skips Back/Forward/Other on BOTH routes (bevy_picking-0.20.0/src/input.rs:167) and the press does reach ButtonInput. What was true: the reply said only success. note now says so. plugin_input_params.rs a_mouse_button_picking_cannot_see_says_so_and_a_button_it_can_see_does_not red first.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-133",
+      "kind": "bug",
+      "area": "run",
+      "title": "the run description says every command that runs is recorded; commands registered read_only (bevy_fairy/ring, bevy_fairy/ui_text) and failed ones are not, and commands does not say which, so scene save can silently lack steps",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read: commands.rs records only when info.records; handle_commands does not return it"
+      },
+      "status": "fixed",
+      "evidence": "f19cfb3: wording only: the run description and the README said every command that runs is recorded; read-only commands (bevy_fairy/ring, bevy_fairy/ui_text) are not. No failing-first check exists for a sentence.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
     }
   ]
 }

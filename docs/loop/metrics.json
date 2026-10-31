@@ -1,16 +1,16 @@
 {
   "measured_at": "2026-10-31",
-  "sha": "67fa91d",
+  "sha": "0a1fc0a",
   "server": {
     "loc": 21413,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
-    "release_binary_bytes": 105158736,
+    "release_binary_bytes": 105161160,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
-    "loc": 3747,
+    "loc": 3929,
     "direct_dependencies": 4,
     "closure_packages": 319,
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
@@ -19,14 +19,14 @@
     "clippy_warnings_default": 69,
     "clippy_warnings_all_features_errors": 42,
     "all_features_build": "fails: src/observability/ (42 errors); 'full-debugging' includes observability, so it fails too",
-    "server_tests_passed": 491,
+    "server_tests_passed": 497,
     "server_tests_failed": 0,
     "server_tests_ignored": 1,
     "plugin_tests_passed": 71,
     "plugin_tests_failed": 0,
     "plugin_tests_ignored": 0,
     "clippy_warnings_note": "Counted by the ratchet: lint occurrences across the workspace and all targets. An earlier grep counted distinct warning lines and undercounted (707 vs 1462). The ratchet number is what the gate uses.",
-    "server_tests_note": "491 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at 67fa91d, with 1 ignored; 470 at 9afe28b. Since then: 6 tests in tests/restart_unnamed.rs and 1 step in anomaly_restart.rs (B-120), 4 unit tests in brp_client.rs and 3 in tools/experiment.rs, tests/plugin_input_params.rs (6), 3 more in plugin_ring.rs, tests/slow_game.rs (3). Three feature-gated plugin test files are not in that count and are run with `--features plugin-screenshot,plugin-ui-text,plugin-guide`: plugin_pointer (5), plugin_ui_text (8, one added), plugin_guide_steps (19); plus 2 unit tests in plugin/screenshot.rs (plugin-screenshot).",
+    "server_tests_note": "497 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together) at 0a1fc0a, with 1 ignored; 491 at 67fa91d. Since then: 4 tests in tests/plugin_clock.rs (B-129 and its review), 1 in tests/plugin_commands.rs (B-130), 1 in tests/plugin_input_params.rs (B-131). Three feature-gated plugin test files are not in that count and are run with `--features plugin-screenshot,plugin-ui-text,plugin-guide`: plugin_pointer (5), plugin_ui_text (8), plugin_guide_steps (27, was 19: 8 added for B-127/B-128); plus 2 unit tests in plugin/screenshot.rs (plugin-screenshot).",
     "ignored_tests_note": "1 ignored at ff29519 (`cargo test --workspace -- --list --ignored`), the one name in known_red: the BrpCommandHandler doctest. The earlier notes of 4 and 5 predate the removal of test_profiling_history and the other doctests with their code.",
     "direct_dependencies_note": "The baseline said 50; the manifest at e93da67 actually had 51. The count is the number of entries in [dependencies], by name. The one added since is `schemars`, which `rmcp` already depended on and which resolves to 0.8.22 in the lockfile, so there is one copy, not two."
   },
@@ -44,24 +44,24 @@
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
     "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
     "last_dev_run": {
-      "sha": "67fa91d",
+      "sha": "94f03e2",
       "success": "6/6",
-      "mean_tool_calls": 5.3,
+      "mean_tool_calls": 4.7,
       "invalid_calls": 1,
-      "note": "Calls 2, 5, 4, 5, 6, 10 (spinner_stops 10). The one invalid call is mover_speed asking brp for Time<Real>, which the game cannot serialise (its own refusal, unchanged by this pass). Debug build of 67fa91d run through evals/run.py with the fixture of the same build; the tool descriptions of experiment, detect_anomaly and screenshot's zoom changed, no call shape did. Held-out not run: no release this pass (6 h rule)."
+      "note": "Calls 3, 4, 4, 4, 6, 7 (spinner_stops 7). The one invalid call is mover_speed asking brp for Time<Real>, which the game cannot serialise (its own refusal, unchanged). Debug build of 94f03e2 run through evals/run.py with the fixture of the same build; no call shape changed, the guide/time/status/input descriptions did."
     },
     "last_heldout_run": {
-      "sha": "3540366",
+      "sha": "94f03e2",
       "success": "3/3",
       "tool_calls": [
-        3,
+        4,
         4,
         4
       ],
       "invalid_calls": 0,
-      "note": "The v0.11.0 release commit's debug build. entities_with_game_components passed; its truth is still disputed (B-049)."
+      "note": "Debug build of 94f03e2 (the release commit 6cc4282 and the doc-comment fix b0b238a came after it and change no behaviour). entities_with_game_components passed; its truth is still disputed (B-049)."
     },
-    "latest": "c52e818 (this pass): dev 6/6 at 4.7 calls, 0 invalid (b3b693e; v0.10.0 was 5.5, b681d29 4.0-5.0); held-out 3/3 at 3.7 calls, 0 invalid (3540366; v0.10.0 was 4.7). Released as v0.11.0."
+    "latest": "0a1fc0a..: dev 6/6 at 4.7 calls, 1 invalid (67fa91d was 5.3, 1); held-out 3/3 at 4.0 calls, 0 invalid (v0.11.0 was 3.7, 0). Released as v0.12.0. No eval exercises the guide, time, status replay or the input note: their proof is the failing-first tests and one live MCP session."
   },
   "notes": [
     "known_red is the frozen debt the ratchet gate compares against. Recorded at sha e93da67 with `scripts/ratchet.sh --record`.",
@@ -85,7 +85,8 @@
     "2026-10-30 (c1d3cad..525ee7e, anomaly-frames): server loc 19720 -> 20106 (find src/server -name '*.rs' | xargs cat | wc -l): +~270 in anomaly_detector.rs and tools/anomaly.rs (per-detector coverage, `emits`, BRP-shape reads, reachability, severity), +~45 in mcp_tools.rs (frame_now, stamp_frames), of which about 230 lines are new in-file tests. known_red lowered 79 -> 74 by hand: clippy::manual_range_contains 3 -> 0 and clippy::cloned_ref_to_slice_refs 2 -> 0, anomaly_detector.rs 5 -> 0 (two old tests rewritten to equivalent clippy-clean forms); scripts/ratchet.sh OK. Dev and held-out evals and mutation testing were not run (host load 41-48); the dev and held-out numbers above are from 420019e and 917874c.",
     "2026-10-31 (0829adc..b681d29, hypothesis-restore): server loc 20503 -> 20936 (find src/server -name '*.rs' | xargs cat | wc -l; +433): hypothesis_system.rs rewrote the four mutate_* functions as leaf-level generators (net about +60 with the Kinds/number helpers), TestRunner::run gained the restore, deadline and plan checks (+90), experiment_system.rs gained read-back, Restoration/restore_all and redo retargeting (+190), and about 120 lines are in-file unit tests. clippy 69 unchanged (touched files clean); known_red unchanged; scripts/ratchet.sh OK on all six touched files at b681d29.",
     "2026-10-31 (e35dd4b..9afe28b, restart-state): server loc 20936 -> 21266 (+330; find src/server -name '*.rs' | xargs cat | wc -l) and plugin loc 3561 -> 3588 (+27: GameInstance and the status field). About 190 of the server lines are the experiment history's game binding (Recorded/Standing/standing_of/adopt/refusal/annotate and 4 in-file unit tests), +50 observe's Baseline, +45 anomaly's settle, +23 BrpClient::game_instance (shared), the rest tool descriptions. No dependency added (plugin direct dependencies still 4: GameInstance uses std only). Clippy 69 unchanged; the ratchet was OK on every touched file at 9afe28b.",
-    "2026-10-31 (v0.11.0, c52e818): release_binary_bytes 104895024 -> 105158736 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked --force`; +0.25%, the restart bindings and their text). v0.11.0 published from 3540366 at 03:23 CDT, the minute the 6 h rule (v0.10.0 tag commit time + 21600 s) opened."
+    "2026-10-31 (v0.11.0, c52e818): release_binary_bytes 104895024 -> 105158736 (stat of ~/.cargo/bin/bevy-fairy after `cargo install --path . --locked --force`; +0.25%, the restart bindings and their text). v0.11.0 published from 3540366 at 03:23 CDT, the minute the 6 h rule (v0.10.0 tag commit time + 21600 s) opened.",
+    "2026-10-31 (guide-honesty pass): plugin loc 3747 -> 3929 (+182: evaluate_checkpoint and the unreported queue, the verb/visible/skip refusals, SceneRejected, the held rewrite, the input note); server loc unchanged (21413: description text only); direct dependencies unchanged; tools 14 -> 14; release binary 105158736 -> 105161160 bytes."
   ],
   "known_red": {
     "recorded_at": "2026-10-30",
