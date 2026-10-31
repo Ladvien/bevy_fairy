@@ -273,6 +273,34 @@ async fn scene_save_writes_the_exact_file_format() {
     assert_eq!(text_of(&refused), "scene save needs a path");
 }
 
+/// `show` and `clear` answered `success` to a `path` they never read, so a caller that sent
+/// `{"action": "show", "path": "scene.json"}` believed it had read a scene from that file. A refused
+/// `clear` must also leave the recorded commands alone.
+#[tokio::test]
+async fn scene_show_and_clear_refuse_a_path_they_do_not_read() {
+    let port = start_fake_game(game_with(true, 0)).await;
+    let tools = tools_for(port);
+    tools
+        .run(Parameters(RunRequest { command: "sanctuary/light".to_string(), params: Some(json!({"palette": "moonlit_night"})) }))
+        .await
+        .expect("run returns a result");
+
+    for action in [SceneAction::Show, SceneAction::Clear] {
+        let refused = tools
+            .scene(Parameters(SceneRequest { action, path: Some("scene.json".to_string()) }))
+            .await
+            .expect("scene returns a result");
+        assert_eq!(refused.is_error, Some(true), "{}", text_of(&refused));
+        assert!(text_of(&refused).contains("`path`") && text_of(&refused).contains("save"), "{}", text_of(&refused));
+    }
+    let shown = tools
+        .scene(Parameters(SceneRequest { action: SceneAction::Show, path: None }))
+        .await
+        .expect("scene returns a result");
+    assert_ne!(shown.is_error, Some(true), "{}", text_of(&shown));
+    assert!(text_of(&shown).contains("sanctuary/light"), "a refused clear forgot the recorded command: {}", text_of(&shown));
+}
+
 #[tokio::test]
 async fn commands_lists_the_game_commands_then_the_built_in_time_last() {
     let port = start_fake_game(game_with(true, 0)).await;
@@ -405,9 +433,12 @@ async fn burst_labels_every_cell_with_the_frame_the_game_reported() {
     assert_eq!(game.lock().expect("fake game lock").delivered, 4, "one reference and three frames");
     assert_eq!(result.content.len(), 2, "the sheet is returned inline when asked");
 
-    // 4 cells of 1x1 frames: one row of 4, each cell a label strip over a 1x1 picture.
+    // 4 cells of 1x1 frames: one row of 4. A cell is as wide as its widest label, not as its 1 px
+    // picture: this asserted `width == 4`, which was the clipped labels (B-132) written down. The
+    // longest label here, `F73 +100MS` or longer, is 10 glyphs and needs 84 px.
     let sheet = image::open(dir.path().join("b").join("sheet.png")).expect("sheet.png is a PNG");
-    assert_eq!(sheet.width(), 4);
+    assert_eq!(sheet.width() % 4, 0, "four equal cells");
+    assert!(sheet.width() / 4 >= 80, "a cell holds its label whole: {} px", sheet.width() / 4);
     assert!(dir.path().join("b").join("ref.png").exists());
     for n in 1..=3 {
         assert!(dir.path().join("b").join(format!("frame-{n}.png")).exists(), "frame-{n}.png with full_frames");

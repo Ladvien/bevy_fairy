@@ -211,22 +211,22 @@ pub struct HypothesisRequest {
 pub struct AnomalyRequest {
     /// The operation to run. One of `detect`, `configure`, `status`.
     pub action: String,
-    /// How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window.
+    /// Read by `configure` only. How many samples the window covers. At least `min_samples` and at least 2: a detector keeps this many samples and cannot report before it has `min_samples` of them, so `configure` refuses a smaller window.
     #[serde(default)]
     pub window_size: Option<u64>,
-    /// How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated.
+    /// Read by `configure` only. How many standard deviations from its own recent speeds an entity's velocity must be to count as anomalous. The speed is scored against the window it belongs to, so among n samples its score is at most (n - 1) / sqrt(n): 2.85 among 10, 9.9 among 100. A threshold above that bound is never exceeded, and `detect` then reports the detector as not evaluated.
     #[serde(default)]
     pub z_score_threshold: Option<f64>,
-    /// The fewest samples needed before a verdict is possible; at most `window_size`.
+    /// Read by `configure` only. The fewest samples needed before a verdict is possible; at most `window_size`.
     #[serde(default)]
     pub min_samples: Option<u64>,
-    /// The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally.
+    /// Read by `configure` only. The entities added per `detect` call (measured across the window) above which the entity count counts as growing abnormally.
     #[serde(default)]
     pub entity_growth_threshold: Option<f64>,
-    /// The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement.
+    /// Read by `detect` only. The lowest severity to report, from 0 to 1. For a speed or an entity count, severity is how far past its threshold the reading is: 0.5 at twice the threshold. A state inconsistency carries a fixed 0.9, a rule's rating and not a measurement.
     #[serde(default)]
     pub min_severity: Option<f64>,
-    /// How many anomalies to report at most.
+    /// Read by `detect` only. How many anomalies to report at most.
     #[serde(default)]
     pub limit: Option<u64>,
 }
@@ -313,7 +313,7 @@ pub enum SceneAction {
 pub struct SceneRequest {
     /// `save`, `show` or `clear`.
     pub action: SceneAction,
-    /// Required for `save`: the file to write, on this machine.
+    /// Required for `save`: the file to write, on this machine. Refused for `show` and `clear`, which read no file.
     #[serde(default)]
     pub path: Option<String>,
 }
@@ -876,7 +876,7 @@ impl BevyDebuggerTools {
     }
 
     /// Detect anomalies in game behavior
-    #[tool(description = "Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors, `configure` sets the thresholds below, `status` lists what each detector reads. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. Those readings belong to one game process: after a game restart they are dropped, because the new game gives the same entity ids to other entities, and the reply says so in history_discarded; a game that cannot name its process leaves them unverified, with the reason in game_instance_unverified, and they are dropped once a game that names itself answers after one that answered without naming itself. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.")]
+    #[tool(description = "Look for anomalies in the game's entities. `action` picks the operation: `detect` reads every entity once and runs three detectors (and reads `min_severity` and `limit`), `configure` sets the thresholds below (`window_size`, `z_score_threshold`, `min_samples`, `entity_growth_threshold`), `status` lists what each detector reads and reads no field; a field the action does not read is refused by name and nothing runs. The detectors read only particular components, matched on the last segment of the type path: the linear vector of a component named Velocity (scored against that entity's own recent speeds, including the one just read), the current field of Health beside a boolean Alive, and the number of entities across `detect` calls. Speeds and the entity count are judged only after `min_samples` readings, kept between calls, so the first calls judge nothing. Those readings belong to one game process: after a game restart they are dropped, because the new game gives the same entity ids to other entities, and the reply says so in history_discarded; a game that cannot name its process leaves them unverified, with the reason in game_instance_unverified, and they are dropped once a game that names itself answers after one that answered without naming itself. `detect` returns a list of detectors saying, for each, how many entities it read and whether it could judge them, because an empty anomalies list from a detector that read nothing says nothing about the game. Severity, from 0 to 1, is how far past its threshold a speed or entity count is; a Health/Alive contradiction carries a fixed 0.9, a rule's rating and not a measurement. Like `observe`, the reply says which game frames it was read between. A detection is a lead to check, not a verdict.")]
     pub async fn detect_anomaly(&self, Parameters(req): Parameters<AnomalyRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running anomaly action: {}", req.action);
 
@@ -1086,8 +1086,11 @@ impl BevyDebuggerTools {
     }
 
     /// Save, show or clear the recorded commands
-    #[tool(description = "Work with the commands recorded in this game session. save writes them to a replayable scene file on this machine (path required); show returns them; clear forgets them.")]
+    #[tool(description = "Work with the commands recorded in this game session. save writes them to a replayable scene file on this machine (path required, and read only by save: show and clear refuse one); show returns them; clear forgets them.")]
     pub async fn scene(&self, Parameters(req): Parameters<SceneRequest>) -> Result<CallToolResult, McpError> {
+        if req.path.is_some() && !matches!(req.action, SceneAction::Save) {
+            return tool_err("`path` is read only by `save`, which writes the recorded commands to it; `show` and `clear` read no file, so it would change nothing. Example: {\"action\": \"show\"}");
+        }
         match req.action {
             SceneAction::Save => {
                 let Some(path) = req.path else {
