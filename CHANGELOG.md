@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Breaking: `hypothesis` replies changed shape, `experiment` lost its `archetypes` action and its `archetype` field, and `Action` and `ComponentSpec` refuse fields they do not read.
+
+### Removed
+
+- `experiment`'s `archetypes` action and a spawn's `archetype` field, with `EntityFactory`. The four archetypes (player, enemy, projectile, static_mesh) were hard-coded lists of short component names (`Transform`, `Health`, `Mesh`) and `{x, y, z}` objects. BRP takes full type paths and arrays, and no game is guaranteed to have a `Health`, so no spawn from the list could work against any game while `archetypes` advertised them. Spawn with the components a game has, written as full paths (`game::Crate`). Asking for `archetypes` now answers "Unknown action" and lists `execute, undo, redo, history, clear_history`.
+- The string condition `action_succeeds` for `hypothesis`. It carried no action, so the server made one up (spawn an empty entity), ran it every iteration, left an entity in the game each time, and answered CONFIRMED. Use the object form `{"type": "action_succeeds", "action": {...}}`.
+
+### Changed
+
+- `hypothesis` replies. `statistics` counts each iteration as `held`, `violated` or `not_evaluated` (was `successes` and `failures`, which counted a refused action as a violation), `failure_examples` is `examples` with a `kind` of `violated` or `not_evaluated` and the game's own error message, `success_rate`, `confidence_interval` and `avg_execution_time_ms` are `null` when no iteration read the condition, and `confidence_level` is gone. The verdict gains `NOT_EVALUATED`. The interval is the 95% Wilson score interval, labelled with its `level` and `method`.
+- `hypothesis` `threshold` is the share of iterations, 0 to 1, in which the condition must hold; a value outside 0..1 is refused before any action runs. An iteration that was not evaluated counts against CONFIRMED and, for REJECTED, as if it had held.
+- `hypothesis` conditions are deserialised strictly, with `deny_unknown_fields`: a wrong type, a missing field, an unknown field or an unknown `type` is refused with the accepted shapes. A component name the game never registered is refused after `world.list_components`, naming close registered paths, and a short name two registered components share is refused as ambiguous.
+- `experiment` replies list what each action of a batch did (`results`), and an atomic batch stops at its first failure and marks the results it reversed `rolled_back`. A batch is no longer a history entry; its actions are, so `undo` steps back through them.
+
+### Fixed
+
+- `hypothesis` answered REJECTED, with the constant error "Action execution failed", for a claim whose actions the game refused, and REJECTED (or CONFIRMED with `threshold` 0) for zero iterations. Neither read the condition. They are `NOT_EVALUATED` now, with the game's message.
+- `hypothesis` conditions that could not be read parsed to ones every game satisfies, and were CONFIRMED at 100%: `component_types` as a string became an empty list, a non-string entry was dropped, a string inside `all` or `any` was skipped, a non-integer `entity_id` or `count` became "any". They are refused now, as are an empty `component_types`, an empty `all` or `any`, `component_matches` (which has no evaluator) and `performance_within` over a metric BRP cannot report, so `validate` no longer says valid for a condition that always fails.
+- `hypothesis` `component_equals` compared `serde_json::Value`, where the integer 3 and the float 3.0 differ: the game writes a float field as `3.0`, an agent writes `3`, and a true claim was REJECTED. Numbers are compared as numbers, recursively.
+- `hypothesis` judged a claim about a component name the game never registered: `entity_exists:Crat` was REJECTED and its negation CONFIRMED, whatever the game did.
+- `hypothesis` reported `confidence_interval` `[1.0, 1.0]` and `confidence_level` "100.0%" after one iteration (a Wald interval has zero width at a rate of 0 or 1 whatever the trials, and the level was a linear remap of its bound).
+- `experiment` returned a tool error, without the spawns that had already happened, when the server refused an action (an empty component type); in an atomic batch that skipped the rollback and left the transaction open, so the first spawn stayed in the game and no later action was recorded for `undo`. A refused action is a failed result listed beside the rest.
+- `experiment` `undo` answered "`batch` cannot be undone" forever after a batch, because the batch itself was the history entry and has no reverse, and a batch's reply named no entity it spawned.
+- `experiment` actions refuse fields they do not read (`Action` and `ComponentSpec` have `deny_unknown_fields`): a `path` on a component used to be dropped and the whole component overwritten.
+
+### Not yet fixed
+
+- `experiment`'s success replies still come from the game's answer to the write and are not read back; a game system may overwrite the value on the next frame. Its history is kept by the server and goes stale when the game restarts.
+- `hypothesis` `stress_test` and the variation strategies still change the live game without restoring it, `iterations` does not apply to every strategy, and `timeout` bounds one action, not the run.
+
 ## 0.10.0 - 2026-10-30
 
 Covers everything since 0.9.0 (semver-checks: 6 major checks). Breaking: the `replay` MCP tool is removed, and `detect_anomaly` lost two arguments it never read. Migration is below.

@@ -1142,6 +1142,41 @@ async fn experiment_batch_names_what_it_spawned_and_can_be_undone() {
     }
 }
 
+/// `experiment` advertised four archetypes (player, enemy, projectile, static_mesh) and could
+/// spawn them, but each was a hard-coded component list in short names (`Transform`, `Health`)
+/// and `{x, y, z}` objects. BRP wants full type paths and arrays, and no game is guaranteed to
+/// have a `Health`, so no spawn from the list could work against any game: the listing was
+/// false. The action is gone. Fields the server does not read are refused rather than dropped.
+/// A `path` on a component, which nothing reads, used to be dropped without a word and the whole
+/// component overwritten.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_offers_no_archetypes_and_refuses_fields_it_does_not_read() {
+    use bevy_fairy::server::mcp_tools::ExperimentRequest;
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let reply = experiment(&tools, json!({"action": "archetypes"})).await;
+    assert_eq!(reply["error"], json!("Unknown action"), "archetypes must not be an action: {reply}");
+    let valid = reply["available_actions"].as_array().unwrap_or_else(|| panic!("the refusal lists the actions: {reply}"));
+    assert!(valid.contains(&json!("execute")) && !valid.contains(&json!("archetypes")), "{reply}");
+
+    for (request, field) in [
+        (json!({"action": "execute", "actions": [{"type": "spawn", "archetype": "player", "components": []}]}), "archetype"),
+        (
+            json!({"action": "execute", "actions": [{"type": "modify", "entity_id": 1,
+                "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 5}, "path": "weight"}]}]}),
+            "path",
+        ),
+        (json!({"action": "execute", "actions": [{"type": "batch", "atomic": true, "atomc": true, "actions": []}]}), "atomc"),
+    ] {
+        let error = serde_json::from_value::<ExperimentRequest>(request.clone())
+            .expect_err(&format!("{request} carries a field nothing reads, so it must be refused"))
+            .to_string();
+        assert!(error.contains(field), "the refusal names `{field}`: {error}");
+    }
+}
+
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
 async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
     let params: bevy_fairy::server::mcp_tools::HypothesisRequest =

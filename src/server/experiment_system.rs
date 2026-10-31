@@ -12,14 +12,10 @@ use crate::server::error::{Error, Result};
 
 /// Action types for state manipulation
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     /// Spawn a new entity with specified components
-    Spawn {
-        components: Vec<ComponentSpec>,
-        #[serde(default)]
-        archetype: Option<String>,
-    },
+    Spawn { components: Vec<ComponentSpec> },
     /// Modify an existing entity's components
     Modify {
         entity_id: EntityId,
@@ -49,6 +45,7 @@ impl Action {
 
 /// Component specification for spawn/modify actions
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ComponentSpec {
     pub type_id: ComponentTypeId,
     pub value: ComponentValue,
@@ -224,13 +221,7 @@ impl ActionExecutor {
             debug!("Executing action: {:?}", action);
 
             let result = match action {
-                Action::Spawn {
-                    components,
-                    archetype,
-                } => {
-                    self.execute_spawn(components, archetype.as_deref(), brp_client)
-                        .await
-                }
+                Action::Spawn { components } => self.execute_spawn(components, brp_client).await,
                 Action::Modify {
                     entity_id,
                     components,
@@ -244,9 +235,9 @@ impl ActionExecutor {
                 }
             };
 
-            // An action the server refuses (an empty component type, an unknown archetype) is a
-            // failed action, reported with the rest. As an `Err` it escaped the caller's loop:
-            // the results so far were lost, and a batch's transaction was left open.
+            // An action the server refuses (an empty component type) is a failed action, reported
+            // with the rest. As an `Err` it escaped the caller's loop: the results so far were
+            // lost, and a batch's transaction was left open.
             let mut result =
                 result.unwrap_or_else(|e| ActionResult::failure(action.kind(), e.to_string()));
 
@@ -263,17 +254,11 @@ impl ActionExecutor {
     async fn execute_spawn(
         &mut self,
         components: &[ComponentSpec],
-        archetype: Option<&str>,
         brp_client: &mut BrpClient,
     ) -> Result<ActionResult> {
         info!("Spawning entity with {} components", components.len());
 
-        // Use archetype factory if specified
-        let final_components = if let Some(arch) = archetype {
-            self.apply_archetype(arch, components)?
-        } else {
-            components.to_vec()
-        };
+        let final_components = components.to_vec();
 
         // Validate component types
         for component in &final_components {
@@ -639,126 +624,13 @@ impl ActionExecutor {
 
     /// Validate component type
     fn validate_component_type(&self, type_id: &ComponentTypeId) -> Result<()> {
-        // Basic validation - could be extended with schema checking
         if type_id.is_empty() {
             return Err(Error::Validation(
                 "Component type ID cannot be empty".to_string(),
             ));
         }
 
-        // Check for known component types
-        let known_types = [
-            "Transform",
-            "GlobalTransform",
-            "Velocity",
-            "Health",
-            "Name",
-            "Visibility",
-            "ComputedVisibility",
-            "RigidBody",
-            "Collider",
-            "Mesh",
-            "Material",
-            "Camera",
-            "Light",
-        ];
-
-        if !known_types.contains(&type_id.as_str()) {
-            warn!("Unknown component type: {} - proceeding anyway", type_id);
-        }
-
         Ok(())
-    }
-
-    /// Apply archetype to get full component list
-    fn apply_archetype(
-        &self,
-        archetype: &str,
-        overrides: &[ComponentSpec],
-    ) -> Result<Vec<ComponentSpec>> {
-        let mut components = match archetype {
-            "player" => vec![
-                ComponentSpec {
-                    type_id: "Transform".to_string(),
-                    value: serde_json::json!({
-                        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
-                        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-                        "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
-                    }),
-                },
-                ComponentSpec {
-                    type_id: "Health".to_string(),
-                    value: serde_json::json!(100),
-                },
-                ComponentSpec {
-                    type_id: "Name".to_string(),
-                    value: serde_json::json!("Player"),
-                },
-            ],
-            "enemy" => vec![
-                ComponentSpec {
-                    type_id: "Transform".to_string(),
-                    value: serde_json::json!({
-                        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
-                        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-                        "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
-                    }),
-                },
-                ComponentSpec {
-                    type_id: "Health".to_string(),
-                    value: serde_json::json!(50),
-                },
-                ComponentSpec {
-                    type_id: "Name".to_string(),
-                    value: serde_json::json!("Enemy"),
-                },
-            ],
-            "projectile" => vec![
-                ComponentSpec {
-                    type_id: "Transform".to_string(),
-                    value: serde_json::json!({
-                        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
-                        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-                        "scale": {"x": 0.5, "y": 0.5, "z": 0.5}
-                    }),
-                },
-                ComponentSpec {
-                    type_id: "Velocity".to_string(),
-                    value: serde_json::json!({"x": 10.0, "y": 0.0, "z": 0.0}),
-                },
-            ],
-            "static_mesh" => vec![
-                ComponentSpec {
-                    type_id: "Transform".to_string(),
-                    value: serde_json::json!({
-                        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
-                        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-                        "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
-                    }),
-                },
-                ComponentSpec {
-                    type_id: "Mesh".to_string(),
-                    value: serde_json::json!("cube"),
-                },
-            ],
-            _ => {
-                return Err(Error::Validation(format!("Unknown archetype: {archetype}")));
-            }
-        };
-
-        // Apply overrides
-        for override_spec in overrides {
-            if let Some(existing) = components
-                .iter_mut()
-                .find(|c| c.type_id == override_spec.type_id)
-            {
-                existing.value = override_spec.value.clone();
-            } else {
-                components.push(override_spec.clone());
-            }
-        }
-
-        Ok(components)
     }
 
     /// Get original component values for rollback
@@ -821,33 +693,6 @@ impl Default for ActionExecutor {
     }
 }
 
-/// Factory for creating common entity archetypes
-pub struct EntityFactory;
-
-impl EntityFactory {
-    /// Get available archetypes
-    pub fn available_archetypes() -> Vec<&'static str> {
-        vec!["player", "enemy", "projectile", "static_mesh"]
-    }
-
-    /// Get archetype description
-    pub fn describe_archetype(archetype: &str) -> Option<String> {
-        match archetype {
-            "player" => {
-                Some("Player entity with Transform, Health, and Name components".to_string())
-            }
-            "enemy" => Some("Enemy entity with Transform, Health, and Name components".to_string()),
-            "projectile" => {
-                Some("Projectile entity with Transform and Velocity components".to_string())
-            }
-            "static_mesh" => {
-                Some("Static mesh entity with Transform and Mesh components".to_string())
-            }
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -870,18 +715,6 @@ mod tests {
             value: serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
         };
         assert_eq!(spec.type_id, "Transform");
-    }
-
-    #[test]
-    fn test_action_enum_serialization() {
-        let action = Action::Spawn {
-            components: vec![],
-            archetype: Some("player".to_string()),
-        };
-
-        let json = serde_json::to_string(&action).unwrap();
-        assert!(json.contains("spawn"));
-        assert!(json.contains("player"));
     }
 
     #[test]
@@ -913,20 +746,6 @@ mod tests {
         assert!(!custom_executor.enable_rollback);
     }
 
-    #[test]
-    fn test_entity_factory() {
-        let archetypes = EntityFactory::available_archetypes();
-        assert!(archetypes.contains(&"player"));
-        assert!(archetypes.contains(&"enemy"));
-
-        let description = EntityFactory::describe_archetype("player");
-        assert!(description.is_some());
-        assert!(description.unwrap().contains("Player"));
-
-        let unknown = EntityFactory::describe_archetype("unknown");
-        assert!(unknown.is_none());
-    }
-
     #[tokio::test]
     async fn test_validate_component_type() {
         let executor = ActionExecutor::new();
@@ -943,29 +762,6 @@ mod tests {
         assert!(executor
             .validate_component_type(&"CustomComponent".to_string())
             .is_ok());
-    }
-
-    #[test]
-    fn test_apply_archetype() {
-        let executor = ActionExecutor::new();
-
-        // Player archetype without overrides
-        let components = executor.apply_archetype("player", &[]).unwrap();
-        assert!(components.iter().any(|c| c.type_id == "Transform"));
-        assert!(components.iter().any(|c| c.type_id == "Health"));
-        assert!(components.iter().any(|c| c.type_id == "Name"));
-
-        // Player archetype with override
-        let overrides = vec![ComponentSpec {
-            type_id: "Health".to_string(),
-            value: serde_json::json!(200),
-        }];
-        let components = executor.apply_archetype("player", &overrides).unwrap();
-        let health = components.iter().find(|c| c.type_id == "Health").unwrap();
-        assert_eq!(health.value, serde_json::json!(200));
-
-        // Unknown archetype
-        assert!(executor.apply_archetype("unknown", &[]).is_err());
     }
 
     #[test]

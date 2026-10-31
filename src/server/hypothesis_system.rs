@@ -1233,7 +1233,6 @@ mod tests {
                 type_id: "TestComponent".to_string(),
                 value: serde_json::json!(50.0),
             }],
-            archetype: None,
         }];
 
         let variations = strategy.generate_variations(&base_actions, 5, 42);

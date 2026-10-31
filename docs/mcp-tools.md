@@ -47,11 +47,11 @@ Look for anomalies in the game's entities. `action` picks the operation: `detect
 
 ## `experiment`
 
-Run controlled experiments on your Bevy game: spawn, modify or delete entities and read back what changed. `action` picks the operation; `execute` carries the `actions` to run.
+Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. `undo` and `redo` step through the recorded actions: a delete cannot be reversed, and a modify only when its components existed before. The reply does not read the game back, so a game system may overwrite a modified value on the next frame. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes | The operation to run. One of `execute`, `undo`, `redo`, `history`, `clear_history`, `archetypes`. |
+| `action` | string | yes | The operation to run. One of `execute`, `undo`, `redo`, `history`, `clear_history`. |
 | `actions` | array | no | The actions to carry out. Required by `execute`; ignored by the other operations. |
 
 ## `guide`
@@ -76,12 +76,12 @@ Write steps the way you would brief a colleague: say WHY before what (people ign
 
 ## `hypothesis`
 
-Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it.
+Test a claim about your game against the running game. `action` picks the operation; `test` needs a `description` of the claim and a `success_condition` that decides it. The condition is a string (entity_exists:game::Crate or component_equals:game::Score=100) or an object whose type is entity_exists, component_equals, performance_within (entity_count or component_count), action_succeeds, all, any or not. A condition that cannot be read as written, or that names a component the game never registered, is refused before anything runs. The `actions` run on every iteration and change the live game; they are not undone. The reply's verdict is CONFIRMED, REJECTED, INCONCLUSIVE or NOT_EVALUATED, and statistics counts each iteration as held, violated, or not_evaluated: an action failed first, so the condition was never read, and the examples carry the game's own message. NOT_EVALUATED says nothing about the claim. Without variation there is one iteration, so CONFIRMED means the condition held once when read, and the interval says how little that shows.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `action` | string | yes | The operation to run. One of `test`, `quick_test` (10 iterations, 10 s), `stress_test` (fuzz variation, 1000 iterations unless `iterations` or `variation_type` say otherwise), `validate` (checks the claim parses; runs nothing). |
-| `actions` | array | no | The actions to try while testing the claim. |
+| `actions` | array | no | The actions to run before the condition is read, on every iteration. They change the running game and are not undone. |
 | `bool_probability` | number | no | For `random`: the probability a varied boolean is true. Default 0.5. |
 | `bool_values` | array | no | For `grid`: the booleans to try. Default true and false. |
 | `description` | string | no | What the claim is, in words. `test` and `quick_test` require it. |
@@ -89,18 +89,18 @@ Test a claim about your game against the running game. `action` picks the operat
 | `include_max` | boolean | no | For `boundary`: try the largest values. Default true. |
 | `include_negative` | boolean | no | For `boundary`: try negative values. Default true. |
 | `include_zero` | boolean | no | For `boundary`: try zero. Default true. |
-| `iterations` | integer | no | How many times to run the test. |
+| `iterations` | integer | no | How many times to run the test. With no variation the test runs once, and `grid` and `boundary` run at most as many times as they have values. |
 | `max_mutations` | integer | no | For `fuzz`: the most mutations applied to one run. Default 3. |
 | `mutation_probability` | number | no | For `fuzz`: the probability each mutation applies. Default 0.5. |
 | `numeric_max` | number | no | For `random`: the high end of the numeric range to vary over. Default 100. |
 | `numeric_min` | number | no | For `random`: the low end of the numeric range to vary over. Default 0. |
 | `numeric_values` | array | no | For `grid`: the numbers to try. Default 0, 50, 100. |
-| `seed` | integer | no | The seed, so a run can be repeated exactly. |
+| `seed` | integer | no | The seed for `random` and `fuzz` variation. The game is not restored between iterations, so a seed repeats the variation, not the state the game is in. |
 | `string_pool` | array | no | For `random`: the strings to vary over. Default none. |
 | `string_values` | array | no | For `grid`: the strings to try. Default `default`. |
-| `success_condition` | any | no | The condition that decides whether the claim held. `test` and `quick_test` require it. |
-| `threshold` | number | no | The confidence a result needs before it counts as confirmed. |
-| `timeout` | integer | no | How long the test may run, in seconds. |
+| `success_condition` | any | no | The condition that decides whether the claim held: a string such as entity_exists:game::Crate, or an object such as {"type": "entity_exists", "component_types": ["game::Crate"], "count": 6}. `test` and `quick_test` require it. |
+| `threshold` | number | no | The share of iterations, from 0 to 1, in which the condition must hold for the claim to count as confirmed. Default 0.95. An iteration that was not evaluated does not count as held. |
+| `timeout` | integer | no | How long one action may take, in seconds. It does not bound the whole run. |
 | `variation_type` | any | no | How to vary the test between iterations. Default `none`. `random` varies within `numeric_min`..`numeric_max`, `string_pool` and `bool_probability`; `grid` walks `numeric_values`, `string_values` and `bool_values`; `boundary` tries edge values chosen by the `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with probability `mutation_probability`. |
 
 ## `observe`

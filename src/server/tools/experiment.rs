@@ -5,7 +5,7 @@ use tracing::{debug, info, warn};
 
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
-use crate::server::experiment_system::{Action, ActionExecutor, EntityFactory};
+use crate::server::experiment_system::{Action, ActionExecutor};
 
 /// Global experiment state
 pub struct ExperimentState {
@@ -51,7 +51,6 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
     match action_str {
         "history" => return handle_history().await,
         "clear_history" => return handle_clear_history().await,
-        "archetypes" => return handle_archetypes().await,
         _ => {}
     }
 
@@ -77,7 +76,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
         _ => Ok(json!({
             "error": "Unknown action",
             "message": format!("Unknown action: {}", action_str),
-            "available_actions": ["execute", "undo", "redo", "history", "clear_history", "archetypes"]
+            "available_actions": ["execute", "undo", "redo", "history", "clear_history"]
         })),
     }
 }
@@ -206,27 +205,6 @@ async fn handle_clear_history() -> Result<Value> {
     }))
 }
 
-/// Handle archetypes request
-async fn handle_archetypes() -> Result<Value> {
-    let archetypes = EntityFactory::available_archetypes();
-
-    let archetype_info: Vec<_> = archetypes
-        .iter()
-        .map(|&arch| {
-            json!({
-                "name": arch,
-                "description": EntityFactory::describe_archetype(arch)
-            })
-        })
-        .collect();
-
-    Ok(json!({
-        "archetypes": archetype_info,
-        "count": archetypes.len(),
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,22 +237,6 @@ mod tests {
 
         let result = handle(args, brp_client).await.unwrap();
         assert!(result.get("error").is_some());
-    }
-
-    #[tokio::test]
-    async fn test_handle_archetypes() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
-        let brp_client = Arc::new(RwLock::new(crate::server::brp_client::BrpClient::new(&config)));
-
-        let args = json!({
-            "action": "archetypes"
-        });
-
-        let result = handle(args, brp_client).await.unwrap();
-        assert!(result.get("archetypes").is_some());
-        let archetypes = result.get("archetypes").unwrap().as_array().unwrap();
-        assert!(!archetypes.is_empty());
     }
 
     #[tokio::test]
