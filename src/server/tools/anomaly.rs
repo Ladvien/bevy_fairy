@@ -13,9 +13,20 @@ use crate::server::brp_messages::{
 };
 use crate::server::error::Result;
 
+/// What `settle` found about the game the detectors' samples came from.
+enum Samples {
+    /// The samples held are of another game process: they were dropped.
+    Dropped,
+    /// Neither read could name its game, so samples may be another game's. The text says why.
+    Unverified(String),
+}
+
 /// Shared state for anomaly detection
 pub struct AnomalyState {
     detection_system: AnomalyDetectionSystem,
+    /// The game the detectors' samples were read from (`Err`: why it could not say); `None` before
+    /// the first `detect`.
+    last_game: Option<std::result::Result<String, String>>,
 }
 
 impl AnomalyState {
@@ -25,6 +36,7 @@ impl AnomalyState {
         let config = AnomalyConfig::default();
         Self {
             detection_system: AnomalyDetectionSystem::new(config),
+            last_game: None,
         }
     }
 
@@ -33,7 +45,25 @@ impl AnomalyState {
     pub fn with_config(config: AnomalyConfig) -> Self {
         Self {
             detection_system: AnomalyDetectionSystem::new(config),
+            last_game: None,
         }
+    }
+
+    /// Record the game the next samples come from. The detectors score an entity against its own
+    /// recent values by entity id, and a restarted game gives the same ids to other entities, so
+    /// the samples of another game process are dropped (the configuration stays).
+    fn settle(&mut self, game: &std::result::Result<String, String>) -> Option<Samples> {
+        let found = match (&self.last_game, game) {
+            (None, _) => None,
+            (Some(Ok(then)), Ok(now)) if then != now => {
+                self.detection_system = AnomalyDetectionSystem::new(self.detection_system.config().clone());
+                Some(Samples::Dropped)
+            }
+            (Some(Ok(_)), Ok(_)) => None,
+            (Some(Err(why)), _) | (Some(_), Err(why)) => Some(Samples::Unverified(why.clone())),
+        };
+        self.last_game = Some(game.clone());
+        found
     }
 }
 
@@ -94,6 +124,9 @@ async fn handle_detect(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
         }));
     }
 
+    // Which game process this is: the detectors keep samples per entity id across calls.
+    let game = brp_client.write().await.game_instance().await;
+
     // Query all entities
     let brp_request = BrpRequest {
         method: builtin_methods::BRP_QUERY_METHOD.to_string(),
@@ -141,6 +174,7 @@ async fn handle_detect(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
     let state = get_anomaly_state();
     let mut state_guard = state.write().await;
 
+    let samples = state_guard.settle(&game);
     let anomalies = match state_guard.detection_system.detect_anomalies(&entities) {
         Ok(anomalies) => anomalies,
         Err(e) => {
@@ -194,6 +228,21 @@ async fn handle_detect(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> 
     });
     if let Some(note) = coverage_note(&coverage) {
         reply["note"] = json!(note);
+    }
+    match samples {
+        Some(Samples::Dropped) => {
+            reply["history_discarded"] = json!({
+                "reason": "the samples the detectors held were read from another game (the game restarted since): \
+                           a restarted game gives the same entity ids to other entities, so they were dropped and \
+                           these readings start the windows again",
+            });
+        }
+        Some(Samples::Unverified(why)) => {
+            reply["game_instance_unverified"] = json!(format!(
+                "the samples held may be another game's: {why}"
+            ));
+        }
+        None => {}
     }
     Ok(reply)
 }
