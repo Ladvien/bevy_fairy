@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 - 2026-10-31
+
+Covers everything since 0.11.0 (semver-checks: 1 major check: `handle_guide` takes 3 parameters instead of 2). Breaking: the plugin's `handle_guide` also reads `Checkpoints`, and `watch_guide` no longer evaluates a checkpoint (a host that does not use `DebuggerPlugin` adds `evaluate_checkpoint` to `Last`). Tool-side: the `guide` tool refuses what it used to accept (an unregistered checkpoint, two verbs in one call, `skip` with no current step, `visible` beside `read` or `clear`), and `status` / `bevy_fairy/time` answer differently in the cases listed below.
 
 ### Fixed
 
