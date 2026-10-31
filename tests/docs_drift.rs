@@ -340,8 +340,12 @@ fn no_doc_names_the_old_crate_or_the_old_package_path() {
                 continue;
             }
             // `crates/bevy_fairy` is the old in-repo package path. The crate's own crates.io page,
-            // `crates.io/crates/bevy_fairy`, contains the same characters and is not stale.
-            let checked = trimmed.replace("crates.io/crates/bevy_fairy", "");
+            // `crates.io/crates/bevy_fairy`, and its page in the Bevy Coven book,
+            // `bevy-coven.github.io/crates/bevy_fairy.html`, contain the same characters and are
+            // not stale.
+            let checked = trimmed
+                .replace("crates.io/crates/bevy_fairy", "")
+                .replace("bevy-coven.github.io/crates/bevy_fairy", "");
             for stale in [
                 "bevy_debugger_mcp",
                 "bevy_debugger_bevy",
