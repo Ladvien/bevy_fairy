@@ -172,7 +172,7 @@
         "evidence": "src/server/anomaly_detector.rs PhysicsDetector::velocity_history is a HashMap<u64, RingBuffer> that detect() only inserts into. Follows from the code; not reproduced: write the failing test first (detect over entities 0..N, then over a disjoint set, expect the first set's histories gone)."
       },
       "status": "unconfirmed",
-      "evidence": "",
+      "evidence": "2026-10-30 (watch-fields pass): confirmed by reading, still no failing test. anomaly_detector.rs:297 declares the map and :334 is the only place that touches it besides configure's resize; nothing removes an entry. A fix is one retain() per detect call, but the file carries 8 clippy warnings the ratchet requires cleared in any touched file, so it is more than a one-line change; take it together with B-093.",
       "last_failure": "",
       "first_seen": "2026-10-30"
     },

@@ -1215,6 +1215,22 @@
       "evidence": "525ee7e: frame and frame_until from bevy_fairy/status before and after the handler, frame_unavailable plus the reason when the game lacks it. fixture_ground_truth::observe_brackets_the_frame_every_read_was_taken_on failed with 'the reply carries no frame' and passes; tool_contract::a_read_from_a_game_without_the_plugin_says_why_it_has_no_frame.",
       "last_failure": "",
       "first_seen": "2026-10-30"
+    },
+    {
+      "id": "B-094",
+      "kind": "change",
+      "area": "watch",
+      "title": "watch summarised a composite value as one value, so a component whose angle froze while its frame counter kept counting read changed=true, constant_since_frame=null and named no stopped field",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "the planted spinner bug: watching the whole Spinner component spans the freeze at frame 120 and the reply could not say which field stopped; a workaround exists (watch each field with its own pointer)"
+      },
+      "status": "fixed",
+      "evidence": "587587e, 84fd461: `fields` per leaf with the same four numbers, ranked stopped/moving/never-moved, absent_samples. fixture_ground_truth::watch_without_a_pointer_says_which_spinner_field_froze failed on 7d2e7a1 ('the reply has no `fields` array') and passes; 16 unit tests in server::watch_fields; 16 manual mutants killed. Dev evals did not move (the agent could already read the freeze off the raw samples): 6/6 before and after.",
+      "last_failure": "",
+      "first_seen": "2026-10-30"
     }
   ]
 }
