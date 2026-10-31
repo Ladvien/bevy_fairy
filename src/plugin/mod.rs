@@ -169,6 +169,7 @@ impl Plugin for DebuggerPlugin {
             .init_resource::<DebugCommands>()
             .init_resource::<SceneLog>()
             .init_resource::<ready::FrameTicks>()
+            .insert_resource(ready::GameInstance::new())
             .add_systems(Last, ready::tick_frames)
             .add_systems(Update, scene::replay_next_step);
         #[cfg(feature = "plugin-screenshot")]

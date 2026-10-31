@@ -3,13 +3,86 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use crate::server::brp::{refusal_text, BrpPayload, BrpRequest};
 use crate::server::brp_client::BrpClient;
 use crate::server::error::{Error, Result};
 use crate::server::experiment_system::{Action, ActionExecutor};
 
+/// The game process the history was recorded against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Recorded {
+    /// No action has been recorded.
+    Nothing,
+    /// A game that named itself with the `instance` of `bevy_fairy/status`.
+    Game(String),
+    /// A game that could not name itself, and why: its history cannot be told from another's.
+    Unverifiable(String),
+}
+
+/// What comparing the game that answers now with the one the history was recorded against found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Standing {
+    /// Nothing recorded, or the same game.
+    Current,
+    /// The history is of another game process: a restart reuses entity ids for other entities.
+    Stale { entries: usize },
+    /// The history is of a game that named itself, and the game now cannot be asked who it is.
+    Unconfirmed(String),
+    /// Neither game can name itself, so no comparison is possible. The reason says why.
+    Unverified(String),
+}
+
+impl Standing {
+    /// The reply that refuses an operation this standing forbids, or `None` when it may go ahead.
+    /// A stale history refuses `undo` and `redo` but not `execute`, which starts a new one.
+    fn refusal(&self, operation: &str, url: &str, stale_refuses: bool) -> Option<Value> {
+        match self {
+            Standing::Stale { entries } if stale_refuses => Some(json!({
+                "error": "history belongs to another game",
+                "message": format!(
+                    "The {entries} recorded action(s) were taken against another game process than the one answering at {url} now; \
+                     a restarted game gives its entities other ids, so `{operation}` would change the wrong ones. \
+                     Nothing was changed in the game, and the stale history was discarded. `execute` starts a new history."
+                ),
+                "history_discarded": {"entries": entries},
+            })),
+            Standing::Unconfirmed(why) => Some(json!({
+                "error": "cannot tell whether the history belongs to this game",
+                "message": format!(
+                    "The history was recorded against a game that named itself, and the game at {url} cannot now: {why}. \
+                     It may be another game, so `{operation}` was not run. `clear_history` discards the history."
+                ),
+            })),
+            _ => None,
+        }
+    }
+
+    /// Put what the comparison found into the reply of an operation that went ahead.
+    fn annotate(self, reply: &mut Value, url: &str) {
+        let Some(fields) = reply.as_object_mut() else { return };
+        match self {
+            Standing::Stale { entries } => {
+                fields.insert(
+                    "history_discarded".to_string(),
+                    json!({
+                        "entries": entries,
+                        "reason": format!("they were recorded against another game process than the one answering at {url} now (a restart reuses entity ids)"),
+                    }),
+                );
+            }
+            Standing::Unverified(why) => {
+                fields.insert("game_instance_unverified".to_string(), Value::from(why));
+            }
+            Standing::Current | Standing::Unconfirmed(_) => {}
+        }
+    }
+}
+
 /// Global experiment state
 pub struct ExperimentState {
     executor: ActionExecutor,
+    /// Which game the history in `executor` was recorded against.
+    recorded: Recorded,
 }
 
 impl ExperimentState {
@@ -17,7 +90,64 @@ impl ExperimentState {
     pub fn new() -> Self {
         Self {
             executor: ActionExecutor::new(),
+            recorded: Recorded::Nothing,
         }
+    }
+
+    /// Compare the game that answers now (`Err`: why it cannot name itself) with the one the
+    /// history was recorded against. Changes nothing.
+    fn standing(&self, now: &std::result::Result<String, String>) -> Standing {
+        standing_of(&self.recorded, self.executor.entry_count(), now)
+    }
+
+    /// Settle on the game now answering before an operation runs: a stale history is dropped, and
+    /// an empty one is recorded against the game the operation is about to act on.
+    fn adopt(&mut self, now: &std::result::Result<String, String>) -> Standing {
+        let standing = self.standing(now);
+        let empty = self.executor.entry_count() == 0;
+        if matches!(standing, Standing::Stale { .. }) {
+            self.executor.clear_history();
+        }
+        if empty || matches!(standing, Standing::Stale { .. }) {
+            self.recorded = match now {
+                Ok(id) => Recorded::Game(id.clone()),
+                Err(why) => Recorded::Unverifiable(why.clone()),
+            };
+        }
+        standing
+    }
+}
+
+/// The decision behind [`ExperimentState::standing`]: `entries` actions are on record, taken
+/// against `recorded`, and `now` is the game that answers.
+fn standing_of(recorded: &Recorded, entries: usize, now: &std::result::Result<String, String>) -> Standing {
+    match (entries, recorded, now) {
+        (0, _, Ok(_)) => Standing::Current,
+        (0, _, Err(why)) => Standing::Unverified(why.clone()),
+        (_, Recorded::Game(then), Ok(id)) if then == id => Standing::Current,
+        (_, Recorded::Game(_), Ok(_)) => Standing::Stale { entries },
+        (_, Recorded::Game(_), Err(why)) => Standing::Unconfirmed(why.clone()),
+        (_, Recorded::Unverifiable(why), _) => Standing::Unverified(why.clone()),
+        // Actions on record against no game cannot happen: `adopt` runs before every action.
+        (_, Recorded::Nothing, _) => Standing::Unverified("the history records no game".to_string()),
+    }
+}
+
+/// Which game process answers at the client's URL: the `instance` of `bevy_fairy/status`. The
+/// `Err` says why it cannot tell.
+async fn game_instance(client: &mut BrpClient) -> std::result::Result<String, String> {
+    const METHOD: &str = "bevy_fairy/status";
+    let request = BrpRequest { method: METHOD.to_string(), id: Some(Value::from(1)), params: None };
+    match client.send_request(&request).await {
+        Ok(response) => match response.payload {
+            BrpPayload::Result(status) => status
+                .get("instance")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| format!("`{METHOD}` names no `instance`: the game's plugin is older than this server")),
+            BrpPayload::Error(error) => Err(refusal_text(METHOD, &error)),
+        },
+        Err(e) => Err(format!("the game did not answer `{METHOD}`: {e}")),
     }
 }
 
@@ -49,7 +179,7 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
 
     // Actions that don't require BRP connection
     match action_str {
-        "history" => return handle_history().await,
+        "history" => return handle_history(brp_client).await,
         "clear_history" => return handle_clear_history().await,
         _ => {}
     }
@@ -111,6 +241,11 @@ async fn handle_execute(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) ->
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
+    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    if let Some(refusal) = standing.refusal("execute", client.url(), false) {
+        return Ok(refusal);
+    }
+
     let mut results = Vec::new();
     let mut success_count = 0;
     let mut failure_count = 0;
@@ -132,7 +267,7 @@ async fn handle_execute(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) ->
         results.push(result);
     }
 
-    Ok(json!({
+    let mut reply = json!({
         "results": results,
         "summary": {
             "total_actions": actions.len(),
@@ -141,7 +276,9 @@ async fn handle_execute(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) ->
             "success_rate": if actions.is_empty() { 0.0 } else { (success_count as f64) / (actions.len() as f64) }
         },
         "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+    });
+    standing.annotate(&mut reply, client.url());
+    Ok(reply)
 }
 
 /// Handle undo action
@@ -152,12 +289,18 @@ async fn handle_undo(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
+    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    if let Some(refusal) = standing.refusal("undo", client.url(), true) {
+        return Ok(refusal);
+    }
     let result = state_guard.executor.undo(&mut client).await?;
 
-    Ok(json!({
+    let mut reply = json!({
         "result": result,
         "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+    });
+    standing.annotate(&mut reply, client.url());
+    Ok(reply)
 }
 
 /// Handle redo action
@@ -168,26 +311,54 @@ async fn handle_redo(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let mut state_guard = state.write().await;
     let mut client = brp_client.write().await;
 
+    let standing = state_guard.adopt(&game_instance(&mut client).await);
+    if let Some(refusal) = standing.refusal("redo", client.url(), true) {
+        return Ok(refusal);
+    }
     let result = state_guard.executor.redo(&mut client).await?;
 
-    Ok(json!({
+    let mut reply = json!({
         "result": result,
         "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+    });
+    standing.annotate(&mut reply, client.url());
+    Ok(reply)
 }
 
-/// Handle history request
-async fn handle_history() -> Result<Value> {
+/// Handle history request. It says which game the history was recorded against and whether the
+/// game answering now is that one: `stale` is `true` or `false` when the game can be asked, and
+/// `null`, with the reason, when it cannot. Reading the history changes nothing.
+async fn handle_history(brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     let state = get_experiment_state();
     let state_guard = state.read().await;
 
+    let now = {
+        let mut client = brp_client.write().await;
+        game_instance(&mut client).await
+    };
+    let standing = state_guard.standing(&now);
     let history = state_guard.executor.get_history();
 
-    Ok(json!({
+    let mut reply = json!({
         "history": history,
         "count": history.len(),
+        "recorded_against": match &state_guard.recorded {
+            Recorded::Game(id) => Value::from(id.as_str()),
+            Recorded::Nothing | Recorded::Unverifiable(_) => Value::Null,
+        },
+        "stale": match &standing {
+            Standing::Stale { .. } => Value::Bool(true),
+            Standing::Current => Value::Bool(false),
+            Standing::Unconfirmed(_) | Standing::Unverified(_) => Value::Null,
+        },
         "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+    });
+    if let (Standing::Unconfirmed(why) | Standing::Unverified(why), Some(fields)) = (&standing, reply.as_object_mut()) {
+        if state_guard.executor.entry_count() > 0 {
+            fields.insert("game_instance_unverified".to_string(), Value::from(why.as_str()));
+        }
+    }
+    Ok(reply)
 }
 
 /// Handle clear history
@@ -198,6 +369,7 @@ async fn handle_clear_history() -> Result<Value> {
     let mut state_guard = state.write().await;
 
     state_guard.executor.clear_history();
+    state_guard.recorded = Recorded::Nothing;
 
     Ok(json!({
         "message": "History cleared",
@@ -262,5 +434,41 @@ mod tests {
 
         let result = handle(args, brp_client).await.unwrap();
         assert_eq!(result.get("message").unwrap(), "History cleared");
+    }
+
+    fn game(id: &str) -> Recorded {
+        Recorded::Game(id.to_string())
+    }
+
+    #[test]
+    fn a_history_is_current_only_for_the_game_it_was_recorded_against() {
+        let same = Ok("a".to_string());
+        let other = Ok("b".to_string());
+        assert_eq!(standing_of(&game("a"), 3, &same), Standing::Current);
+        assert_eq!(standing_of(&game("a"), 3, &other), Standing::Stale { entries: 3 });
+    }
+
+    #[test]
+    fn a_game_that_cannot_be_asked_leaves_a_named_history_unconfirmed_not_current() {
+        let silent = Err("no answer".to_string());
+        assert_eq!(standing_of(&game("a"), 1, &silent), Standing::Unconfirmed("no answer".to_string()));
+    }
+
+    #[test]
+    fn a_history_recorded_without_a_name_is_never_called_current_or_stale() {
+        let unnamed = Recorded::Unverifiable("no plugin".to_string());
+        for now in [Ok("a".to_string()), Err("still none".to_string())] {
+            assert_eq!(standing_of(&unnamed, 2, &now), Standing::Unverified("no plugin".to_string()), "{now:?}");
+        }
+    }
+
+    #[test]
+    fn an_empty_history_has_nothing_to_be_stale_and_says_when_the_game_cannot_name_itself() {
+        assert_eq!(standing_of(&game("a"), 0, &Ok("b".to_string())), Standing::Current);
+        assert_eq!(standing_of(&Recorded::Nothing, 0, &Ok("b".to_string())), Standing::Current);
+        assert_eq!(
+            standing_of(&Recorded::Nothing, 0, &Err("no plugin".to_string())),
+            Standing::Unverified("no plugin".to_string())
+        );
     }
 }

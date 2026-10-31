@@ -1290,6 +1290,95 @@ async fn experiment_undo_and_redo_say_what_they_did_and_redo_follows_a_respawned
     assert_eq!(weights.get(&respawned), Some(&99.0), "the redone modify reached the respawned crate: {weights:?}");
 }
 
+/// A game answers `bevy_fairy/status` with an `instance` that names the process: the same on every
+/// call, and different for a game started later -- what `experiment` needs to tell a restart from
+/// the game it recorded its history against.
+#[tokio::test(flavor = "multi_thread")]
+async fn status_names_the_game_instance_and_a_second_game_has_another() {
+    let first = tools_for(start_fixture());
+    let second = tools_for(start_fixture());
+    let (a, b) = (wait_until_ready(&first).await, wait_until_ready(&second).await);
+    let instance = |status: &Value| status["instance"].as_str().map(str::to_string);
+    let a_id = instance(&a).unwrap_or_else(|| panic!("status names no `instance`: {a}"));
+    let b_id = instance(&b).unwrap_or_else(|| panic!("status names no `instance`: {b}"));
+    assert!(!a_id.is_empty() && !b_id.is_empty());
+    assert_ne!(a_id, b_id, "two games started in one process must not share an instance");
+    let again = wait_until_ready(&first).await;
+    assert_eq!(instance(&again), Some(a_id), "one game keeps its instance for its whole life");
+}
+
+/// `experiment` keeps its history in the server, and the server outlives the game: after a restart
+/// the recorded entity ids name whatever the new game gave them, so `undo` would write the old
+/// game's values into the new one. The history must be refused as stale, and nothing written.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_undo_refuses_a_history_recorded_against_another_game() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let before_restart = tools_for(start_fixture());
+    wait_until_ready(&before_restart).await;
+    experiment(&before_restart, json!({"action": "clear_history"})).await;
+    let weights = crate_weights(&before_restart).await;
+    let (&entity, &original) = weights.iter().next().expect("the fixture spawns crates");
+    let run = experiment(
+        &before_restart,
+        json!({"action": "execute", "actions": [{"type": "modify", "entity_id": entity,
+            "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]}]}),
+    )
+    .await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+
+    // The game restarts: a new process whose crate has the same id and a weight of its own.
+    let after_restart = tools_for(start_fixture());
+    wait_until_ready(&after_restart).await;
+    assert_eq!(crate_weights(&after_restart).await.get(&entity), Some(&original), "the fixture is deterministic");
+    brp(
+        &after_restart,
+        json!({"method": "world.mutate_components", "params": {
+            "entity": entity, "component": "fixture_game::Crate", "path": ".weight", "value": 42.0}}),
+    )
+    .await;
+    assert_eq!(crate_weights(&after_restart).await[&entity], 42.0);
+
+    let history = experiment(&after_restart, json!({"action": "history"})).await;
+    assert_eq!(history["stale"], json!(true), "history must say it is from another game: {history}");
+
+    let undo = experiment(&after_restart, json!({"action": "undo"})).await;
+    assert!(undo["error"].is_string(), "undo of another game's history must be refused: {undo}");
+    assert!(
+        undo["message"].as_str().is_some_and(|m| m.contains("another game") && m.contains("discarded")),
+        "the refusal says why and what happened to the history: {undo}"
+    );
+    assert_eq!(crate_weights(&after_restart).await[&entity], 42.0, "nothing may be written into the new game");
+
+    let history = experiment(&after_restart, json!({"action": "history"})).await;
+    assert_eq!(history["count"], json!(0), "the stale history is gone: {history}");
+    let again = experiment(&after_restart, json!({"action": "undo"})).await;
+    assert_eq!(again["result"]["message"].as_str().map(|m| m.contains("Nothing to undo")), Some(true), "{again}");
+}
+
+/// `execute` against a new game does not need a person to clear the old game's history first: it
+/// drops it, says so, and the new action is the first entry of the new history.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_execute_drops_the_history_of_a_game_that_is_gone_and_says_so() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let before_restart = tools_for(start_fixture());
+    wait_until_ready(&before_restart).await;
+    experiment(&before_restart, json!({"action": "clear_history"})).await;
+    experiment(&before_restart, json!({"action": "execute", "actions": [spawn_crate(9.0), spawn_crate(8.0)]})).await;
+
+    let after_restart = tools_for(start_fixture());
+    wait_until_ready(&after_restart).await;
+    let run = experiment(&after_restart, json!({"action": "execute", "actions": [spawn_crate(7.0)]})).await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+    assert_eq!(run["history_discarded"]["entries"], json!(2), "the reply counts what it dropped: {run}");
+    assert!(run["history_discarded"]["reason"].as_str().is_some_and(|r| r.contains("another game")), "{run}");
+    let history = experiment(&after_restart, json!({"action": "history"})).await;
+    assert_eq!(history["count"], json!(1), "only the new game's action is on record: {history}");
+    assert_eq!(history["stale"], json!(false), "{history}");
+
+    let undo = experiment(&after_restart, json!({"action": "undo"})).await;
+    assert_eq!(undo["result"]["success"], json!(true), "the new game's own history still undoes: {undo}");
+}
+
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
 async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
     let params: bevy_fairy::server::mcp_tools::HypothesisRequest =
@@ -1938,6 +2027,36 @@ async fn hypothesis_refuses_an_empty_plan_and_names_the_argument() {
 
     assert!(failed, "a plan of zero iterations must be refused: {reply}");
     assert!(reply.to_string().contains("iterations"), "the refusal names the argument: {reply}");
+}
+
+/// `quick_test` fixes `iterations` at 10 and `timeout` at 10 s. Given `iterations: 3` it ran 10 and
+/// answered as if the argument had been read; a number the caller chose and the tool dropped is
+/// refused instead, and `quick_test` without them still runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_quick_test_refuses_the_arguments_it_would_ignore() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let claim = |extra: Value| {
+        let mut request = json!({
+            "action": "quick_test",
+            "description": "the fixture keeps its crates",
+            "success_condition": "entity_exists:fixture_game::Crate",
+        });
+        request.as_object_mut().expect("an object").extend(extra.as_object().expect("an object").clone());
+        request
+    };
+
+    for (argument, value) in [("iterations", json!(3)), ("timeout", json!(2))] {
+        let (reply, failed) = hypothesis(&tools, claim(json!({ argument: value }))).await;
+        assert!(failed, "`{argument}` would be ignored by quick_test, so the call must be refused: {reply}");
+        let text = reply.to_string();
+        assert!(text.contains(argument) && text.contains("quick_test"), "the refusal names `{argument}` and the action: {text}");
+        assert!(text.contains("`test`"), "the refusal names the action that takes the argument: {text}");
+    }
+
+    let (reply, failed) = hypothesis(&tools, claim(json!({}))).await;
+    assert!(!failed, "quick_test with no argument it would drop still runs: {reply}");
+    assert!(reply["verdict"].is_string(), "{reply}");
 }
 
 /// Reversal runs newest first. Two writes to one crate leave it at the second one's value; putting

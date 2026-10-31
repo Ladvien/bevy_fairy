@@ -165,10 +165,18 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
     }))
 }
 
-/// Handle quick hypothesis test (fewer iterations)
+/// Handle quick hypothesis test: `iterations` fixed at 10 and `timeout` at 10 s. An `iterations` or
+/// `timeout` the caller chose would be dropped, so it is refused rather than answered as if read.
 async fn handle_quick_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
-    // Override iterations for quick test
-    let mut args = arguments.clone();
+    for argument in ["iterations", "timeout"] {
+        if arguments.get(argument).is_some_and(|v| !v.is_null()) {
+            return Err(Error::Validation(format!(
+                "`quick_test` fixes `iterations` at 10 and `timeout` at 10 s, so it would ignore `{argument}`. \
+                 `test` takes `{argument}`. Nothing was run. Example: {{\"action\": \"test\", \"{argument}\": 3, ...}}"
+            )));
+        }
+    }
+    let mut args = arguments;
     if let Some(obj) = args.as_object_mut() {
         obj.insert("iterations".to_string(), json!(10));
         obj.insert("timeout".to_string(), json!(10));
