@@ -398,9 +398,16 @@ pub struct GuideParams {
     #[serde(default)]
     pub clear: bool,
     /// Move past the current step without its checkpoint passing — the "this step made no sense"
-    /// escape hatch. Recorded as an attempt that did not pass.
+    /// escape hatch. Recorded as an attempt that did not pass. Send `step` with it.
     #[serde(default)]
     pub skip: bool,
+    /// The label of the step a `skip` means, as a `read` gave it. A checkpoint advances the script
+    /// by itself, so the step a `read` showed can have passed by the time the skip arrives, and a
+    /// skip that names nothing then moves past the NEXT step, which nobody has seen, and records it
+    /// as an attempt that did not pass (B-136). A skip naming a step that is not the current one is
+    /// refused and skips nothing. Only with `skip`.
+    #[serde(default)]
+    pub step: Option<String>,
     /// Show or hide the overlay without discarding the script.
     #[serde(default)]
     pub visible: Option<bool>,
@@ -451,6 +458,13 @@ pub fn handle_guide(
             if p.read { "read" } else { "clear" }
         )));
     }
+    if p.step.is_some() && !p.skip {
+        return Err(invalid_params(
+            "`step` says which step a `skip` means, and this call has no skip, so nothing would \
+             read it. Use it with skip. Example: {\"skip\": true, \"step\": \"<the label a read gave>\"}"
+                .to_string(),
+        ));
+    }
 
     if p.read {
         return Ok(json!({ "success": true, "guide": guide.report() }));
@@ -461,12 +475,22 @@ pub fn handle_guide(
     }
     if p.skip {
         // Checked before anything is applied: a refused call changes nothing.
-        if guide.current().is_none() {
+        let Some((current, at, of)) = guide.current().map(|s| (s.label.clone(), guide.position().0, guide.position().1)) else {
             return Err(invalid_params(
                 "no current step to skip: no script is posted, or it is finished. Read the guide \
                  to see where it is. Example: {\"read\": true}"
                     .to_string(),
             ));
+        };
+        if let Some(named) = p.step.as_deref().filter(|named| *named != current) {
+            return Err(invalid_params(format!(
+                "`step` names {} but the current step is {} (step {at} of {of}): the script moved \
+                 on since you read it, or the label is wrong, so this call skipped nothing. Read \
+                 the guide, then skip the step you mean. Example: {{\"skip\": true, \"step\": {}}}",
+                json!(named),
+                json!(current),
+                json!(current),
+            )));
         }
         if let Some(v) = p.visible {
             guide.visible = v;

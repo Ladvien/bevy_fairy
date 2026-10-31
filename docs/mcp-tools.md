@@ -60,7 +60,7 @@ Guide the HUMAN through something in the running app, and get back what actually
 
 HOW TO COLLABORATE (this part is not optional -- getting it wrong strands them):
 1. Post steps, then TELL THEM IN CHAT that the guide is up and to look at the app window. They will not know otherwise; nothing pops up to get their attention.
-2. Poll with {read:true}. When it answers waiting_on_a_person:true, that step has NO machine check and will never advance on its own. STOP AND ASK THEM IN CHAT, in words, naming the step. The card tells them 'tell the agent' -- that promise is yours to keep. Only after they answer, call {skip:true}. Any other step is being checked by the app every frame: read names that checkpoint, the app moves the step on itself when it passes, and read carries checkpoint_error when the app cannot run it.
+2. Poll with {read:true}. When it answers waiting_on_a_person:true, that step has NO machine check and will never advance on its own. STOP AND ASK THEM IN CHAT, in words, naming the step. The card tells them 'tell the agent' -- that promise is yours to keep. Only after they answer, call {skip:true, step:<the label read gave>}. Send the label: the app moves a step on by itself when its checkpoint passes, so a skip that names no step can land on the NEXT one, which the person has not seen; a skip naming a step that is no longer current is refused and skips nothing. Any other step is being checked by the app every frame: read names that checkpoint, the app moves the step on itself when it passes, and read carries checkpoint_error when the app cannot run it.
 3. When they say a step made no sense or did not work, that is DATA, not a detour. Record it and fix the step or the app. The transcript is k/n per step -- passes over attempts -- because a boolean 'it worked' is the thing people get wrong.
 4. Never post a step whose checkpoint the app has not registered. The app refuses the whole script by name, lists what would have worked, and posts nothing. One verb per call: steps, read, skip or clear; a call naming two is refused.
 
@@ -70,7 +70,8 @@ Write steps the way you would brief a colleague: say WHY before what (people ign
 |---|---|---|---|
 | `clear` | boolean | no | Take the script down. The transcript survives, because the transcript is the result. |
 | `read` | boolean | no | Return the transcript and where the person is, changing nothing. Safe to call at any time, and the way to find out whether the current step is waiting on them. |
-| `skip` | boolean | no | Move past the current step WITHOUT its condition passing. This is how a step only a person can judge gets advanced -- after they have told you, never before. |
+| `skip` | boolean | no | Move past the current step WITHOUT its condition passing. This is how a step only a person can judge gets advanced -- after they have told you, never before. Send `step` with it. |
+| `step` | string | no | With `skip`: the label of the step you mean, as `read` gave it. The app moves a step on by itself when its checkpoint passes, so a skip that names no step can land on the next one, which the person has not seen. A skip naming a step that is not the current one is refused and skips nothing. Refused without `skip`. |
 | `steps` | array | no | The steps to post, replacing whatever is up. Each step is an object: `label` (required), `goal`, `do` (array of 2-4 short imperatives), `checkpoint` (a condition name the APP registered, or null when only a person can judge it), and `recovery` (what to do when it does not work). |
 | `visible` | boolean | no | Show or hide the card without discarding the script. |
 

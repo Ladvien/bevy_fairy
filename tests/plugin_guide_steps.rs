@@ -392,6 +392,52 @@ fn skipping_with_nothing_to_skip_is_refused() {
     assert!(message.contains("no current step"), "a finished script has none either: {message}");
 }
 
+/// **B-136.** A checkpoint advances the step by itself, so the step a `read` showed can be gone by
+/// the time a `skip` arrives, and the skip moved past the NEXT step instead, which the person had
+/// not seen: it was recorded as attempted and not passed. A skip that names the step it means is
+/// refused when that is not the current one, and skips nothing.
+#[test]
+fn a_skip_naming_a_step_the_script_has_moved_past_is_refused_and_skips_nothing() {
+    let mut app = plugin_app();
+    post(&mut app, script(json!("ready")));
+    app.update();
+    let read = post(&mut app, json!({"read": true}));
+    let seen = read["guide"]["step"].as_str().expect("a current step").to_string();
+    assert_eq!(seen, "drop a floor");
+
+    // Between the read and the skip the person does it, and the app moves on by itself.
+    app.world_mut().resource_mut::<Ready>().0 = true;
+    app.update();
+    let message = refusal(&mut app, json!({"skip": true, "step": seen}));
+    assert!(message.contains("drop a floor") && message.contains("save it"), "names both steps: {message}");
+    assert!(message.contains("skipped nothing"), "{message}");
+
+    let read = post(&mut app, json!({"read": true}));
+    assert_eq!(read["guide"]["at"], 2, "the script is still on `save it`: {read}");
+    assert_eq!(read["guide"]["step"], "save it");
+    assert_eq!(read["guide"]["steps"][0]["passes"], 1, "the pass was the app's, and is kept");
+}
+
+#[test]
+fn a_skip_naming_the_current_step_skips_it() {
+    let mut app = app();
+    post(&mut app, script(json!("ready")));
+    let answer = post(&mut app, json!({"skip": true, "step": "drop a floor"}));
+    assert_eq!(answer["skipped"], "drop a floor", "{answer}");
+    assert_eq!(answer["guide"]["at"], 2);
+}
+
+/// `step` names what a skip means; beside any other verb it would be read by nothing.
+#[test]
+fn a_step_without_a_skip_is_refused_by_name() {
+    let mut app = app();
+    post(&mut app, script(json!("ready")));
+    let message = refusal(&mut app, json!({"read": true, "step": "drop a floor"}));
+    assert!(message.contains("step") && message.contains("skip"), "{message}");
+    let read = post(&mut app, json!({"read": true}));
+    assert_eq!(read["guide"]["at"], 1, "a refused call changed nothing: {read}");
+}
+
 /// **B-128.** `{steps, visible: false}` posted a visible script: `post` set `visible` after the
 /// field was applied. And `visible` beside a verb it cannot act on was ignored.
 #[test]
