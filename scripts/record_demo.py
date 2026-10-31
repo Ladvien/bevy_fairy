@@ -322,7 +322,7 @@ def tour():
 # --------------------------------------------------------------------------- hero
 
 
-HERO_STEPS = 6  # frames of the GIF, and so about six seconds: the budget is 3 to 8.
+HERO_STEPS = 5  # status, brp + screenshot, three runs: about six seconds; the budget is 3 to 8.
 
 
 def hero():
