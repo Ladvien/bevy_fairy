@@ -28,6 +28,7 @@ pub mod error;
 pub mod config;
 pub mod circuit_breaker;
 pub mod contact_sheet;
+mod watch_fields;
 
 // Communication
 pub mod brp;

@@ -422,6 +422,120 @@ async fn watch_reports_where_the_planted_spinner_bug_stops_the_angle() {
     );
 }
 
+/// The entry of a watch reply's `fields` for one pointer.
+fn field<'a>(report: &'a Value, pointer: &str) -> &'a Value {
+    report["fields"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the reply has no `fields` array: {report}"))
+        .iter()
+        .find(|f| f["pointer"] == pointer)
+        .unwrap_or_else(|| panic!("`fields` does not list {pointer}: {report}"))
+}
+
+/// Watching the whole spinner, with no `pointer`, says which of its fields froze. The planted bug
+/// stops `angle` while `frames` keeps counting, so the component as a whole differs at every
+/// sample and its own `constant_since_frame` stays null: it cannot say that anything stopped.
+/// An agent that watched the whole component read "changing" and then spent a dozen calls
+/// finding the field. `fields` gives each value its own summary.
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_without_a_pointer_says_which_spinner_field_froze() {
+    use fixture_game::SPINNER_STOPS_AFTER_FRAMES;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let report = loop {
+        let report = watch(
+            &tools,
+            json!({"method": "world.query", "params": spinner_query(), "samples": 20, "interval_ms": 200}),
+        )
+        .await
+        .expect("watch succeeds against the fixture");
+        if field(&report, SPINNER_ANGLE)["constant_since_frame"].is_u64() {
+            break report;
+        }
+        assert!(Instant::now() < deadline, "the angle never froze: {report}");
+    };
+
+    // The whole component still changes at the last sample, because the counter runs.
+    assert_eq!(report["changed"], json!(true), "{report}");
+    assert!(report["constant_since_frame"].is_null(), "the whole value never settles: {report}");
+
+    let counter = field(&report, SPINNER_FRAMES);
+    assert_eq!(counter["changed"], json!(true), "{report}");
+    assert!(counter["constant_since_frame"].is_null(), "the counter is still counting: {report}");
+
+    let angle = field(&report, SPINNER_ANGLE);
+    let since = angle["constant_since_frame"].as_u64().unwrap();
+    assert!(
+        since >= u64::from(SPINNER_STOPS_AFTER_FRAMES) - 1,
+        "the angle cannot freeze before frame {SPINNER_STOPS_AFTER_FRAMES}; reported {since}: {report}"
+    );
+    if angle["changed"] == json!(true) {
+        // The window saw the angle turn and then stop: the frame it stopped on is the one the
+        // fixture stops on, to within the frames one 200 ms interval spans.
+        assert!(since <= u64::from(SPINNER_STOPS_AFTER_FRAMES) + 40, "froze at frame {since}: {report}");
+    }
+
+    // Fields that changed are listed before fields that did not: the entity id never changes.
+    let listed: Vec<&str> = report["fields"].as_array().unwrap().iter().map(|f| f["pointer"].as_str().unwrap()).collect();
+    assert_eq!(listed.last(), Some(&"/0/entity"), "{listed:?}");
+    assert_eq!(report["fields"].as_array().unwrap().len(), 3, "{report}");
+    assert!(report.get("fields_omitted").is_none(), "{report}");
+}
+
+/// With a `pointer` the sampled value is the spinner object, and every field's pointer is still
+/// a pointer into the method's whole result, so it can be handed straight back to `watch`.
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_field_pointers_are_into_the_whole_result_and_can_be_passed_back() {
+    const SPINNER: &str = "/0/components/fixture_game::Spinner";
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let report = watch(
+        &tools,
+        json!({"method": "world.query", "params": spinner_query(), "pointer": SPINNER, "samples": 4, "interval_ms": 100}),
+    )
+    .await
+    .expect("watch succeeds against the fixture");
+    let pointers: Vec<&str> = report["fields"].as_array().expect("fields").iter().map(|f| f["pointer"].as_str().unwrap()).collect();
+    assert_eq!(pointers.len(), 2, "{report}");
+    assert!(pointers.contains(&SPINNER_ANGLE) && pointers.contains(&SPINNER_FRAMES), "{pointers:?}");
+
+    // The counter is still counting, so it is the field that changed, and it comes first.
+    assert_eq!(pointers[0], SPINNER_FRAMES, "{report}");
+    let again = watch(
+        &tools,
+        json!({"method": "world.query", "params": spinner_query(), "pointer": pointers[0], "samples": 3, "interval_ms": 100}),
+    )
+    .await
+    .expect("a field's pointer is accepted as `pointer`");
+    assert_eq!(again["changed"], json!(true), "the frame counter moves: {again}");
+    assert!(again.get("fields").is_none(), "a lone value has no breakdown: {again}");
+}
+
+/// A result with more values than `fields` lists is cut, and says how many it left out: a
+/// silent cut would read as a complete breakdown. Every entity with no component asked for is a
+/// row of two values (its id and an empty `components`), so the fixture's world is well over 40.
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_caps_a_long_fields_list_and_counts_what_it_left_out() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let report = watch(
+        &tools,
+        json!({"method": "world.query", "params": {"data": {}}, "samples": 3, "interval_ms": 100}),
+    )
+    .await
+    .expect("watch succeeds against the fixture");
+    let listed = report["fields"].as_array().expect("fields").len();
+    assert_eq!(listed, 40, "{listed} fields listed");
+    let left_out = report["fields_omitted"].as_u64().unwrap_or_else(|| panic!("a cut list says what it cut: {report}"));
+    // Every row holds an entity id and an empty `components`, so the rows number half the values.
+    let rows = report["samples"][0]["value"].as_array().expect("rows").len() as u64;
+    assert_eq!(left_out + 40, rows * 2, "{report}");
+}
+
 /// Each sample's `frame`..`frame_until` brackets the frame its value was read on. The spinner
 /// counts its own frames, so with the constant offset `c` between the two counters every sample
 /// must satisfy `frame <= value - c <= frame_until` for one `c`. A stale frame read or a frame stamped once per series
