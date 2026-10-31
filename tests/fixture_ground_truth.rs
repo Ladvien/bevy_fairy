@@ -1205,6 +1205,91 @@ async fn experiment_refuses_a_batch_inside_a_batch_instead_of_half_reversing_it(
     assert_eq!(history["count"], json!(0), "nothing ran, so nothing is recorded: {history}");
 }
 
+/// `modify` says what the game holds after the write. The game's answer to the write is "accepted",
+/// and `Successfully modified` after it was all the reply said, so a value that a game system sets
+/// again on the next frame still read as a success. The reply now carries a read-back, taken after
+/// the write. The spinner's `frames` counts up every frame, so a write of 1000000 cannot still be
+/// there when it is read; a crate's weight is not touched by any system, so a write of 99 is.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_modify_reads_the_entity_back_and_says_when_it_does_not_hold_the_value() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+
+    let crate_entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+    let run = experiment(
+        &tools,
+        json!({"action": "execute", "actions": [{"type": "modify", "entity_id": crate_entity,
+            "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]}]}),
+    )
+    .await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+    assert_eq!(run["results"][0]["read_back"]["matches"], json!(true), "nothing changes a crate's weight: {run}");
+    assert_eq!(run["results"][0]["read_back"]["components"]["fixture_game::Crate"]["weight"], json!(99.0), "{run}");
+
+    let spinner = rows_of(&tools, "fixture_game::Spinner").await;
+    let spinner_entity = spinner[0]["entity"].as_u64().expect("a row names its entity");
+    let run = experiment(
+        &tools,
+        json!({"action": "execute", "actions": [{"type": "modify", "entity_id": spinner_entity,
+            "components": [{"type_id": "fixture_game::Spinner", "value": {"angle": 0.0, "frames": 1_000_000}}]}]}),
+    )
+    .await;
+    let result = &run["results"][0];
+    assert_eq!(result["success"], json!(true), "the game accepted the write: {run}");
+    assert_eq!(result["read_back"]["matches"], json!(false), "the spinner counts frames, so 1000000 is gone: {run}");
+    let held = result["read_back"]["components"]["fixture_game::Spinner"]["frames"].as_u64();
+    assert!(held.is_some_and(|frames| frames > 1_000_000), "the read-back carries what the game holds: {run}");
+    let message = result["message"].as_str().expect("a message");
+    assert!(message.contains("read back") && message.contains("accepted"), "the message says both halves: {message}");
+}
+
+/// `undo` and `redo` answer as what they are. The reply was the reverse operation's own result, so
+/// undoing a spawn came back as `action_type: "delete"`. And a redo of a spawn makes a different
+/// entity (a despawned id is not reused), so the entries behind it, which name the old one, would
+/// have written to an entity that no longer exists; they follow the new one now.
+#[tokio::test(flavor = "multi_thread")]
+async fn experiment_undo_and_redo_say_what_they_did_and_redo_follows_a_respawned_entity() {
+    let _turn = EXPERIMENT_TURN.lock().await;
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    experiment(&tools, json!({"action": "clear_history"})).await;
+    let base = crate_weights(&tools).await;
+
+    let run = experiment(&tools, json!({"action": "execute", "actions": [spawn_crate(9.0)]})).await;
+    let spawned = run["results"][0]["entity_id"].as_u64().unwrap_or_else(|| panic!("no entity: {run}"));
+    let run = experiment(
+        &tools,
+        json!({"action": "execute", "actions": [{"type": "modify", "entity_id": spawned,
+            "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]}]}),
+    )
+    .await;
+    assert_eq!(run["results"][0]["success"], json!(true), "{run}");
+
+    for undone in ["modify", "spawn"] {
+        let undo = experiment(&tools, json!({"action": "undo"})).await;
+        assert_eq!(undo["result"]["success"], json!(true), "{undo}");
+        assert_eq!(undo["result"]["action_type"], json!("undo"), "{undo}");
+        assert_eq!(undo["result"]["of_action"], json!(undone), "{undo}");
+    }
+    assert_eq!(crate_weights(&tools).await, base, "both undone");
+
+    let redo = experiment(&tools, json!({"action": "redo"})).await;
+    assert_eq!(redo["result"]["success"], json!(true), "{redo}");
+    assert_eq!(redo["result"]["action_type"], json!("redo"), "{redo}");
+    assert_eq!(redo["result"]["of_action"], json!("spawn"), "{redo}");
+    let respawned = redo["result"]["entity_id"].as_u64().unwrap_or_else(|| panic!("no entity: {redo}"));
+    assert_ne!(respawned, spawned, "a despawned id is not reused, so the redo made a different entity");
+
+    let redo = experiment(&tools, json!({"action": "redo"})).await;
+    assert_eq!(redo["result"]["success"], json!(true), "the modify must follow the respawned entity: {redo}");
+    assert_eq!(redo["result"]["of_action"], json!("modify"), "{redo}");
+    let weights = crate_weights(&tools).await;
+    assert_eq!(weights.len(), base.len() + 1, "{weights:?}");
+    assert_eq!(weights.get(&respawned), Some(&99.0), "the redone modify reached the respawned crate: {weights:?}");
+}
+
 /// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
 async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
     let params: bevy_fairy::server::mcp_tools::HypothesisRequest =
@@ -1536,6 +1621,208 @@ async fn hypothesis_refuses_a_component_the_game_never_registered_instead_of_jud
     .await;
     assert!(!failed, "{unheld} is registered, so the claim is answerable: {reply}");
     assert_eq!(reply["verdict"], json!("REJECTED"), "no entity holds {unheld}: {reply}");
+}
+
+/// The crates a game test leaves behind or takes away, as a count.
+async fn crate_count(tools: &BevyDebuggerTools) -> usize {
+    crate_weights(tools).await.len()
+}
+
+/// `hypothesis` varies the numbers, strings and booleans inside a component's value. A Bevy
+/// component is nearly always a struct, so its value is an object, and `grid`, `boundary` and
+/// `fuzz` only looked at a bare number, string or boolean: every iteration ran the base action
+/// unchanged while the reply counted them as separate trials. The grid below has two numbers, so
+/// two iterations: one writes weight 10, the other weight 20, and the claim "the crate weighs 20"
+/// holds in exactly one of them.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_variation_reaches_the_fields_inside_a_component() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "the crate can be made to weigh 20",
+            "success_condition": {"type": "component_equals", "entity_id": entity,
+                "component_type": "fixture_game::Crate", "expected_value": {"weight": 20.0}},
+            "actions": [{"type": "modify", "entity_id": entity,
+                "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 5.0}}]}],
+            "variation_type": "grid",
+            "numeric_values": [10.0, 20.0],
+            "bool_values": [true]
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    let stats = &reply["statistics"];
+    assert_eq!(stats["iterations_run"], json!(2), "{reply}");
+    assert_eq!(
+        (stats["held"].as_u64(), stats["violated"].as_u64()),
+        (Some(1), Some(1)),
+        "the grid wrote weight 10 and weight 20, so the claim held once: {reply}"
+    );
+    assert_eq!(stats["varied_iterations"], json!(2), "both iterations ran a changed action: {reply}");
+    assert_eq!(crate_weights(&tools).await, before, "the modifies must have been reversed: {reply}");
+}
+
+/// A variation changes the values inside `actions`. With nothing there to change, N iterations are
+/// N identical reads of the game: each one narrows the confidence interval and none of them tests
+/// anything. Before the fix `grid` over a bare condition ran its six combinations and answered
+/// CONFIRMED. Refused before anything runs, naming the fix.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_a_variation_that_would_change_nothing() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+    let delete = json!({"type": "delete", "entity_id": entity});
+
+    for kind in ["random", "grid", "boundary", "fuzz"] {
+        // No actions at all, and an action with no values in it: neither has anything to vary.
+        for actions in [json!([]), json!([delete])] {
+            let (reply, failed) = hypothesis(
+                &tools,
+                json!({
+                    "action": "test",
+                    "description": "there is a crate",
+                    "success_condition": "entity_exists:fixture_game::Crate",
+                    "actions": actions,
+                    "variation_type": kind,
+                    "iterations": 6
+                }),
+            )
+            .await;
+            assert!(failed, "{kind} over {actions} changes nothing and must be refused: {reply}");
+            let text = reply.to_string();
+            assert!(text.contains(kind) && text.contains("actions"), "the refusal names the variation and the fix: {text}");
+            assert!(reply.get("verdict").is_none(), "{reply}");
+        }
+    }
+    assert_eq!(crate_weights(&tools).await, before, "a refused request must not have changed the game");
+}
+
+/// Every iteration starts from the game the last one found. The claim below ("after the spawn
+/// there are seven crates") is true of one spawn, but the spawns used to accumulate: iteration 2
+/// saw eight crates and the claim was violated by the previous iterations' leftovers, not by
+/// anything this iteration did. Each iteration's spawns and modifies are now reversed, and the
+/// reply counts what was reversed.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_puts_the_game_back_after_every_iteration() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let crates = crate_count(&tools).await;
+    assert_eq!(crates, CRATE_WEIGHTS.len());
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "one spawn makes exactly one more crate",
+            "success_condition": {"type": "entity_exists", "component_types": ["fixture_game::Crate"], "count": crates + 1},
+            "actions": [spawn_crate(1.0)],
+            "variation_type": "random",
+            "iterations": 5
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["statistics"]["held"], json!(5), "each iteration starts from {crates} crates: {reply}");
+    assert_eq!(reply["verdict"], json!("CONFIRMED"), "{reply}");
+    assert_eq!(reply["game_state"]["actions_reversed"], json!(5), "{reply}");
+    assert_eq!(reply["game_state"]["left_applied"], json!(0), "{reply}");
+    assert_eq!(crate_count(&tools).await, crates, "the game is as it was found: {reply}");
+}
+
+/// What cannot be put back is said, not hidden. A despawned entity returns as a different one, so
+/// a `delete` stays applied and is counted; and a condition that is itself an action
+/// (`action_succeeds`) is reversed too, which used to leave one more crate per iteration.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_says_what_it_could_not_put_back() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "a crate can be deleted",
+            "success_condition": "entity_exists:fixture_game::Mover",
+            "actions": [{"type": "delete", "entity_id": entity}]
+        }),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["game_state"]["left_applied"], json!(1), "the delete cannot be undone: {reply}");
+    assert_eq!(reply["game_state"]["actions_reversed"], json!(0), "{reply}");
+    assert_eq!(crate_count(&tools).await, before.len() - 1, "the delete reached the game and stayed");
+
+    let after_delete = crate_count(&tools).await;
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "a crate can be spawned",
+            "success_condition": {"type": "action_succeeds", "action": spawn_crate(2.0)},
+            "variation_type": "none"
+        }),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["verdict"], json!("CONFIRMED"), "{reply}");
+    assert_eq!(reply["game_state"]["actions_reversed"], json!(1), "the probe's spawn was reversed: {reply}");
+    assert_eq!(crate_count(&tools).await, after_delete, "the probe must not leave a crate: {reply}");
+}
+
+/// `timeout` bounds the run, and the client is free between iterations. Before the fix it bounded
+/// one action: 400 iterations of a spawn and a read took as long as they took, and the BRP client
+/// lock was held throughout, so any other tool (here `status`) waited for the whole run.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_timeout_bounds_the_whole_run_and_leaves_the_client_free() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let crates = crate_count(&tools).await;
+    let started = Instant::now();
+
+    let run = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "crates stay countable",
+            "success_condition": "entity_exists:fixture_game::Crate",
+            "actions": [spawn_crate(1.0)],
+            "variation_type": "random",
+            "iterations": 400,
+            "timeout": 1
+        }),
+    );
+    let probe = async {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let asked = Instant::now();
+        tools.status(Parameters(NoArgs {})).await.expect("status returns a result");
+        asked.elapsed()
+    };
+    let ((reply, failed), waited) = tokio::join!(run, probe);
+
+    assert!(!failed, "{reply}");
+    assert!(started.elapsed() < Duration::from_secs(8), "a 1 s timeout bounds the run, took {:?}", started.elapsed());
+    assert!(waited < Duration::from_secs(2), "`status` waited {waited:?} for a run that holds the client throughout");
+    let stats = &reply["statistics"];
+    assert_eq!(stats["iterations_planned"], json!(400), "{reply}");
+    let run_count = stats["iterations_run"].as_u64().expect("iterations_run is a number");
+    assert!(run_count < 400, "the 1 s timeout must have cut the run: {reply}");
+    assert!(
+        reply["stopped_early"].as_str().is_some_and(|why| why.contains("timeout")),
+        "the reply says why it stopped: {reply}"
+    );
+    assert_ne!(reply["verdict"], json!("CONFIRMED"), "iterations that never ran cannot confirm the claim: {reply}");
+    assert_eq!(crate_count(&tools).await, crates, "the run stopped between iterations and left the game as it found it: {reply}");
 }
 
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the

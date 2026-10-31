@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Breaking: `hypothesis` replies changed shape, `experiment` lost its `archetypes` action and its `archetype` field, and `Action` and `ComponentSpec` refuse fields they do not read.
+Breaking: `hypothesis` replies changed shape and a variation that changes nothing is refused, `experiment` lost its `archetypes` action and its `archetype` field, and `Action` and `ComponentSpec` refuse fields they do not read.
 
 ### Removed
 
@@ -15,6 +15,10 @@ Breaking: `hypothesis` replies changed shape, `experiment` lost its `archetypes`
 - `hypothesis` `threshold` is the share of iterations in which the condition must hold, above 0 and at most 1; a value outside that range is refused before any action runs (0 would confirm a claim that failed every time). An iteration that was not evaluated counts against CONFIRMED and, for REJECTED, as if it had held. `success_rate` and the interval are over the iterations that read the condition, the verdict over every iteration, so 90 held and 10 not evaluated shows a success rate of 1.0 and is not CONFIRMED at 0.95.
 - `hypothesis` conditions are deserialised strictly, with `deny_unknown_fields`: a wrong type, a missing field, an unknown field or an unknown `type` is refused with the accepted shapes. A component name the game never registered, including one inside an `action_succeeds` action, is refused after `world.list_components`, naming close registered paths, and a short name two registered components share is refused as ambiguous. An empty `type_id` in an `action_succeeds` action is refused.
 - `experiment` replies list what each action of a batch did (`results`), and an atomic batch stops at its first failure and marks the results it reversed `rolled_back`. A batch is no longer a history entry; its actions are, so `undo` steps back through them. A batch cannot contain a batch: the rollback of an outer batch did not look inside an inner one, so an inner batch's spawns stayed in the game under a reply that said "rolled back"; the request is refused before anything runs.
+- `hypothesis` puts the game back after every iteration. The `actions` run, the condition is read, and then what the iteration spawned or modified is reversed (the way `experiment`'s `undo` does it), so each iteration starts from the game as it was found. The reply's `game_state` counts what was `actions_reversed` and what is `left_applied`: a delete cannot be put back (a respawned entity is a different one), and an `action_succeeds` condition's own action is reversed too. Before, spawns accumulated across iterations, so "after the spawn there are 7 crates" held once and was violated by the iterations after it.
+- `hypothesis` `timeout` bounds the whole run (was one action), and the BRP client is taken for one iteration at a time, not for the run, so another tool is answered between iterations (a 1000-iteration `stress_test` used to hold it throughout). When the timeout passes the run stops between iterations, and one already started finishes: an action cut off mid-flight may or may not have reached the game, and could not be reversed. `statistics.iterations_planned` says how many were planned, `stopped_early` says why, and iterations that never ran count against CONFIRMED like iterations that were not evaluated. `statistics` gained `iterations_planned` and `varied_iterations`.
+- `hypothesis` variation (`random`, `grid`, `boundary`, `fuzz`) changes the numbers, strings and booleans at any depth of a component's value, inside batches too, and keeps an integer field an integer (a number written over one is rounded). It never changes which entity a `delete` targets. `grid` multiplies only the kinds of value the actions write, so numbers alone are `numeric_values` iterations, not that times the two default booleans. `boundary` has no infinity (it serialised to `null`), and each `include_*` flag adds its own values (`-1` was always tried). `include_empty` is for strings.
+- `experiment`'s `modify` result carries `read_back`: the written components as the game holds them after the write, and whether they `matches`. A value the game's own systems set again reads `matches: false`, and the message says the write was accepted but is not held. `undo` and `redo` answer with `action_type` `undo` or `redo` and `of_action`, the kind they stepped over (an undone spawn answered `delete`). A redo of a spawn makes a different entity, and the redo entries behind it follow the new one.
 
 ### Fixed
 
@@ -27,11 +31,12 @@ Breaking: `hypothesis` replies changed shape, `experiment` lost its `archetypes`
 - `experiment` `undo` answered "`batch` cannot be undone" forever after a batch, because the batch itself was the history entry and has no reverse, and a batch's reply named no entity it spawned.
 - `experiment` actions refuse fields they do not read (`Action` and `ComponentSpec` have `deny_unknown_fields`): a `path` on a component used to be dropped and the whole component overwritten.
 - `experiment` and `hypothesis` answered "not connected to Bevy game" for up to 30 s after a game came up that the server had been started before: they read the connection state the heartbeat leaves every 30 s without asking the game. They probe once before giving that answer (`BrpClient::reachable`). An MCP client that starts its server with the agent's session and a game started a moment later is the ordinary case.
+- `hypothesis` with `grid`, `boundary` or `fuzz` over a component varied nothing: the check was for a bare number, string or boolean, and a component's value is an object. Every iteration ran the base action and was counted as a separate trial. A `variation_type` that changes nothing in `actions` (no actions, or none that write a value it varies) is refused before anything runs, because identical iterations are not independent trials.
+- `hypothesis` `fuzz` replaced a `delete`'s `entity_id` with a random number below 1000, which is never a live entity.
 
 ### Not yet fixed
 
-- `experiment`'s success replies still come from the game's answer to the write and are not read back; a game system may overwrite the value on the next frame. Its history is kept by the server and goes stale when the game restarts.
-- `hypothesis` `stress_test` and the variation strategies still change the live game without restoring it, `iterations` does not apply to every strategy, and `timeout` bounds one action, not the run.
+- `experiment`'s history is kept by the server and goes stale when the game restarts: `undo` can then delete the entity that now has the recorded id. Call `clear_history` after a restart.
 
 ## 0.10.0 - 2026-10-30
 

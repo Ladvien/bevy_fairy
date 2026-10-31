@@ -1,5 +1,6 @@
 /// Experiment system for modifying game state
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use std::collections::VecDeque;
 use tracing::{debug, info, warn};
 
@@ -52,6 +53,21 @@ impl Action {
             Self::Batch { actions, .. } => actions.iter().flat_map(Action::component_types).collect(),
         }
     }
+
+    /// Point every action on entity `from` at entity `to`, looking inside batches.
+    fn retarget(&mut self, from: EntityId, to: EntityId) {
+        match self {
+            Self::Modify { entity_id, .. } | Self::Delete { entity_id } if *entity_id == from => {
+                *entity_id = to;
+            }
+            Self::Batch { actions, .. } => {
+                for action in actions {
+                    action.retarget(from, to);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Component specification for spawn/modify actions
@@ -80,6 +96,12 @@ pub struct ActionResult {
     /// The action ran, and was then reversed because its atomic batch failed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rolled_back: bool,
+    /// For `modify`: what the game held after the write, read back from the game.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_back: Option<ReadBack>,
+    /// For `undo` and `redo`: the kind of the recorded action that was undone or redone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub of_action: Option<String>,
     /// How to undo this action; kept for `undo`, never sent to the caller.
     #[serde(skip)]
     reverse: Option<Action>,
@@ -96,6 +118,8 @@ impl ActionResult {
             rollback_available: None,
             results: None,
             rolled_back: false,
+            read_back: None,
+            of_action: None,
             reverse: None,
         }
     }
@@ -125,6 +149,62 @@ impl ActionResult {
         };
         batch.results = Some(results);
         batch
+    }
+}
+
+/// What a game held after a `modify`, read back from it once the write had been accepted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadBack {
+    /// Every written value is what the game holds now (numbers compared at the precision of a
+    /// 32-bit float, the type most Bevy fields use).
+    pub matches: bool,
+    /// The written components as the game holds them.
+    pub components: serde_json::Map<String, serde_json::Value>,
+}
+
+/// What reversing everything an executor recorded did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Restoration {
+    /// Actions put back: spawned entities despawned, modified components set to the value they had.
+    pub reversed: usize,
+    /// Actions that stay applied: a delete cannot be put back, a modify has no reverse when one of
+    /// its components had no readable original, and a reversal can be refused by the game.
+    pub left_applied: usize,
+}
+
+impl Restoration {
+    /// Add what another reversal did.
+    pub fn add(&mut self, other: Restoration) {
+        self.reversed += other.reversed;
+        self.left_applied += other.left_applied;
+    }
+}
+
+/// Whether the game's value holds everything `written` says: an object holds each key written to
+/// it, an array has the same items, a number is the same number. Numbers that are both integers
+/// are compared exactly; any other pair at 32-bit float precision, which is what a `f32` field
+/// keeps of an `f64` written to it.
+fn holds(game: &serde_json::Value, written: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (game, written) {
+        (Value::Number(game), Value::Number(written)) => {
+            let integer = |n: &serde_json::Number| n.is_i64() || n.is_u64();
+            if integer(game) && integer(written) {
+                game == written
+            } else {
+                match (game.as_f64(), written.as_f64()) {
+                    (Some(game), Some(written)) => (game as f32) == (written as f32),
+                    _ => false,
+                }
+            }
+        }
+        (Value::Array(game), Value::Array(written)) => {
+            game.len() == written.len() && game.iter().zip(written).all(|(g, w)| holds(g, w))
+        }
+        (Value::Object(game), Value::Object(written)) => {
+            written.iter().all(|(key, w)| game.get(key).is_some_and(|g| holds(g, w)))
+        }
+        _ => game == written,
     }
 }
 
@@ -161,6 +241,22 @@ pub struct HistoryEntry {
     pub result: ActionResult,
     pub reverse_action: Option<Action>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+impl HistoryEntry {
+    /// Point this entry at entity `to` wherever it names entity `from`.
+    fn retarget(&mut self, from: EntityId, to: EntityId) {
+        self.action.retarget(from, to);
+        if let Some(reverse) = &mut self.reverse_action {
+            reverse.retarget(from, to);
+        }
+        if let Some(reverse) = &mut self.result.reverse {
+            reverse.retarget(from, to);
+        }
+        if self.result.entity_id == Some(from) {
+            self.result.entity_id = Some(to);
+        }
+    }
 }
 
 /// Action executor with rollback and history
@@ -200,10 +296,10 @@ impl ActionExecutor {
         &'a mut self,
         action: &'a Action,
         brp_client: &'a mut BrpClient,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ActionResult>> + Send + 'a>>
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<ActionResult>> + Send + 'a>>
     {
         Box::pin(async move {
-            let result = self.dispatch(action, brp_client).await;
+            let result = self.dispatch(action, brp_client, true).await;
 
             // Add to history if successful and not in a transaction. A batch is not an entry: it
             // has no reverse of its own, and an entry `undo` cannot step past would block every
@@ -226,7 +322,8 @@ impl ActionExecutor {
         &'a mut self,
         action: &'a Action,
         brp_client: &'a mut BrpClient,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ActionResult>> + Send + 'a>>
+        read_back: bool,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<ActionResult>> + Send + 'a>>
     {
         Box::pin(async move {
             debug!("Executing action: {:?}", action);
@@ -237,7 +334,7 @@ impl ActionExecutor {
                     entity_id,
                     components,
                 } => {
-                    self.execute_modify(*entity_id, components, brp_client)
+                    self.execute_modify(*entity_id, components, brp_client, read_back)
                         .await
                 }
                 Action::Delete { entity_id } => self.execute_delete(*entity_id, brp_client).await,
@@ -316,6 +413,7 @@ impl ActionExecutor {
         entity_id: EntityId,
         components: &[ComponentSpec],
         brp_client: &mut BrpClient,
+        read_back: bool,
     ) -> Result<ActionResult> {
         info!(
             "Modifying entity {} with {} component changes",
@@ -369,12 +467,51 @@ impl ActionExecutor {
                         }
                     }
 
+                    // The game's answer to the write is "accepted". What it holds a frame later
+                    // is another matter: a system can set the value again.
+                    if read_back {
+                        self.note_read_back(&mut result, entity_id, components, brp_client).await;
+                    }
+
                     Ok(result)
                 }
                 BrpPayload::Error(err) => Ok(ActionResult::failure("modify", err.message)),
             },
             Err(e) => Ok(ActionResult::failure("modify", e.to_string())),
         }
+    }
+
+    /// Read the written components back and say, in the result, whether the game holds them.
+    async fn note_read_back(
+        &self,
+        result: &mut ActionResult,
+        entity_id: EntityId,
+        components: &[ComponentSpec],
+        brp_client: &mut BrpClient,
+    ) {
+        let names = components.iter().map(|c| c.type_id.as_str()).collect();
+        let Ok(Some(data)) = self.get_entity_data(entity_id, names, brp_client).await else {
+            result.message = format!(
+                "The game accepted the write to entity {entity_id}; it could not be read back to confirm it"
+            );
+            return;
+        };
+        let held: serde_json::Map<String, serde_json::Value> = components
+            .iter()
+            .filter_map(|c| data.components.get(&c.type_id).map(|value| (c.type_id.clone(), value.clone())))
+            .collect();
+        let differing: Vec<&str> = components
+            .iter()
+            .filter(|c| !held.get(&c.type_id).is_some_and(|game| holds(game, &c.value)))
+            .map(|c| c.type_id.as_str())
+            .collect();
+        if !differing.is_empty() {
+            result.message = format!(
+                "The game accepted the write to entity {entity_id}, but a read back after it shows the entity does not hold what was written for {}: something in the game sets it, or the game stores it differently",
+                differing.join(", ")
+            );
+        }
+        result.read_back = Some(ReadBack { matches: differing.is_empty(), components: held });
     }
 
     /// Execute delete action
@@ -537,7 +674,7 @@ impl ActionExecutor {
             }
             match self.create_reverse_action(&transaction.actions[i], &transaction.results[i]) {
                 Some(reverse_action) => {
-                    let reversed = self.dispatch(&reverse_action, brp_client).await;
+                    let reversed = self.dispatch(&reverse_action, brp_client, false).await;
                     if matches!(&reversed, Ok(r) if r.success) {
                         transaction.results[i].rolled_back = true;
                     } else {
@@ -597,7 +734,8 @@ impl ActionExecutor {
                 format!("`{what}` cannot be undone: nothing recorded how to reverse it (a delete cannot be put back, a modify can only be reversed when every component it set existed before)"),
             ));
         };
-        let result = self.dispatch(&reverse_action, brp_client).await?;
+        let result = self.dispatch(&reverse_action, brp_client, true).await?;
+        let result = Self::answer_as("undo", "Undid", entry.action.kind(), result);
         if result.success {
             self.redo_stack.push_back(entry);
         } else {
@@ -611,20 +749,64 @@ impl ActionExecutor {
         let Some(entry) = self.redo_stack.pop_back() else {
             return Ok(ActionResult::failure("redo", "Nothing to redo".to_string()));
         };
-        let result = self.dispatch(&entry.action, brp_client).await?;
+        let result = self.dispatch(&entry.action, brp_client, true).await?;
         if result.success {
-            // Redoing a spawn makes a different entity, so the entry is rebuilt from this run.
+            // Redoing a spawn makes a different entity, so the entry is rebuilt from this run, and
+            // the entries still waiting to be redone follow the new entity: they name the old one.
+            if let (Action::Spawn { .. }, Some(old), Some(new)) =
+                (&entry.action, entry.result.entity_id, result.entity_id)
+            {
+                for waiting in &mut self.redo_stack {
+                    waiting.retarget(old, new);
+                }
+            }
             let reverse_action = self.create_reverse_action(&entry.action, &result);
+            let kind = entry.action.kind();
             self.undo_stack.push_back(HistoryEntry {
                 action: entry.action,
                 result: result.clone(),
                 reverse_action,
                 timestamp: chrono::Utc::now(),
             });
+            Ok(Self::answer_as("redo", "Redid", kind, result))
         } else {
+            let kind = entry.action.kind();
             self.redo_stack.push_back(entry);
+            Ok(Self::answer_as("redo", "Redo of", kind, result))
         }
-        Ok(result)
+    }
+
+    /// The reply to an `undo` or `redo`: the result of the action that ran, named for what was
+    /// asked, not for the reverse operation that carried it out.
+    fn answer_as(asked: &str, verb: &str, of_action: &'static str, mut result: ActionResult) -> ActionResult {
+        result.action_type = asked.to_string();
+        result.of_action = Some(of_action.to_string());
+        result.rollback_available = None;
+        result.message = if result.success {
+            format!("{verb} `{of_action}`: {}", result.message)
+        } else {
+            format!("{verb} `{of_action}` failed: {}", result.message)
+        };
+        result
+    }
+
+    /// Reverse every action this executor recorded, newest first, and forget them. What cannot be
+    /// reversed is counted, not hidden.
+    pub async fn restore_all(&mut self, brp_client: &mut BrpClient) -> Restoration {
+        let mut restoration = Restoration::default();
+        self.redo_stack.clear();
+        while let Some(entry) = self.undo_stack.pop_back() {
+            let reversed = match &entry.reverse_action {
+                Some(reverse) => matches!(self.dispatch(reverse, brp_client, false).await, Ok(r) if r.success),
+                None => false,
+            };
+            if reversed {
+                restoration.reversed += 1;
+            } else {
+                restoration.left_applied += 1;
+            }
+        }
+        restoration
     }
 
     /// Get history
