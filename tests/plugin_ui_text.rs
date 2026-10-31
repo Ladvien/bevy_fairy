@@ -211,6 +211,22 @@ fn limit_is_applied_after_sorting_and_says_so() {
     assert_eq!(reply["matched"], json!(2));
 }
 
+/// `region.x + region.width` was summed in `u32`: a region reaching past `u32::MAX` panicked the
+/// game in a debug build and wrapped to an empty region in a release build, where `matched: 0` and
+/// `nodes: []` read as "no text on screen". The rect is a rect, wherever its far edge falls.
+#[test]
+fn a_region_reaching_past_the_u32_range_is_a_region_not_an_overflow() {
+    let mut app = app(1.0);
+    let everything = call(&mut app, json!({})).unwrap();
+    assert!(!rows(&everything).is_empty(), "the tree has readable text: {everything}");
+
+    let huge = call(&mut app, json!({"region": {"x": 1, "y": 1, "width": u32::MAX, "height": u32::MAX}})).unwrap();
+    assert_eq!(names(&huge), names(&everything), "a region that covers the whole target keeps every node: {huge}");
+
+    let beyond = call(&mut app, json!({"region": {"x": u32::MAX, "y": 0, "width": 2, "height": 10}})).unwrap();
+    assert_eq!(beyond["matched"], json!(0), "nothing is that far right: {beyond}");
+}
+
 #[test]
 fn bad_params_are_refused_not_defaulted() {
     let mut app = app(1.0);
