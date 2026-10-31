@@ -120,7 +120,7 @@ No arguments.
 
 ## `run`
 
-Run one command the game registered, by name, with its parameters. Waits up to 120 s for the game to be ready. An unknown name is refused with the closest known one. Every command that runs is recorded, so `scene save` can write the run out as a replayable file.
+Run one command the game registered, by name, with its parameters. Waits up to 120 s for the game to be ready. An unknown name is refused with the closest known one. A command that changes the game is recorded, so `scene save` can write the run out as a replayable file; a command the game registered as read-only (bevy_fairy/ring and bevy_fairy/ui_text are) answers and is not recorded, because replaying it would change nothing.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
