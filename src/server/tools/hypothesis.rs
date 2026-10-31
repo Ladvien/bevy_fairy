@@ -109,20 +109,20 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
 
     info!("Running hypothesis test: {}", description);
 
-    // Run the test
-    let mut client = brp_client.write().await;
-
     // Before any action runs: a component name the game never registered would be judged false.
+    // The client is taken for this check alone; the run takes it again for each iteration.
     let names = hypothesis.success_condition.component_names();
     if !names.is_empty() {
+        let mut client = brp_client.write().await;
         let registered = registered_components(&mut client).await.map_err(|e| *e)?;
         require_registered(&names, &registered)?;
     }
 
-    let result = runner.run(&hypothesis, &mut client).await?;
+    let result = runner.run(&hypothesis, &brp_client).await?;
 
     let verdict = result.verdict(threshold);
 
+    let left_applied = result.restoration.left_applied;
     Ok(json!({
         "hypothesis": result.hypothesis,
         "verdict": verdict.as_str(),
@@ -134,11 +134,23 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
             "method": "wilson"
         })),
         "statistics": {
+            "iterations_planned": result.iterations_planned,
             "iterations_run": result.iterations_run,
+            "varied_iterations": result.varied_iterations,
             "held": result.held,
             "violated": result.violated,
             "not_evaluated": result.not_evaluated,
             "avg_execution_time_ms": result.avg_execution_time_ms
+        },
+        "stopped_early": result.stopped_early,
+        "game_state": {
+            "actions_reversed": result.restoration.reversed,
+            "left_applied": left_applied,
+            "note": if left_applied == 0 {
+                "every change an iteration made was reversed, so each iteration started from the game as it was found".to_string()
+            } else {
+                format!("{left_applied} action(s) stay applied in the game: a delete cannot be put back (a respawn is a different entity), and a reversal the game refused is not retried; later iterations started from that changed game")
+            }
         },
         "edge_cases": result.edge_cases.len(),
         "examples": result.examples.iter().take(3).map(|f| {
