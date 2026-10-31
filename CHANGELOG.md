@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-10-31
 
-Breaking: `hypothesis` replies changed shape and a variation that changes nothing is refused, `experiment` lost its `archetypes` action and its `archetype` field, and `Action` and `ComponentSpec` refuse fields they do not read.
+Covers everything since 0.10.0 (semver-checks: 6 major checks: `EntityFactory` removed, `TestResult`'s `successes`, `failures` and `failure_examples` replaced). Breaking: `hypothesis` replies changed shape and a variation that changes nothing is refused, `hypothesis` `quick_test` refuses `iterations` and `timeout`, `experiment` lost its `archetypes` action and its `archetype` field, `Action` and `ComponentSpec` refuse fields they do not read, and `experiment` `undo` and `redo` are refused after a game restart.
+
+A 0.11 server against a game whose plugin is older (it reports no `instance` in `bevy_fairy/status`) still works: `experiment`, `observe` with `diff` and `detect_anomaly` run as before and say in `game_instance_unverified` that they cannot tell a restart. Rebuild the game with this version's plugin to get the restart checks.
 
 ### Added
 
