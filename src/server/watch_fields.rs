@@ -25,20 +25,37 @@ pub struct Movement {
     /// The frame of the first sample that differs from the first sample.
     pub first_change_frame: Option<u64>,
     /// The frame of the first sample of the final run of equal values, when that run holds at
-    /// least two samples. `None` when the last sample is the only one holding its value: nothing
-    /// shows the value stayed.
+    /// least two samples and the value is there. `None` when the last sample is the only one
+    /// holding its value, or when the value is gone from it: nothing shows a value stayed.
     pub constant_since_frame: Option<u64>,
+    /// How many samples did not have the value at all: a field that was not there yet, or is
+    /// gone, is not a field that stopped.
+    pub absent_samples: usize,
 }
 
 impl Movement {
+    /// 0 for a value that moved and then stopped, 1 for one that moved and is still moving (or is
+    /// gone), 2 for one that never moved: the order a reply lists them in.
+    fn rank(&self) -> u8 {
+        match (self.changed, self.constant_since_frame) {
+            (true, Some(_)) => 0,
+            (true, None) => 1,
+            (false, _) => 2,
+        }
+    }
+
     fn to_json(&self, pointer: &str) -> Value {
-        json!({
+        let mut entry = json!({
             "pointer": pointer,
             "changed": self.changed,
             "distinct_values": self.distinct_values,
             "first_change_frame": self.first_change_frame,
             "constant_since_frame": self.constant_since_frame,
-        })
+        });
+        if self.absent_samples > 0 {
+            entry["absent_samples"] = json!(self.absent_samples);
+        }
+        entry
     }
 }
 
@@ -56,12 +73,13 @@ pub fn movement(frames: &[u64], values: &[Option<&Value>]) -> Movement {
         }
     }
     let run_start = values.iter().rposition(|v| *v != last).map_or(0, |i| i + 1);
-    let constant_since_frame = (run_start + 1 < values.len()).then(|| frames[run_start]);
+    let constant_since_frame = (last.is_some() && run_start + 1 < values.len()).then(|| frames[run_start]);
     Movement {
         changed: first_change_frame.is_some(),
         distinct_values: distinct.len(),
         first_change_frame,
         constant_since_frame,
+        absent_samples: values.iter().filter(|v| v.is_none()).count(),
     }
 }
 
@@ -70,8 +88,9 @@ pub fn movement(frames: &[u64], values: &[Option<&Value>]) -> Movement {
 pub struct Fields {
     /// How many fields the samples held between them.
     pub total: usize,
-    /// The summaries printed: fields that changed first, then those that did not, each group in
-    /// pointer order, cut at [`MAX_FIELDS`].
+    /// The summaries printed, in the order that puts what an agent is looking for first: fields
+    /// that moved and then stopped, then fields that moved and are still moving (or are gone),
+    /// then fields that never moved; each group in natural pointer order, cut at [`MAX_FIELDS`].
     pub listed: Vec<(String, Movement)>,
 }
 
@@ -110,10 +129,21 @@ pub fn fields(frames: &[u64], samples: &[&Value], prefix: &str) -> Option<Fields
     let total = by_pointer.len();
     let mut all: Vec<(String, Movement)> =
         by_pointer.into_iter().map(|(pointer, values)| (pointer, movement(frames, &values))).collect();
-    // Stable, so each group stays in pointer order.
-    all.sort_by_key(|(_, m)| !m.changed);
+    all.sort_by(|(pa, a), (pb, b)| a.rank().cmp(&b.rank()).then_with(|| natural_order(pa, pb)));
     all.truncate(MAX_FIELDS);
     Some(Fields { total, listed: all })
+}
+
+/// Orders two JSON pointers token by token, numbers by value and before names, so `/2` comes
+/// before `/10` where plain text order puts `/10` first. A total order, which `sort_by` needs.
+fn natural_order(a: &str, b: &str) -> std::cmp::Ordering {
+    fn key(token: &str) -> (bool, u64, &str) {
+        match token.parse::<u64>() {
+            Ok(number) => (false, number, token),
+            Err(_) => (true, 0, token),
+        }
+    }
+    a.split('/').map(key).cmp(b.split('/').map(key))
 }
 
 fn collect_leaves<'a>(value: &'a Value, pointer: String, found: &mut impl FnMut(String, &'a Value)) {
@@ -163,7 +193,7 @@ mod tests {
         let refs: Vec<Option<&Value>> = refs.into_iter().map(Some).collect();
         assert_eq!(
             movement(&frames, &refs),
-            Movement { changed: true, distinct_values: 2, first_change_frame: Some(102), constant_since_frame: Some(102) }
+            Movement { changed: true, distinct_values: 2, first_change_frame: Some(102), constant_since_frame: Some(102), absent_samples: 0 }
         );
     }
 
@@ -184,7 +214,7 @@ mod tests {
         let refs: Vec<Option<&Value>> = refs.into_iter().map(Some).collect();
         assert_eq!(
             movement(&frames, &refs),
-            Movement { changed: false, distinct_values: 1, first_change_frame: None, constant_since_frame: Some(100) }
+            Movement { changed: false, distinct_values: 1, first_change_frame: None, constant_since_frame: Some(100), absent_samples: 0 }
         );
     }
 
@@ -226,6 +256,36 @@ mod tests {
         assert!(y.changed);
         assert_eq!(y.distinct_values, 3, "7, absent and null are three different states");
         assert!(!listed(&fields, "/x").changed);
+        assert_eq!(y.absent_samples, 1);
+        assert_eq!(listed(&fields, "/x").absent_samples, 0);
+    }
+
+    /// A field that is gone from the last samples did not freeze: it must not read as "moved and
+    /// then stopped". One that is not there yet and then holds is a field that appeared.
+    #[test]
+    fn a_field_that_vanished_is_not_reported_as_constant() {
+        let values = [json!({"x": 1, "y": 5}), json!({"x": 1, "y": 6}), json!({"x": 1}), json!({"x": 1})];
+        let (frames, refs) = series(&values);
+        let fields = fields(&frames, &refs, "").expect("fields");
+        let y = listed(&fields, "/y");
+        assert!(y.changed);
+        assert_eq!(y.constant_since_frame, None, "{y:?}");
+        assert_eq!(y.absent_samples, 2);
+        let entries = fields.to_json();
+        assert_eq!(entries[0]["pointer"], json!("/y"), "a vanished field is listed among the moving ones, ahead of the constant x");
+        assert_eq!(entries[0]["absent_samples"], json!(2));
+        assert!(entries[1].get("absent_samples").is_none(), "a field no sample lacked has no count: {entries}");
+    }
+
+    #[test]
+    fn a_field_that_appeared_and_then_held_is_constant_from_the_first_sample_that_had_it() {
+        let values = [json!({"x": 1}), json!({"x": 1, "y": 3}), json!({"x": 1, "y": 3})];
+        let (frames, refs) = series(&values);
+        let fields = fields(&frames, &refs, "").expect("fields");
+        let y = listed(&fields, "/y");
+        assert!(y.changed);
+        assert_eq!(y.constant_since_frame, Some(101));
+        assert_eq!(y.absent_samples, 1);
     }
 
     #[test]
@@ -281,5 +341,39 @@ mod tests {
         assert_eq!(fields.omitted(), 100 - MAX_FIELDS);
         assert!(fields.listed[..3].iter().all(|(_, m)| m.changed));
         assert!(fields.listed[3..].iter().all(|(_, m)| !m.changed));
+    }
+
+    /// A field that moved and then stopped is what an agent is hunting for, so it is listed first
+    /// and survives the cut however its pointer sorts and however many fields are still moving.
+    #[test]
+    fn a_stopped_field_is_listed_first_and_survives_the_cut() {
+        let values: Vec<Value> = (0..4)
+            .map(|i| {
+                let mut map = serde_json::Map::new();
+                for n in 0..50 {
+                    map.insert(format!("m{n:02}"), json!(i));
+                }
+                // Sorts after every `m..`, and moves for two samples and then holds.
+                map.insert("z".to_string(), json!(i.min(2)));
+                Value::Object(map)
+            })
+            .collect();
+        let (frames, refs) = series(&values);
+        let fields = fields(&frames, &refs, "").expect("fields");
+        assert_eq!(fields.total, 51);
+        assert_eq!(fields.listed.len(), MAX_FIELDS);
+        assert_eq!(fields.listed[0].0, "/z", "{:?}", fields.listed[0]);
+        assert_eq!(fields.listed[0].1.constant_since_frame, Some(102));
+        assert_eq!(fields.omitted(), 11);
+    }
+
+    #[test]
+    fn array_positions_sort_as_numbers_not_as_text() {
+        let values: Vec<Value> = (0..3).map(|s| Value::Array((0..12).map(|n| json!(n + s)).collect())).collect();
+        let (frames, refs) = series(&values);
+        let fields = fields(&frames, &refs, "").expect("fields");
+        let order: Vec<String> = fields.listed.iter().map(|(p, _)| p.clone()).collect();
+        let expected: Vec<String> = (0..12).map(|n| format!("/{n}")).collect();
+        assert_eq!(order, expected);
     }
 }

@@ -475,6 +475,8 @@ async fn watch_without_a_pointer_says_which_spinner_field_froze() {
         // The window saw the angle turn and then stop: the frame it stopped on is the one the
         // fixture stops on, to within the frames one 200 ms interval spans.
         assert!(since <= u64::from(SPINNER_STOPS_AFTER_FRAMES) + 40, "froze at frame {since}: {report}");
+        // A field that moved and then stopped is listed ahead of the one still counting.
+        assert_eq!(report["fields"][0]["pointer"], json!(SPINNER_ANGLE), "{report}");
     }
 
     // Fields that changed are listed before fields that did not: the entity id never changes.
