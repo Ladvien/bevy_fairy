@@ -1159,6 +1159,29 @@ async fn hypothesis_about_the_crate_count_is_confirmed_or_rejected_by_the_fixtur
     }
 }
 
+/// One iteration cannot support certainty. The interval was a Wald interval, whose width is zero
+/// at a rate of 0 or 1 for any number of trials, so a claim read once came back as
+/// `confidence_interval: [1.0, 1.0]` and `confidence_level: "100.0%"`; the level was also a
+/// linear remap of the interval's bound, not a probability. The Wilson interval of 1 of 1 at 95%
+/// is about [0.21, 1.0], and the reply carries no `confidence_level`.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_read_once_does_not_claim_certainty() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({"action": "test", "description": "there is a crate", "success_condition": "entity_exists:fixture_game::Crate"}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["statistics"]["iterations_run"], json!(1), "no variation is one iteration: {reply}");
+    let lower = reply["confidence_interval"]["lower"].as_f64().unwrap_or_else(|| panic!("no interval: {reply}"));
+    assert!((0.2..0.22).contains(&lower), "Wilson 95% lower bound of 1 of 1 is 0.2065, not {lower}: {reply}");
+    assert_eq!(reply["confidence_interval"]["upper"], json!(1.0), "{reply}");
+    assert!(reply.get("confidence_level").is_none(), "a made-up percentage must not be reported: {reply}");
+}
+
 /// `threshold` is a share of iterations, so a value outside 0..=1 can never be met (or is always
 /// met). It is refused before the actions run, because they change the live game.
 #[tokio::test(flavor = "multi_thread")]

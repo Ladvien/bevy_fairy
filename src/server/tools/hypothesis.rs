@@ -128,9 +128,10 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
         "success_rate": result.success_rate,
         "confidence_interval": result.confidence_interval.map(|(lower, upper)| json!({
             "lower": lower,
-            "upper": upper
+            "upper": upper,
+            "level": 0.95,
+            "method": "wilson"
         })),
-        "confidence_level": result.confidence_level().map(|level| format!("{level:.1}%")),
         "statistics": {
             "iterations_run": result.iterations_run,
             "held": result.held,

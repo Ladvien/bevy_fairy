@@ -1042,19 +1042,27 @@ impl TestRunner {
         Ok(result)
     }
 
-    /// Calculate 95% confidence interval for success rate
+    /// The 95% Wilson score interval for the share of iterations that held.
+    ///
+    /// Not the Wald interval, which has zero width at a rate of 0 or 1 whatever the number of
+    /// trials and so reports certainty after one.
     fn calculate_confidence_interval(&self, successes: usize, total: usize) -> (f64, f64) {
         if total == 0 {
-            return (0.0, 0.0);
+            // Nothing was read: any share is possible.
+            return (0.0, 1.0);
         }
 
-        let p = (successes as f64) / (total as f64);
-        let z = 1.96; // 95% confidence
         let n = total as f64;
+        let p = (successes as f64) / n;
+        let z2 = 1.96_f64 * 1.96;
+        let denominator = 1.0 + z2 / n;
+        let centre = (p + z2 / (2.0 * n)) / denominator;
+        let half = 1.96 * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
 
-        let margin = z * ((p * (1.0 - p)) / n).sqrt();
-
-        ((p - margin).max(0.0), (p + margin).min(1.0))
+        // Exactly 0 and 1 at the ends: the formula gives them up to rounding.
+        let lower = if successes == 0 { 0.0 } else { (centre - half).max(0.0) };
+        let upper = if successes == total { 1.0 } else { (centre + half).min(1.0) };
+        (lower, upper)
     }
 }
 
@@ -1134,21 +1142,6 @@ impl TestResult {
         } else {
             Verdict::Inconclusive
         }
-    }
-
-    /// Get confidence level as percentage; `None` when no iteration read the condition.
-    pub fn confidence_level(&self) -> Option<f64> {
-        let (lower, upper) = self.confidence_interval?;
-        Some(if lower > 0.5 {
-            // High confidence it's true
-            (lower - 0.5) * 200.0
-        } else if upper < 0.5 {
-            // High confidence it's false
-            (0.5 - upper) * 200.0
-        } else {
-            // Uncertain
-            0.0
-        })
     }
 }
 
