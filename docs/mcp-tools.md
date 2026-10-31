@@ -72,7 +72,7 @@ Write steps the way you would brief a colleague: say WHY before what (people ign
 | `read` | boolean | no | Return the transcript and where the person is, changing nothing. Safe to call at any time, and the way to find out whether the current step is waiting on them. |
 | `skip` | boolean | no | Move past the current step WITHOUT its condition passing. This is how a step only a person can judge gets advanced -- after they have told you, never before. Send `step` with it. |
 | `step` | string | no | With `skip`: the label of the step you mean, as `read` gave it. The app moves a step on by itself when its checkpoint passes, so a skip that names no step can land on the next one, which the person has not seen. A skip naming a step that is not the current one is refused and skips nothing. Refused without `skip`. |
-| `steps` | array | no | The steps to post, replacing whatever is up. Each step is an object: `label` (required), `goal`, `do` (array of 2-4 short imperatives), `checkpoint` (a condition name the APP registered, or null when only a person can judge it), and `recovery` (what to do when it does not work). |
+| `steps` | array | no | The steps to post, replacing whatever is up. Each step is an object: `label` (required, and different for every step: it is how `skip` names the step it means), `goal`, `do` (array of 2-4 short imperatives), `checkpoint` (a condition name the APP registered, or null when only a person can judge it), and `recovery` (what to do when it does not work). |
 | `visible` | boolean | no | Show or hide the card without discarding the script. |
 
 ## `hypothesis`

@@ -486,9 +486,8 @@ pub fn handle_guide(
             return Err(invalid_params(format!(
                 "`step` names {} but the current step is {} (step {at} of {of}): the script moved \
                  on since you read it, or the label is wrong, so this call skipped nothing. Read \
-                 the guide, then skip the step you mean. Example: {{\"skip\": true, \"step\": {}}}",
+                 the guide, then skip the step you mean. Example: {{\"read\": true}}",
                 json!(named),
-                json!(current),
                 json!(current),
             )));
         }
@@ -521,6 +520,18 @@ pub fn handle_guide(
                  it would wait for ever. This app registers: {}. Name one of those, or use \
                  checkpoint: null for a step only the person can judge. Nothing was posted.",
                 if known.is_empty() { "none".to_string() } else { known.join(", ") }
+            )));
+        }
+        // A label is how a skip says which step it means and how the transcript names a row, so two
+        // steps sharing one would let a skip meant for the first land on the second.
+        if let Some(label) = steps
+            .iter()
+            .enumerate()
+            .find_map(|(i, s)| steps[..i].iter().any(|earlier| earlier.label == s.label).then_some(s.label.as_str()))
+        {
+            return Err(invalid_params(format!(
+                "two steps are both labelled \"{label}\": a label is how `skip` says which step it \
+                 means and how the transcript names a row, so each step needs its own. Nothing was posted."
             )));
         }
         let n = steps.len();

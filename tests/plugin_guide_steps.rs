@@ -411,11 +411,29 @@ fn a_skip_naming_a_step_the_script_has_moved_past_is_refused_and_skips_nothing()
     let message = refusal(&mut app, json!({"skip": true, "step": seen}));
     assert!(message.contains("drop a floor") && message.contains("save it"), "names both steps: {message}");
     assert!(message.contains("skipped nothing"), "{message}");
+    assert!(!message.contains("\"skip\""), "the example must not tell the agent to skip the step it has not seen: {message}");
 
     let read = post(&mut app, json!({"read": true}));
     assert_eq!(read["guide"]["at"], 2, "the script is still on `save it`: {read}");
     assert_eq!(read["guide"]["step"], "save it");
     assert_eq!(read["guide"]["steps"][0]["passes"], 1, "the pass was the app's, and is kept");
+}
+
+/// The `step` guard compares labels, so two steps with one label would let a skip meant for the
+/// first land on the second (found in review of B-136). A label is also what names a row in the
+/// transcript, so a script that repeats one is refused when it is posted and nothing is posted.
+#[test]
+fn two_steps_with_one_label_are_refused_when_posted() {
+    let mut app = app();
+    let message = refusal(&mut app, json!({"steps": [
+        {"label": "click it", "checkpoint": "ready"},
+        {"label": "wait"},
+        {"label": "click it"},
+    ]}));
+    assert!(message.contains("click it") && message.contains("labelled"), "names the label: {message}");
+    assert!(message.contains("Nothing was posted"), "{message}");
+    let read = post(&mut app, json!({"read": true}));
+    assert_eq!(read["guide"]["of"], 0, "nothing was posted: {read}");
 }
 
 #[test]

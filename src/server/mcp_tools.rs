@@ -57,7 +57,8 @@ pub struct ObserveRequest {
 #[serde(deny_unknown_fields)]
 pub struct GuideRequest {
     /// The steps to post, replacing whatever is up. Each step is an object:
-    /// `label` (required), `goal`, `do` (array of 2-4 short imperatives), `checkpoint`
+    /// `label` (required, and different for every step: it is how `skip` names the step it means),
+    /// `goal`, `do` (array of 2-4 short imperatives), `checkpoint`
     /// (a condition name the APP registered, or null when only a person can judge it),
     /// and `recovery` (what to do when it does not work).
     #[serde(default)]
