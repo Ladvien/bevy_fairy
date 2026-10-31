@@ -98,3 +98,29 @@ async fn a_game_that_does_not_answer_in_time_is_not_reported_as_absent_and_may_s
         "and that the request may yet run, and how to check before sending it again: {text}"
     );
 }
+
+/// `watch` samples in one batch (status, the method, status), which is a different send path from
+/// `brp`, and said the same wrong thing for the same two games.
+async fn watch_text(tools: &BevyDebuggerTools) -> (bool, String) {
+    let request: bevy_fairy::server::mcp_tools::WatchRequest =
+        serde_json::from_value(json!({"method": "world.query", "params": {"data": {}}, "samples": 2, "interval_ms": 20}))
+            .expect("request");
+    let result = tools.watch(Parameters(request)).await.expect("watch returns a result");
+    let text: String = result.content.iter().filter_map(|c| c.as_text().map(|t| t.text.clone())).collect();
+    (result.is_error == Some(true), text)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_does_not_report_a_game_that_failed_to_answer_as_absent_either() {
+    let (_, tools) = tools_for(Mode::ServerError).await;
+    let (failed, text) = watch_text(&tools).await;
+    assert!(failed, "{text}");
+    assert!(!text.contains("no game answering"), "a game that replied is not absent: {text}");
+    assert!(text.contains("500"), "{text}");
+
+    let (_, tools) = tools_for(Mode::Slow(Duration::from_secs(7))).await;
+    let (failed, text) = watch_text(&tools).await;
+    assert!(failed, "{text}");
+    assert!(!text.contains("no game answering"), "a game that took the request is not absent: {text}");
+    assert!(text.contains("may still") && text.contains("status"), "{text}");
+}

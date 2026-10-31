@@ -85,6 +85,26 @@ fn a_scroll_with_no_amount_is_refused_instead_of_scrolling_by_nothing() {
     }
 }
 
+/// `clear` hands the pointer back to the real mouse; a position sent with it is a position that
+/// goes nowhere, and an agent that believed it moved the pointer would click somewhere else.
+#[test]
+fn clearing_the_cursor_with_a_position_is_refused_instead_of_dropping_the_position() {
+    let mut app = app();
+    let message = refused(&mut app, json!({"kind": "Cursor", "clear": true, "x": 300, "y": 200}));
+    assert!(message.contains("clear") && message.contains('x'), "it names the contradiction: {message}");
+}
+
+/// serde accepts a sequence for a struct, which `deny_unknown_fields` does not police: a positional
+/// array carried its mouse position past every check.
+#[test]
+fn params_that_are_not_an_object_are_refused() {
+    let mut app = app();
+    for params in [json!(["Mouse", "Tap", null, null, "Left", 300, 200]), json!("Mouse"), json!(7)] {
+        let message = refused(&mut app, params);
+        assert!(message.contains("object"), "it says what the params must be: {message}");
+    }
+}
+
 /// The calls the README documents, and the quiet ones the refusals above must not catch.
 #[test]
 fn well_formed_calls_of_every_kind_are_still_accepted() {

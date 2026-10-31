@@ -320,22 +320,10 @@ fn encode_capture(
     }
 
     if zoom != 1.0 {
-        let width = (f64::from(rgb.width()) * f64::from(zoom)).round().max(1.0);
-        let height = (f64::from(rgb.height()) * f64::from(zoom)).round().max(1.0);
-        // Refused, not attempted: the resize allocates the whole image inside the game's own
-        // observer, and `{"zoom": 1e9}` used to abort the game on a 256 GB allocation.
-        if width * height > MAX_ZOOMED_PIXELS {
-            return Err(format!(
-                "zoom {zoom} would make the {}x{} capture a {width:.0}x{height:.0} image; `zoom` makes at \
-                 most {MAX_ZOOMED_PIXELS:.0} pixels (4096 x 4096). Pass a smaller `zoom`, or a `region` to \
-                 zoom into",
-                rgb.width(),
-                rgb.height()
-            ));
-        }
+        let (width, height) = zoomed_size(rgb.width(), rgb.height(), zoom)?;
         // Lanczos3 for downscales, which is what a zoom < 1 mostly is; it is also acceptable
         // magnifying, and one filter beats a branch nobody tuned.
-        rgb = image::imageops::resize(&rgb, width as u32, height as u32, FilterType::Lanczos3);
+        rgb = image::imageops::resize(&rgb, width, height, FilterType::Lanczos3);
     }
 
     let (width, height) = (rgb.width(), rgb.height());
@@ -343,6 +331,23 @@ fn encode_capture(
     rgb.write_to(&mut buf, ImageFormat::Png)
         .map_err(|e| format!("could not encode the PNG: {e}"))?;
     Ok((buf.into_inner(), width, height))
+}
+
+/// The size `zoom` makes of a `width` x `height` image, or why it is refused. Refused, not
+/// attempted: the resize allocates the whole image inside the game's own observer, and
+/// `{"zoom": 1e9}` used to abort the game on a 256 GB allocation. A zoom out is never refused: it
+/// allocates less than the capture the game already holds.
+fn zoomed_size(width: u32, height: u32, zoom: f32) -> Result<(u32, u32), String> {
+    let scaled_width = (f64::from(width) * f64::from(zoom)).round().max(1.0);
+    let scaled_height = (f64::from(height) * f64::from(zoom)).round().max(1.0);
+    if zoom > 1.0 && scaled_width * scaled_height > MAX_ZOOMED_PIXELS {
+        return Err(format!(
+            "zoom {zoom} would make the {width}x{height} capture a {scaled_width:.0}x{scaled_height:.0} image; \
+             `zoom` makes at most {MAX_ZOOMED_PIXELS:.0} pixels (4096 x 4096). Pass a smaller `zoom`, or a \
+             `region` to zoom into"
+        ));
+    }
+    Ok((scaled_width as u32, scaled_height as u32))
 }
 
 const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -443,5 +448,19 @@ mod tests {
         let region = Region { x: 0, y: 0, width: 2, height: 1 };
         let (_, width, height) = encode_capture(&black(4, 4), Some(&region), 16.0).expect("16x of a 2x1 crop");
         assert_eq!((width, height), (32, 16));
+    }
+
+    /// A zoom out allocates less than the capture the game already holds, so it is never refused,
+    /// however large the capture: an 8K window shrunk to 90% still worked before the bound.
+    #[test]
+    fn a_zoom_out_is_never_refused_and_a_zoom_in_is_bounded_by_the_output() {
+        assert_eq!(zoomed_size(7680, 4320, 0.9), Ok((6912, 3888)));
+        assert_eq!(zoomed_size(7680, 4320, 0.001), Ok((8, 4)));
+        assert_eq!(zoomed_size(4, 4, 8.0), Ok((32, 32)));
+        assert_eq!(zoomed_size(1000, 1000, 4.0), Ok((4000, 4000)));
+        for (width, height, zoom) in [(1000, 1000, 4.5), (7680, 4320, 1.5), (4, 4, 1e9), (1, 1, f32::MAX)] {
+            let refusal = zoomed_size(width, height, zoom).expect_err("larger than 4096 x 4096");
+            assert!(refusal.contains("region"), "{refusal}");
+        }
     }
 }

@@ -191,3 +191,15 @@ fn a_trigger_that_is_not_the_value_does_not_fire() {
     assert_eq!(dump["recording"], true, "{dump}");
     assert_eq!(dump["triggered_at_frame"], Value::Null, "{dump}");
 }
+
+/// The decimal rule is for `f32` fields. `16777217` rounds to the `f32` `16777216`, and a trigger
+/// that fired on the value below the one it names would report a frame where the value was not it.
+#[test]
+fn a_trigger_does_not_fire_on_a_neighbouring_value_an_f32_cannot_tell_apart() {
+    let mut app = gauge_app(16_777_216.0, false);
+    let dump = gauge_dump(&mut app, json!(16_777_217));
+    assert_eq!(dump["triggered_at_frame"], Value::Null, "{dump}");
+    let mut app = gauge_app(0.0, false);
+    let dump = gauge_dump(&mut app, json!(1e-50));
+    assert_eq!(dump["triggered_at_frame"], Value::Null, "an f32 underflow is not zero: {dump}");
+}

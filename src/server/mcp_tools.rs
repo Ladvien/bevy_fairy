@@ -398,6 +398,38 @@ fn no_game_text(url: &str) -> String {
     format!("bevy-fairy: no game answering at {url} — start the game with DebuggerPlugin and RemoteHttpPlugin, or set BEVY_BRP_HOST/BEVY_BRP_PORT")
 }
 
+/// What an agent reads when a request did not come back as a reply this server can read, in the
+/// order that matters: the game took the request and did not answer in time (it may still act on
+/// it, so "no game answering" would send the agent to restart a running game or to send the request
+/// again and apply it twice); the game answered with an HTTP failure; the game answered with a body
+/// that is not `reply`; and only otherwise that nothing answers. `reply` names what was expected.
+fn why_no_reply(client: &BrpClient, method: &str, error: &crate::server::error::Error, reply: &str) -> String {
+    use crate::server::error::Error;
+    match error {
+        Error::Timeout(why) => format!(
+            "bevy-fairy: the game at {} did not answer `{method}`: {why}. The request was sent, so the game \
+             may still act on it when it next gets to its requests (a long frame, a window that is not being \
+             redrawn); check with `status` before sending it again",
+            client.url()
+        ),
+        Error::Brp(why) => format!(
+            "bevy-fairy: the game at {} answered `{method}` with a failure, not {reply}: {why}",
+            client.url()
+        ),
+        // The client marks itself connected once the game has answered with a success status; a
+        // body it then fails to read is still an answer, and "no game answering" would send the
+        // agent off to restart a game that is running.
+        _ if client.is_connected() => format!(
+            "bevy-fairy: the game at {} answered `{method}`, but not with {reply} this server can read: {error}",
+            client.url()
+        ),
+        _ => {
+            debug!("BRP call {method} did not reach the game: {error}");
+            no_game_text(client.url())
+        }
+    }
+}
+
 fn tool_ok(text: impl Into<String>) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::success(vec![Content::text(text.into())]))
 }
@@ -583,16 +615,7 @@ impl BevyDebuggerTools {
         let mut client = self.brp_client.write().await;
         let answers = match client.send_batch(&requests).await {
             Ok(answers) => answers,
-            Err(e) if client.is_connected() => {
-                return Err(format!(
-                    "bevy-fairy: the game at {} answered, but not with a batch reply this server can read: {e}",
-                    client.url()
-                ))
-            }
-            Err(e) => {
-                debug!("BRP batch did not reach the game: {e}");
-                return Err(no_game_text(client.url()));
-            }
+            Err(e) => return Err(why_no_reply(&client, method, &e, "a batch reply")),
         };
         let mut values = Vec::with_capacity(3);
         for (request, answer) in requests.iter().zip(answers) {
@@ -622,35 +645,11 @@ impl BevyDebuggerTools {
         let request = BrpRequest { method: method.to_string(), id: Some(Value::from(1)), params };
         let mut client = self.brp_client.write().await;
         match client.send_request(&request).await {
-            // The request left, so the game is running and has it queued; it may carry it out after
-            // this server has given up. "No game answering" would send the agent to restart a game
-            // that is running, or to send the request again and apply it twice.
-            Err(crate::server::error::Error::Timeout(why)) => Err(format!(
-                "bevy-fairy: the game at {} did not answer `{method}`: {why}. The request was sent, so \
-                 the game may still act on it when it next gets to its requests (a long frame, a window \
-                 that is not being redrawn); check with `status` before sending it again",
-                client.url()
-            )),
-            Err(crate::server::error::Error::Brp(why)) => Err(format!(
-                "bevy-fairy: the game at {} answered `{method}` with a failure, not a JSON-RPC reply: {why}",
-                client.url()
-            )),
             Ok(response) => match response.payload {
                 BrpPayload::Result(value) => Ok(value),
                 BrpPayload::Error(err) => Err(crate::server::brp::refusal_text(method, &err)),
             },
-            // The client marks itself connected once the game has answered with a success
-            // status; a reply it then fails to read is still an answer, and "no game answering"
-            // would send the agent off to restart a game that is running.
-            Err(e) if client.is_connected() => Err(format!(
-                "bevy-fairy: the game at {} answered `{method}`, but not with one JSON-RPC reply \
-                 this server can read: {e}",
-                client.url()
-            )),
-            Err(e) => {
-                debug!("BRP call {method} did not reach the game: {e}");
-                Err(no_game_text(client.url()))
-            }
+            Err(e) => Err(why_no_reply(&client, method, &e, "one JSON-RPC reply")),
         }
     }
 

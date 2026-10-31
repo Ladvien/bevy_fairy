@@ -589,6 +589,10 @@ pub fn handle_input(
     // is reported as INVALID_PARAMS with the parser's own message, which is the part a caller can act on.
     let cmd: InputCommand = match params.as_ref() {
         Some(p) => {
+            // A positional array parses as a struct, and `deny_unknown_fields` does not police it.
+            if !p.is_object() {
+                return Err(invalid_params(format!("input params must be a JSON object, got {p}")));
+            }
             let cmd: InputCommand = serde_json::from_value(p.clone())
                 .map_err(|e| invalid_params(format!("invalid input params: {e}")))?;
             refuse_unread_fields(&cmd.kind, p)?;
@@ -725,6 +729,13 @@ pub fn handle_input(
         }
         InputKind::Cursor => {
             if cmd.clear {
+                if cmd.x.is_some() || cmd.y.is_some() {
+                    return Err(invalid_params(
+                        "`clear` hands the pointer back to the real mouse and takes no position; send \
+                         `x` and `y` without `clear` to move it, or `clear` alone to release it"
+                            .to_string(),
+                    ));
+                }
                 pending.queue.push(Injected::Cursor(None));
             } else {
                 // Both required, and named individually: a caller who sent only `x` has made a

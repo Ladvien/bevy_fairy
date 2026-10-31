@@ -123,13 +123,19 @@ fn same_value(sampled: &Value, wanted: &Value) -> bool {
 }
 
 /// Two integers are equal exactly. Otherwise the numbers are equal as numbers, or the sampled one is
-/// the `f32` the wanted one rounds to.
+/// an `f32` widened to f64 and `wanted` is the shortest decimal that names that `f32`
+/// (`0.10000000149011612` is the `f32` a person writes as `0.1`). A value an `f64` field holds is
+/// compared exactly: `16777217` is not `16777216.0`, and `1e-50` is not `0.0`.
 fn same_number(sampled: &Number, wanted: &Number) -> bool {
     if !sampled.is_f64() && !wanted.is_f64() {
         return sampled == wanted;
     }
     match (sampled.as_f64(), wanted.as_f64()) {
-        (Some(sampled), Some(wanted)) => sampled == wanted || sampled == f64::from(wanted as f32),
+        (Some(sampled), Some(wanted)) => {
+            sampled == wanted
+                || (f64::from(sampled as f32) == sampled
+                    && (sampled as f32).to_string().parse::<f64>().is_ok_and(|named| named == wanted))
+        }
         _ => false,
     }
 }

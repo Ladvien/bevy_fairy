@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 use crate::server::anomaly_detector::{
     Anomaly, AnomalyConfig, AnomalyDetectionSystem, DetectorCoverage,
 };
-use crate::server::brp_client::{certainly_another_game, BrpClient, GameName, Unnamed};
+use crate::server::brp_client::{certainly_another_game, BrpClient, GameName};
 use crate::server::brp_messages::{
     builtin_methods, entity_data_from_query_result, BrpPayload, BrpRequest,
 };
