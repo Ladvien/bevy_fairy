@@ -304,7 +304,7 @@ impl Assertion {
                     Ok(current <= *max_value)
                 }
                 Self::ActionSucceeds { action } => {
-                    let mut executor = ActionExecutor::new();
+                    let mut executor = ActionExecutor::with_config(usize::MAX, true);
                     let result = executor.execute_action(action, brp_client).await;
                     // The probe asks whether the game accepts the action; it is not a change the
                     // caller asked for, so it is put back before the answer is given.
@@ -604,24 +604,32 @@ fn varied(actions: &[Action], f: &mut dyn FnMut(&mut serde_json::Value)) -> Vec<
     variant
 }
 
-/// `value` as a JSON number of the kind `like` is. A number written over an integer is rounded to
-/// an integer (`3`, where `3.0` is refused by a `u32` field); one written over a float stays a
-/// float. A value that is not finite leaves `like` as it was: JSON has no infinity, and `null` is
-/// not a number.
+/// `value` as a JSON number of the kind `like` is: a whole number written over an integer literal
+/// is an integer (`10`, not `10.0`, which a `u32` field refuses); anything else is a float, as
+/// given. A value that is not finite leaves `like` as it was: JSON has no infinity, and `null` is
+/// not a number. Whether a field is an integer is read off how the caller wrote it, not off the
+/// game's type.
 fn number_like(like: &serde_json::Number, value: f64) -> serde_json::Value {
     if !value.is_finite() {
         return serde_json::Value::Number(like.clone());
     }
-    if like.is_i64() || like.is_u64() {
-        let whole = value.round();
-        if (0.0..u64::MAX as f64).contains(&whole) {
-            return serde_json::json!(whole as u64);
+    if (like.is_i64() || like.is_u64()) && value.fract() == 0.0 {
+        if (0.0..u64::MAX as f64).contains(&value) {
+            return serde_json::json!(value as u64);
         }
-        if whole < 0.0 && whole >= i64::MIN as f64 {
-            return serde_json::json!(whole as i64);
+        if value < 0.0 && value >= i64::MIN as f64 {
+            return serde_json::json!(value as i64);
         }
     }
     serde_json::json!(value)
+}
+
+/// A value drawn at random for a number: over an integer literal the draw is rounded to the
+/// nearest integer, so a random number in a range is still a number the field can hold. Values
+/// the caller listed (`grid`, `boundary`) are written as given and never go through this.
+fn drawn_like(like: &serde_json::Number, value: f64) -> serde_json::Value {
+    let integer_literal = like.is_i64() || like.is_u64();
+    number_like(like, if integer_literal { value.round() } else { value })
 }
 
 /// Which kinds of value a list of actions writes.
@@ -688,7 +696,7 @@ impl VariationStrategy {
                         Value::Number(like) => {
                             let like = like.clone();
                             let drawn = rng.random_range(numeric_range.0..numeric_range.1);
-                            *leaf = number_like(&like, drawn);
+                            *leaf = drawn_like(&like, drawn);
                         }
                         Value::String(_) if !string_pool.is_empty() => {
                             let pick = rng.random_range(0..string_pool.len());
@@ -704,22 +712,26 @@ impl VariationStrategy {
                 string_values,
                 bool_values,
             } => {
-                // Combinations of the kinds of value the actions write. A kind they do not write
-                // multiplies nothing: it would only repeat identical iterations.
-                let n = if kinds.numbers { numeric_values.len() } else { 1 };
-                let s = if kinds.strings { string_values.len() } else { 1 };
-                let b = if kinds.booleans { bool_values.len() } else { 1 };
+                // Combinations of the kinds of value the actions write that the caller gave values
+                // for. A kind they do not write multiplies nothing, and a kind with no values is
+                // left as it is: either would only repeat identical iterations, or empty the plan.
+                let tries = |written: bool, listed: usize| if written && listed > 0 { listed } else { 1 };
+                let n = tries(kinds.numbers, numeric_values.len());
+                let s = tries(kinds.strings, string_values.len());
+                let b = tries(kinds.booleans, bool_values.len());
                 let iterations = count.min(n * s * b);
 
                 for i in 0..iterations {
                     let (num_idx, str_idx, bool_idx) = (i % n, (i / n) % s, (i / (n * s)) % b);
                     variations.push(varied(base_actions, &mut |leaf| match leaf {
-                        Value::Number(like) => {
+                        Value::Number(like) if !numeric_values.is_empty() => {
                             let like = like.clone();
                             *leaf = number_like(&like, numeric_values[num_idx]);
                         }
-                        Value::String(_) => *leaf = Value::String(string_values[str_idx].clone()),
-                        Value::Bool(_) => *leaf = Value::Bool(bool_values[bool_idx]),
+                        Value::String(_) if !string_values.is_empty() => {
+                            *leaf = Value::String(string_values[str_idx].clone());
+                        }
+                        Value::Bool(_) if !bool_values.is_empty() => *leaf = Value::Bool(bool_values[bool_idx]),
                         _ => {}
                     }));
                 }
@@ -782,9 +794,9 @@ impl VariationStrategy {
             Value::Number(like) => {
                 if let Some(f) = like.as_f64() {
                     let fuzzed = f * (0.5 + rng.random::<f64>() * 1.5);
-                    // An integer field is fuzzed to another integer (`number_like` rounds it).
+                    // An integer literal is fuzzed to another integer (`drawn_like` rounds it).
                     let like = like.clone();
-                    *leaf = number_like(&like, fuzzed);
+                    *leaf = drawn_like(&like, fuzzed);
                 }
             }
             Value::String(s) => {
@@ -913,8 +925,17 @@ impl TestRunner {
             seed,
         );
 
-        // A variation that changes nothing is N copies of one test. Counting them as N trials
-        // narrows the interval without testing anything, so it is refused before anything runs.
+        // A variation that produces nothing, or that changes nothing, is refused before anything
+        // runs. The first is an empty plan the reply could only call NOT_EVALUATED; the second is N
+        // copies of one test, and counting them as N trials narrows the interval without testing
+        // anything.
+        let strategy = hypothesis.variation_strategy.name();
+        if strategy != "none" && variations.is_empty() {
+            return Err(Error::Validation(format!(
+                "variation_type `{strategy}` produced no iterations to run because `iterations` is {}; it must be at least 1. Nothing was run",
+                self.iteration_count
+            )));
+        }
         let as_json = |actions: &Vec<Action>| {
             serde_json::to_value(actions).map_err(|e| Error::Validation(e.to_string()))
         };
@@ -923,12 +944,11 @@ impl TestRunner {
             .iter()
             .map(|variant| Ok(as_json(variant)? != base))
             .collect::<Result<Vec<bool>>>()?;
-        let strategy = hypothesis.variation_strategy.name();
-        if strategy != "none" && !variations.is_empty() && !changed.contains(&true) {
+        if strategy != "none" && !changed.contains(&true) {
             let why = if hypothesis.base_actions.is_empty() {
                 "there are no `actions` to vary"
             } else {
-                "the `actions` write no value it changes, or it chose the values they already hold"
+                "the `actions` write no value it changes (grid leaves a kind of value alone when its list is empty), or it chose the values they already hold"
             };
             return Err(Error::Validation(format!(
                 "variation_type `{strategy}` changes the numbers, strings and booleans inside `actions`, and {why}: none of its {} variations differs from the actions as given, so running them would repeat one test and count each repeat as a trial. Pass `actions` that write values (a spawn or modify with component values), or use variation_type none. Nothing was run",
@@ -950,6 +970,10 @@ impl TestRunner {
 
         // Execute test variations
         for (i, variant) in variations.iter().enumerate() {
+            debug!("Running iteration {} of {}", i + 1, planned);
+
+            // The deadline is checked once the client is ours: waiting for it is part of the run.
+            let mut client = brp_client.write().await;
             if tokio::time::Instant::now() >= deadline {
                 stopped_early = Some(format!(
                     "the {} s timeout passed after {i} of {planned} iterations",
@@ -957,16 +981,14 @@ impl TestRunner {
                 ));
                 break;
             }
-            debug!("Running iteration {} of {}", i + 1, planned);
-
-            let mut client = brp_client.write().await;
             let start = std::time::Instant::now();
 
             // Execute actions. The deadline is checked between iterations only: an action cut off
             // mid-flight may or may not have reached the game, and one the executor never recorded
             // is one it cannot reverse. A started iteration runs to its end, bounded by the BRP
-            // client's own request timeout.
-            let mut executor = ActionExecutor::new();
+            // client's own request timeout. The history keeps every action of the iteration, so
+            // none is forgotten before it is reversed.
+            let mut executor = ActionExecutor::with_config(usize::MAX, true);
             // The first reason an action of this iteration did not run, in the game's own words.
             let mut action_error: Option<String> = None;
 
@@ -985,10 +1007,15 @@ impl TestRunner {
                 }
             }
 
-            // Evaluate the success condition, unless an action failed first.
+            // Evaluate the success condition, unless an action failed first. A condition that
+            // cannot be read (the game stopped answering) ends the run: every iteration after it
+            // would fail the same way, and what was counted so far is still a result.
             let outcome = match action_error {
-                Some(error) => Err(error),
-                None => Ok(hypothesis.success_condition.evaluate(&mut client, &mut restoration).await),
+                Some(error) => Err((error, false)),
+                None => match hypothesis.success_condition.evaluate(&mut client, &mut restoration).await {
+                    Ok(met) => Ok(met),
+                    Err(e) => Err((format!("the condition could not be read: {e}"), true)),
+                },
             };
             let elapsed = start.elapsed();
 
@@ -999,10 +1026,13 @@ impl TestRunner {
             varied_iterations += usize::from(changed[i]);
 
             let condition_met = match outcome {
-                Ok(condition) => condition?,
+                Ok(met) => met,
                 // The condition was not read, so this iteration neither held nor violated the claim.
-                Err(error) => {
+                Err((error, fatal)) => {
                     not_evaluated += 1;
+                    if fatal {
+                        stopped_early = Some(format!("{error}; the run stopped after iteration {} of {planned}", i + 1));
+                    }
                     if examples.len() < 5 {
                         examples.push(FailureExample {
                             iteration: i,
@@ -1010,6 +1040,9 @@ impl TestRunner {
                             actions: variant.clone(),
                             error,
                         });
+                    }
+                    if fatal {
+                        break;
                     }
                     continue;
                 }
@@ -1378,7 +1411,7 @@ mod tests {
     }
 
     #[test]
-    fn every_strategy_varies_the_fields_inside_objects_and_arrays_and_keeps_integers_whole() {
+    fn every_strategy_varies_the_fields_inside_objects_and_arrays() {
         let base = vec![modify(serde_json::json!({"weight": 5.0, "count": 3, "tags": [1.5, "a"], "on": true}))];
         let strategies = [
             VariationStrategy::Random { numeric_range: (10.0, 20.0), string_pool: vec!["x".into()], bool_probability: 0.5 },
@@ -1392,16 +1425,38 @@ mod tests {
             for variant in &variations {
                 let value = written(&variant[0]);
                 assert_ne!(value, written(&base[0]), "{} left the component as given", strategy.name());
-                assert!(value["count"].is_i64() || value["count"].is_u64(), "{}: an integer field stayed whole: {value}", strategy.name());
-                assert!(value["weight"].is_f64(), "{}: {value}", strategy.name());
+                assert!(value["weight"].is_f64(), "{}: a float stays a float: {value}", strategy.name());
                 assert!(value["tags"][0].is_number() && value["tags"][1].is_string(), "{}: arrays are varied too: {value}", strategy.name());
             }
         }
     }
 
     #[test]
-    fn grid_only_multiplies_the_kinds_of_value_the_actions_write() {
-        // Numbers only: two numbers are two iterations, not two times the two default booleans.
+    fn random_and_fuzz_round_over_an_integer_literal_and_grid_and_boundary_write_what_was_listed() {
+        let base = vec![modify(serde_json::json!({"count": 3}))];
+        let whole = |value: &serde_json::Value| value["count"].is_i64() || value["count"].is_u64();
+        let random = VariationStrategy::Random { numeric_range: (0.0, 100.0), string_pool: vec![], bool_probability: 0.5 };
+        let fuzz = VariationStrategy::Fuzz { max_mutations: 3, mutation_probability: 1.0 };
+        for strategy in [random, fuzz] {
+            for variant in strategy.generate_variations(&base, 20, 7) {
+                assert!(whole(written(&variant[0])), "{}: a draw over an integer literal is an integer", strategy.name());
+            }
+        }
+        // The values the caller listed are not rounded: 0.5 over `3` is 0.5, and 10 stays `10`.
+        let grid = VariationStrategy::Grid { numeric_values: vec![0.5, 10.0], string_values: vec![], bool_values: vec![] };
+        let written_counts: Vec<serde_json::Value> =
+            grid.generate_variations(&base, 5, 1).iter().map(|v| written(&v[0])["count"].clone()).collect();
+        assert_eq!(written_counts, vec![serde_json::json!(0.5), serde_json::json!(10)]);
+        assert!(written_counts[1].is_u64());
+        let boundary = VariationStrategy::Boundary { include_zero: true, include_negative: false, include_max: false, include_empty: false };
+        let first: Vec<serde_json::Value> =
+            boundary.generate_variations(&base, 3, 1).iter().map(|v| written(&v[0])["count"].clone()).collect();
+        assert_eq!(first, vec![serde_json::json!(0), serde_json::json!(0.0001), serde_json::json!(-0.0001)]);
+    }
+
+    #[test]
+    fn grid_only_multiplies_the_kinds_of_value_the_actions_write_and_leaves_unlisted_kinds_alone() {
+        // Numbers only: two numbers are two iterations, not two times the two booleans.
         let grid = VariationStrategy::Grid {
             numeric_values: vec![10.0, 20.0],
             string_values: vec!["default".into()],
@@ -1409,6 +1464,16 @@ mod tests {
         };
         let variations = grid.generate_variations(&[modify(serde_json::json!({"weight": 5.0}))], 100, 1);
         assert_eq!(variations.len(), 2);
+
+        // A string with no listed values is not overwritten, and an empty list does not empty the plan.
+        let grid = VariationStrategy::Grid { numeric_values: vec![10.0, 20.0], string_values: vec![], bool_values: vec![] };
+        let base = [modify(serde_json::json!({"weight": 5.0, "mode": "Fast", "on": true}))];
+        let variations = grid.generate_variations(&base, 100, 1);
+        assert_eq!(variations.len(), 2);
+        for variant in &variations {
+            assert_eq!(written(&variant[0])["mode"], "Fast");
+            assert_eq!(written(&variant[0])["on"], true);
+        }
     }
 
     #[test]
@@ -1427,6 +1492,34 @@ mod tests {
         for variant in strategy.generate_variations(&[Action::Delete { entity_id: 4294967297 }], 20, 9) {
             assert!(matches!(variant[0], Action::Delete { entity_id: 4294967297 }), "{:?}", variant[0]);
         }
+    }
+
+    /// A condition that cannot be read (here: nothing is listening) used to abort the run with an
+    /// error and throw away what had been counted and reversed. It is an iteration that was not
+    /// evaluated, and it ends the run, with the reason.
+    #[tokio::test]
+    async fn a_condition_that_cannot_be_read_ends_the_run_with_what_was_counted() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let config = crate::server::config::Config {
+            bevy_brp_host: "127.0.0.1".to_string(),
+            bevy_brp_port: port,
+            ..crate::server::config::Config::default()
+        };
+        let client = RwLock::new(BrpClient::new(&config));
+        let hypothesis = Hypothesis::builder("a crate exists".to_string())
+            .with_condition(Assertion::EntityExists { component_types: vec!["game::Crate".to_string()], count: None })
+            .build()
+            .unwrap();
+
+        let result = TestRunner::with_config(1, Duration::from_secs(5)).run(&hypothesis, &client).await.unwrap();
+
+        assert_eq!((result.held, result.violated, result.not_evaluated), (0, 0, 1));
+        assert!(
+            result.stopped_early.as_deref().is_some_and(|why| why.contains("could not be read")),
+            "{:?}",
+            result.stopped_early
+        );
+        assert_eq!(result.verdict(0.95), Verdict::NotEvaluated);
     }
 
     #[test]

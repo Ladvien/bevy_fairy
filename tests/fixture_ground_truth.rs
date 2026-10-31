@@ -1825,6 +1825,121 @@ async fn hypothesis_timeout_bounds_the_whole_run_and_leaves_the_client_free() {
     assert_eq!(crate_count(&tools).await, crates, "the run stopped between iterations and left the game as it found it: {reply}");
 }
 
+/// What an atomic batch could not roll back is counted. Its actions are kept out of history while
+/// it runs, so a batch whose delete succeeded and whose next action was refused left the crate
+/// deleted (a delete cannot be reversed) while `game_state` said every change had been reversed.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_counts_what_an_atomic_batch_could_not_roll_back() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "the mover exists",
+            "success_condition": "entity_exists:fixture_game::Mover",
+            "actions": [{"type": "batch", "atomic": true,
+                "actions": [{"type": "delete", "entity_id": entity}, refused_spawn()]}]
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["statistics"]["not_evaluated"], json!(1), "the batch failed before the condition: {reply}");
+    assert_eq!(crate_count(&tools).await, before.len() - 1, "the delete reached the game and the rollback could not undo it");
+    assert_eq!(reply["game_state"]["left_applied"], json!(1), "{reply}");
+    assert!(
+        !reply["game_state"]["note"].as_str().is_some_and(|note| note.starts_with("every change")),
+        "the note must not say everything was reversed: {reply}"
+    );
+}
+
+/// An iteration's history is not capped: the executor `experiment` uses keeps the last 100
+/// actions, and past that the oldest were forgotten without being reversed or counted, so 101
+/// spawns left the first one in the game while `actions_reversed` said 100 and `left_applied` 0.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_reverses_every_action_of_an_iteration_however_many_there_are() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let crates = crate_count(&tools).await;
+    let spawns: Vec<Value> = (0..101).map(|i| spawn_crate(f64::from(i))).collect();
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "a crate exists",
+            "success_condition": "entity_exists:fixture_game::Crate",
+            "actions": spawns,
+            "timeout": 120
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["game_state"]["actions_reversed"], json!(101), "{reply}");
+    assert_eq!(reply["game_state"]["left_applied"], json!(0), "{reply}");
+    assert_eq!(crate_count(&tools).await, crates, "every spawn was put back: {reply}");
+}
+
+/// The values a grid lists are written as given. A crate's weight is an `f32`, and an agent may
+/// write it as the integer `5`; the grid's 0.5 and 1.5 went through a rounding meant for integer
+/// fields and became 1 and 2, so the claim "the crate can weigh 1.5" was never tested.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_grid_writes_the_listed_values_as_given_over_an_integer_literal() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "the crate can weigh 1.5",
+            "success_condition": {"type": "component_equals", "entity_id": entity,
+                "component_type": "fixture_game::Crate", "expected_value": {"weight": 1.5}},
+            "actions": [{"type": "modify", "entity_id": entity,
+                "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 5}}]}],
+            "variation_type": "grid",
+            "numeric_values": [0.5, 1.5]
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    let stats = &reply["statistics"];
+    assert_eq!((stats["held"].as_u64(), stats["violated"].as_u64()), (Some(1), Some(1)), "{reply}");
+}
+
+/// A variation with nothing to run is refused with the argument to fix, not answered
+/// NOT_EVALUATED with no reason.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_an_empty_plan_and_names_the_argument() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "the crate keeps a weight",
+            "success_condition": "entity_exists:fixture_game::Crate",
+            "actions": [{"type": "modify", "entity_id": entity,
+                "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 5.0}}]}],
+            "variation_type": "random",
+            "iterations": 0
+        }),
+    )
+    .await;
+
+    assert!(failed, "a plan of zero iterations must be refused: {reply}");
+    assert!(reply.to_string().contains("iterations"), "the refusal names the argument: {reply}");
+}
+
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
 /// way an agent's client reaches it, so a tool the server does not offer is answered as such.
 struct StdioServer {

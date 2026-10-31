@@ -149,7 +149,7 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
             "note": if left_applied == 0 {
                 "every change an iteration made was reversed, so each iteration started from the game as it was found".to_string()
             } else {
-                format!("{left_applied} action(s) stay applied in the game: a delete cannot be put back (a respawn is a different entity), and a reversal the game refused is not retried; later iterations started from that changed game")
+                format!("{left_applied} action(s) stay applied in the game: a delete cannot be put back (a respawn is a different entity), a modify of a component the entity did not have before has no reverse, an action an atomic batch could not roll back stays, and a reversal the game refused is not retried; the iterations after it started from that changed game")
             }
         },
         "edge_cases": result.edge_cases.len(),
@@ -309,6 +309,9 @@ fn parse_variation_strategy(arguments: &Value) -> Result<VariationStrategy> {
                 .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
                 .unwrap_or_else(|| vec![0.0, 50.0, 100.0]);
 
+            // No default: a string the caller did not list values for is left as it is. A
+            // default of "default" overwrote every string a component holds, enum variants and
+            // names included, and the game refused each iteration.
             let string_values = arguments
                 .get("string_values")
                 .and_then(|s| s.as_array())
@@ -317,7 +320,7 @@ fn parse_variation_strategy(arguments: &Value) -> Result<VariationStrategy> {
                         .filter_map(|v| v.as_str().map(String::from))
                         .collect()
                 })
-                .unwrap_or_else(|| vec!["default".to_string()]);
+                .unwrap_or_default();
 
             let bool_values = arguments
                 .get("bool_values")
