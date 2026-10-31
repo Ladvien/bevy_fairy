@@ -102,7 +102,17 @@ pub(crate) fn load(path: &str) -> Result<Vec<SceneStep>, String> {
     Ok(file.steps)
 }
 
-/// Starts replaying `path`. A file that cannot be read is logged once and nothing is replayed.
+/// A scene file that was asked for and refused. `bevy_fairy/status` reports it: the one `error!`
+/// line goes to a log an agent cannot read, and `replay: null` would say that no scene was asked for,
+/// which is what a game started without `BEVY_FAIRY_SCENE` says (B-130).
+#[derive(Resource)]
+pub(crate) struct SceneRejected {
+    pub(crate) path: String,
+    pub(crate) why: String,
+}
+
+/// Starts replaying `path`. A file that cannot be read is logged once, recorded as
+/// [`SceneRejected`], and nothing is replayed.
 pub(crate) fn start_playback(app: &mut App, path: &str) {
     match load(path) {
         Ok(steps) => {
@@ -116,7 +126,10 @@ pub(crate) fn start_playback(app: &mut App, path: &str) {
                 failed: 0,
             });
         }
-        Err(why) => error!("bevy_fairy: scene {path}: {why}"),
+        Err(why) => {
+            error!("bevy_fairy: scene {path}: {why}");
+            app.world_mut().insert_resource(SceneRejected { path: path.to_string(), why });
+        }
     }
 }
 

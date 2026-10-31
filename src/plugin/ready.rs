@@ -13,7 +13,7 @@ use bevy::remote::BrpResult;
 use serde_json::{json, Value};
 
 use crate::plugin::commands::DebugCommands;
-use crate::plugin::scene::ScenePlayback;
+use crate::plugin::scene::{SceneRejected, ScenePlayback};
 
 /// Whether the game accepts debug commands yet. Read by every game command's wrapper.
 #[derive(Resource)]
@@ -59,17 +59,26 @@ pub(crate) fn handle_status(
     instance: Res<GameInstance>,
     commands: Res<DebugCommands>,
     playback: Option<Res<ScenePlayback>>,
+    rejected: Option<Res<SceneRejected>>,
     #[cfg(feature = "plugin-screenshot")] target: Option<Res<crate::plugin::screenshot::DebugCaptureTarget>>,
     #[cfg(feature = "plugin-screenshot")] windows: Query<(), With<bevy::window::PrimaryWindow>>,
 ) -> BrpResult {
-    let replay = match playback {
-        Some(p) => json!({
+    let replay = match (playback, rejected) {
+        (Some(p), _) => json!({
             "path": p.path,
             "done": p.next,
             "total": p.steps.len(),
             "failed": p.failed,
         }),
-        None => Value::Null,
+        // A scene was asked for and refused: not the same answer as no scene at all.
+        (None, Some(r)) => json!({
+            "path": r.path,
+            "rejected": r.why,
+            "done": 0,
+            "total": 0,
+            "failed": 0,
+        }),
+        (None, None) => Value::Null,
     };
     Ok(json!({
         "ready": ready.0,
