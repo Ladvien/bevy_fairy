@@ -770,10 +770,11 @@ impl TestRunner {
             seed,
         );
 
-        let mut successes = 0;
-        let mut failures = 0;
+        let mut held = 0;
+        let mut violated = 0;
+        let mut not_evaluated = 0;
         let mut edge_cases = Vec::new();
-        let mut failure_examples = Vec::new();
+        let mut examples = Vec::new();
         let mut execution_times = Vec::new();
 
         // Execute test variations
@@ -784,7 +785,8 @@ impl TestRunner {
 
             // Execute actions
             let mut executor = ActionExecutor::new();
-            let mut all_succeeded = true;
+            // The first reason an action of this iteration did not run, in the game's own words.
+            let mut action_error: Option<String> = None;
 
             for action in variant {
                 let result =
@@ -794,30 +796,33 @@ impl TestRunner {
                 match result {
                     Ok(Ok(action_result)) => {
                         if !action_result.success {
-                            all_succeeded = false;
+                            action_error = Some(action_result.error.unwrap_or(action_result.message));
                             break;
                         }
                     }
                     Ok(Err(e)) => {
-                        warn!("Action failed: {}", e);
-                        all_succeeded = false;
+                        action_error = Some(e.to_string());
                         break;
                     }
                     Err(_) => {
-                        warn!("Action timed out");
-                        all_succeeded = false;
+                        action_error = Some(format!(
+                            "an action did not finish within the {} s timeout; whether the game applied it is unknown",
+                            self.timeout.as_secs()
+                        ));
                         break;
                     }
                 }
             }
 
-            if !all_succeeded {
-                failures += 1;
-                if failure_examples.len() < 5 {
-                    failure_examples.push(FailureExample {
+            // The condition was not read, so this iteration neither held nor violated the claim.
+            if let Some(error) = action_error {
+                not_evaluated += 1;
+                if examples.len() < 5 {
+                    examples.push(FailureExample {
                         iteration: i,
+                        kind: ExampleKind::NotEvaluated,
                         actions: variant.clone(),
-                        error: "Action execution failed".to_string(),
+                        error,
                     });
                 }
                 continue;
@@ -830,12 +835,13 @@ impl TestRunner {
             execution_times.push(elapsed.as_millis() as f64);
 
             if condition_met {
-                successes += 1;
+                held += 1;
             } else {
-                failures += 1;
-                if failure_examples.len() < 5 {
-                    failure_examples.push(FailureExample {
+                violated += 1;
+                if examples.len() < 5 {
+                    examples.push(FailureExample {
                         iteration: i,
+                        kind: ExampleKind::Violated,
                         actions: variant.clone(),
                         error: "Success condition not met".to_string(),
                     });
@@ -853,40 +859,32 @@ impl TestRunner {
             }
         }
 
-        // Calculate statistics
-        let total = successes + failures;
-        let success_rate = if total > 0 {
-            (successes as f64) / (total as f64)
-        } else {
-            0.0
-        };
+        // Rates and intervals are over the iterations that read the condition. With none, there is
+        // no rate: 0 of 0 is not a result.
+        let evaluated = held + violated;
+        let success_rate = (evaluated > 0).then(|| (held as f64) / (evaluated as f64));
+        let confidence_interval =
+            (evaluated > 0).then(|| self.calculate_confidence_interval(held, evaluated));
 
-        let confidence_interval = self.calculate_confidence_interval(successes, total);
-
-        let avg_execution_time = if !execution_times.is_empty() {
-            execution_times.iter().sum::<f64>() / (execution_times.len() as f64)
-        } else {
-            0.0
-        };
+        let avg_execution_time_ms = (!execution_times.is_empty())
+            .then(|| execution_times.iter().sum::<f64>() / (execution_times.len() as f64));
 
         let result = TestResult {
             hypothesis: hypothesis.description.clone(),
-            iterations_run: total,
-            successes,
-            failures,
+            iterations_run: held + violated + not_evaluated,
+            held,
+            violated,
+            not_evaluated,
             success_rate,
             confidence_interval,
             edge_cases,
-            failure_examples,
-            avg_execution_time_ms: avg_execution_time,
+            examples,
+            avg_execution_time_ms,
             seed,
         };
 
         info!(
-            "Test completed: {} successes, {} failures, {:.2}% success rate",
-            successes,
-            failures,
-            success_rate * 100.0
+            "Test completed: {held} held, {violated} violated, {not_evaluated} not evaluated"
         );
 
         Ok(result)
@@ -914,31 +912,82 @@ impl Default for TestRunner {
     }
 }
 
-/// Result of running a hypothesis test
+/// Result of running a hypothesis test.
+///
+/// Every iteration is exactly one of `held`, `violated` or `not_evaluated`. An iteration whose
+/// actions the game refused never read the condition, so it is `not_evaluated`: counting it as
+/// `violated` told an agent its claim was false when the claim had not been looked at.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResult {
     pub hypothesis: String,
     pub iterations_run: usize,
-    pub successes: usize,
-    pub failures: usize,
-    pub success_rate: f64,
-    pub confidence_interval: (f64, f64),
+    pub held: usize,
+    pub violated: usize,
+    pub not_evaluated: usize,
+    /// `held` over the iterations that read the condition; `None` when none did.
+    pub success_rate: Option<f64>,
+    pub confidence_interval: Option<(f64, f64)>,
     pub edge_cases: Vec<EdgeCase>,
-    pub failure_examples: Vec<FailureExample>,
-    pub avg_execution_time_ms: f64,
+    pub examples: Vec<FailureExample>,
+    /// Over the iterations that read the condition; `None` when none did.
+    pub avg_execution_time_ms: Option<f64>,
     pub seed: u64,
 }
 
+/// What a test says about its claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Confirmed,
+    Rejected,
+    Inconclusive,
+    /// No iteration read the condition, so the test says nothing about the claim.
+    NotEvaluated,
+}
+
+impl Verdict {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "CONFIRMED",
+            Self::Rejected => "REJECTED",
+            Self::Inconclusive => "INCONCLUSIVE",
+            Self::NotEvaluated => "NOT_EVALUATED",
+        }
+    }
+}
+
+/// Fewer than this share of iterations holding is a rejection.
+pub const REJECTED_BELOW: f64 = 0.05;
+
 impl TestResult {
-    /// Check if hypothesis is confirmed (success rate above threshold)
-    pub fn is_confirmed(&self, threshold: f64) -> bool {
-        self.success_rate >= threshold
+    /// The iterations that read the condition.
+    pub fn evaluated(&self) -> usize {
+        self.held + self.violated
     }
 
-    /// Get confidence level as percentage
-    pub fn confidence_level(&self) -> f64 {
-        let (lower, upper) = self.confidence_interval;
-        if lower > 0.5 {
+    /// The verdict, bounding the share of iterations that held by what is known. An iteration
+    /// that was not evaluated may or may not have held: it counts against `Confirmed` (only
+    /// iterations known to hold count toward `threshold`) and for `Rejected` (a rejection needs
+    /// the claim to fail even if every unevaluated iteration had held).
+    pub fn verdict(&self, threshold: f64) -> Verdict {
+        if self.evaluated() == 0 {
+            return Verdict::NotEvaluated;
+        }
+        let total = self.iterations_run as f64;
+        let lowest = self.held as f64 / total;
+        let highest = (self.held + self.not_evaluated) as f64 / total;
+        if lowest >= threshold {
+            Verdict::Confirmed
+        } else if highest < REJECTED_BELOW {
+            Verdict::Rejected
+        } else {
+            Verdict::Inconclusive
+        }
+    }
+
+    /// Get confidence level as percentage; `None` when no iteration read the condition.
+    pub fn confidence_level(&self) -> Option<f64> {
+        let (lower, upper) = self.confidence_interval?;
+        Some(if lower > 0.5 {
             // High confidence it's true
             (lower - 0.5) * 200.0
         } else if upper < 0.5 {
@@ -947,7 +996,7 @@ impl TestResult {
         } else {
             // Uncertain
             0.0
-        }
+        })
     }
 }
 
@@ -960,10 +1009,21 @@ pub struct EdgeCase {
     pub passed: bool,
 }
 
-/// Example of a test failure
+/// Why an iteration did not hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExampleKind {
+    /// The condition was read and was false.
+    Violated,
+    /// An action failed first, so the condition was never read.
+    NotEvaluated,
+}
+
+/// An iteration that did not hold, and why.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailureExample {
     pub iteration: usize,
+    pub kind: ExampleKind,
     pub actions: Vec<Action>,
     pub error: String,
 }
@@ -1083,24 +1143,40 @@ mod tests {
         assert!(upper > 0.5);
     }
 
-    #[test]
-    fn test_test_result_confirmation() {
-        let result = TestResult {
+    fn counted(held: usize, violated: usize, not_evaluated: usize) -> TestResult {
+        TestResult {
             hypothesis: "Test".to_string(),
-            iterations_run: 100,
-            successes: 95,
-            failures: 5,
-            success_rate: 0.95,
-            confidence_interval: (0.9, 1.0),
+            iterations_run: held + violated + not_evaluated,
+            held,
+            violated,
+            not_evaluated,
+            success_rate: (held + violated > 0).then(|| held as f64 / (held + violated) as f64),
+            confidence_interval: None,
             edge_cases: vec![],
-            failure_examples: vec![],
-            avg_execution_time_ms: 10.0,
+            examples: vec![],
+            avg_execution_time_ms: None,
             seed: 42,
-        };
+        }
+    }
 
-        assert!(result.is_confirmed(0.9));
-        assert!(result.is_confirmed(0.95));
-        assert!(!result.is_confirmed(0.96));
+    #[test]
+    fn verdict_is_decided_by_the_iterations_that_read_the_condition() {
+        assert_eq!(counted(95, 5, 0).verdict(0.9), Verdict::Confirmed);
+        assert_eq!(counted(95, 5, 0).verdict(0.95), Verdict::Confirmed);
+        assert_eq!(counted(95, 5, 0).verdict(0.96), Verdict::Inconclusive);
+        assert_eq!(counted(1, 99, 0).verdict(0.95), Verdict::Rejected);
+        assert_eq!(counted(0, 0, 0).verdict(0.0), Verdict::NotEvaluated);
+        assert_eq!(counted(0, 0, 7).verdict(0.0), Verdict::NotEvaluated);
+    }
+
+    #[test]
+    fn an_iteration_that_was_not_evaluated_neither_confirms_nor_rejects() {
+        // 50 held, 50 never read: at best the claim held in half the iterations.
+        assert_eq!(counted(50, 0, 50).verdict(0.95), Verdict::Inconclusive);
+        // 100 violated, 900 never read: up to 90% of the iterations could still have held.
+        assert_eq!(counted(0, 100, 900).verdict(0.95), Verdict::Inconclusive);
+        // Even if all 3 unread iterations had held, 3 of 100 is below the rejection line.
+        assert_eq!(counted(0, 97, 3).verdict(0.95), Verdict::Rejected);
     }
 
     #[test]

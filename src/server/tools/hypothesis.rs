@@ -75,6 +75,17 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
         .with_variation(variation)
         .build()?;
 
+    // Validated before anything runs: the actions change the live game.
+    let threshold = arguments
+        .get("threshold")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.95);
+    if !(0.0..=1.0).contains(&threshold) {
+        return Err(Error::Validation(format!(
+            "'threshold' is the share of iterations in which the condition must hold, from 0 to 1; got {threshold}. Example: \"threshold\": 0.95"
+        )));
+    }
+
     // Configure test runner
     let iterations = arguments
         .get("iterations")
@@ -101,39 +112,29 @@ async fn handle_test(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Re
     let mut client = brp_client.write().await;
     let result = runner.run(&hypothesis, &mut client).await?;
 
-    // Determine verdict
-    let threshold = arguments
-        .get("threshold")
-        .and_then(|t| t.as_f64())
-        .unwrap_or(0.95);
-
-    let verdict = if result.is_confirmed(threshold) {
-        "CONFIRMED"
-    } else if result.success_rate < 0.05 {
-        "REJECTED"
-    } else {
-        "INCONCLUSIVE"
-    };
+    let verdict = result.verdict(threshold);
 
     Ok(json!({
         "hypothesis": result.hypothesis,
-        "verdict": verdict,
+        "verdict": verdict.as_str(),
         "success_rate": result.success_rate,
-        "confidence_interval": {
-            "lower": result.confidence_interval.0,
-            "upper": result.confidence_interval.1
-        },
-        "confidence_level": format!("{:.1}%", result.confidence_level()),
+        "confidence_interval": result.confidence_interval.map(|(lower, upper)| json!({
+            "lower": lower,
+            "upper": upper
+        })),
+        "confidence_level": result.confidence_level().map(|level| format!("{level:.1}%")),
         "statistics": {
             "iterations_run": result.iterations_run,
-            "successes": result.successes,
-            "failures": result.failures,
+            "held": result.held,
+            "violated": result.violated,
+            "not_evaluated": result.not_evaluated,
             "avg_execution_time_ms": result.avg_execution_time_ms
         },
         "edge_cases": result.edge_cases.len(),
-        "failure_examples": result.failure_examples.iter().take(3).map(|f| {
+        "examples": result.examples.iter().take(3).map(|f| {
             json!({
                 "iteration": f.iteration,
+                "kind": f.kind,
                 "error": f.error
             })
         }).collect::<Vec<_>>(),

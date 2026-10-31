@@ -1055,6 +1055,138 @@ async fn experiment_delete_does_not_claim_a_rollback_undo_cannot_perform() {
     }
 }
 
+/// Call the `hypothesis` tool the way an agent does: the reply, and whether the tool called it an error.
+async fn hypothesis(tools: &BevyDebuggerTools, request: Value) -> (Value, bool) {
+    let params: bevy_fairy::server::mcp_tools::HypothesisRequest =
+        serde_json::from_value(request).expect("the request deserialises");
+    let result = tools
+        .hypothesis(Parameters(params))
+        .await
+        .expect("the hypothesis tool returns a result");
+    let text = text_of(&result);
+    let failed = result.is_error == Some(true);
+    // A refusal is plain text; anything else is the JSON reply.
+    let reply = match serde_json::from_str(&text) {
+        Ok(reply) => reply,
+        Err(_) if failed => Value::String(text),
+        Err(e) => panic!("hypothesis returned non-JSON ({e}): {text}"),
+    };
+    (reply, failed)
+}
+
+/// A claim is checked only when its actions ran. When the game refused an action, nothing was
+/// checked, and the reply has to say so, with the game's own words. Before the fix every refusal
+/// counted as a violation: the verdict was `REJECTED`, the success rate 0, and the only error the
+/// agent got was the constant "Action execution failed", so a typo in a component path read as
+/// "your claim is false".
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_whose_actions_the_game_refused_is_not_evaluated_not_rejected() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let entity = *crate_weights(&tools).await.keys().next().expect("the fixture spawns crates");
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "a crate still exists after the modify",
+            "success_condition": "entity_exists:fixture_game::Crate",
+            "actions": [{"type": "modify", "entity_id": entity,
+                "components": [{"type_id": "fixture_game::NoSuchComponent", "value": {"weight": 1.0}}]}]
+        }),
+    )
+    .await;
+
+    assert!(!failed, "a claim that could not be checked is a result, not a tool failure: {reply}");
+    assert_eq!(reply["verdict"], json!("NOT_EVALUATED"), "the condition was never read: {reply}");
+    assert_eq!(reply["success_rate"], Value::Null, "no iteration evaluated the claim, so it has no rate: {reply}");
+    let stats = &reply["statistics"];
+    assert_eq!(
+        (stats["held"].as_u64(), stats["violated"].as_u64()),
+        (Some(0), Some(0)),
+        "an iteration that never evaluated the claim neither held nor violated it: {reply}"
+    );
+    assert_eq!(stats["not_evaluated"], stats["iterations_run"], "every iteration failed before the condition: {reply}");
+    let error = reply["examples"][0]["error"].as_str().unwrap_or_else(|| panic!("no example error: {reply}"));
+    assert!(error.contains("NoSuchComponent"), "the example must carry the game's own message, not a constant: {error}");
+    assert_eq!(reply["examples"][0]["kind"], json!("not_evaluated"), "{reply}");
+}
+
+/// Zero iterations evaluated nothing. Before the fix `iterations: 0` under a varied strategy
+/// answered `REJECTED` (rate 0 of 0), and with `threshold: 0` it answered `CONFIRMED`.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_that_ran_no_iterations_is_not_evaluated() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    for threshold in [0.95, 0.0] {
+        let (reply, failed) = hypothesis(
+            &tools,
+            json!({
+                "action": "test",
+                "description": "there is a crate",
+                "success_condition": "entity_exists:fixture_game::Crate",
+                "variation_type": "random",
+                "iterations": 0,
+                "threshold": threshold
+            }),
+        )
+        .await;
+        assert!(failed || reply["verdict"] == json!("NOT_EVALUATED"), "threshold {threshold}: zero iterations evaluated nothing: {reply}");
+    }
+}
+
+/// The control for the two tests above: a claim the fixture makes true is confirmed, and one it
+/// makes false is rejected, so `NOT_EVALUATED` is not simply what every answer became. The
+/// fixture spawns exactly `CRATE_WEIGHTS.len()` crates.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_about_the_crate_count_is_confirmed_or_rejected_by_the_fixture() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+
+    for (count, verdict) in [(CRATE_WEIGHTS.len(), "CONFIRMED"), (CRATE_WEIGHTS.len() + 1, "REJECTED")] {
+        let (reply, failed) = hypothesis(
+            &tools,
+            json!({
+                "action": "test",
+                "description": "the fixture has this many crates",
+                "success_condition": {"type": "entity_exists", "component_types": ["fixture_game::Crate"], "count": count}
+            }),
+        )
+        .await;
+        assert!(!failed, "{reply}");
+        assert_eq!(reply["verdict"], json!(verdict), "{count} crates: {reply}");
+    }
+}
+
+/// `threshold` is a share of iterations, so a value outside 0..=1 can never be met (or is always
+/// met). It is refused before the actions run, because they change the live game.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_refuses_a_threshold_outside_zero_to_one_before_touching_the_game() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+
+    for threshold in [1.5, -0.1] {
+        let (reply, failed) = hypothesis(
+            &tools,
+            json!({
+                "action": "test",
+                "description": "a crate weighs 99 after the modify",
+                "success_condition": "entity_exists:fixture_game::Crate",
+                "actions": [{"type": "modify", "entity_id": entity,
+                    "components": [{"type_id": "fixture_game::Crate", "value": {"weight": 99.0}}]}],
+                "threshold": threshold
+            }),
+        )
+        .await;
+        assert!(failed, "threshold {threshold} must be refused: {reply}");
+        assert!(reply.to_string().contains("threshold"), "the refusal names the argument: {reply}");
+    }
+    assert_eq!(crate_weights(&tools).await, before, "a refused request must not have changed the game");
+}
+
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
 /// way an agent's client reaches it, so a tool the server does not offer is answered as such.
 struct StdioServer {
