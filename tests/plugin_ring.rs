@@ -123,6 +123,71 @@ fn refuses_instead_of_recording_something_else() {
     assert!(status.is_err(), "a refused start must not leave a buffer behind");
 }
 
+/// **B-134.** `start` threw away whatever the last `start` had recorded and answered with the new,
+/// empty buffer, so an agent that started over lost the frames it had been keeping without being
+/// told. The reply says what was replaced; the first start has nothing to say.
+#[test]
+fn starting_over_says_what_the_old_buffer_held() {
+    let mut app = app();
+    let first = ring(&mut app, start(5)).expect("start");
+    assert!(first.get("replaced").is_none(), "nothing was replaced: {first}");
+    for _ in 0..3 {
+        app.update();
+    }
+    let before = ring(&mut app, json!({"action": "status"})).expect("status");
+    let second = ring(&mut app, start(8)).expect("start again");
+    let replaced = &second["replaced"];
+    assert_eq!(replaced["buffered"], 3, "{second}");
+    assert_eq!(replaced["was_recording"], true, "{second}");
+    assert_eq!(replaced["oldest_frame"], before["oldest_frame"], "{second}");
+    assert_eq!(replaced["newest_frame"], before["newest_frame"], "{second}");
+    assert_eq!(second["buffered"], 0, "and the new buffer is empty: {second}");
+
+    // A buffer that had been stopped on a trigger is evidence too.
+    let mut params = start(50);
+    params["trigger"] = json!({"pointer": format!("/0/components/{PATH}"), "equals": 9});
+    ring(&mut app, params).expect("start with a trigger");
+    for _ in 0..30 {
+        app.update();
+    }
+    let third = ring(&mut app, start(5)).expect("start over a finished buffer");
+    assert_eq!(third["replaced"]["was_recording"], false, "{third}");
+    assert!(third["replaced"]["buffered"].as_u64().unwrap() > 0, "{third}");
+    assert!(third["replaced"]["triggered_at_frame"].is_u64(), "a trigger that fired is part of what was lost: {third}");
+}
+
+/// **B-134.** `dump`, `stop` and `status` answered `success` to `query`, `frames` and `trigger`, and
+/// `start` to `last`, none of which they read: an agent that sent `frames: 10` to `dump` believed it
+/// had resized the buffer. A refused call changes nothing, so a `stop` with a stray field must not
+/// stop the recording.
+#[test]
+fn a_field_the_action_does_not_read_is_refused_by_name_and_changes_nothing() {
+    let mut app = app();
+    ring(&mut app, start(5)).expect("start");
+    let query = json!({"data": {"components": [PATH]}});
+    let trigger = json!({"pointer": format!("/0/components/{PATH}"), "equals": 9});
+    for (bad, field) in [
+        (json!({"action": "dump", "frames": 10}), "frames"),
+        (json!({"action": "dump", "query": query}), "query"),
+        (json!({"action": "dump", "trigger": trigger}), "trigger"),
+        (json!({"action": "stop", "last": 2}), "last"),
+        (json!({"action": "stop", "frames": 2}), "frames"),
+        (json!({"action": "status", "trigger": trigger}), "trigger"),
+        (json!({"action": "status", "last": 1}), "last"),
+        (json!({"action": "start", "query": query, "last": 2}), "last"),
+    ] {
+        let error = ring(&mut app, bad.clone()).expect_err(&format!("accepted {bad}"));
+        assert!(error.message.contains(&format!("`{field}`")), "names `{field}` for {bad}: {}", error.message);
+    }
+    for _ in 0..2 {
+        app.update();
+    }
+    let status = ring(&mut app, json!({"action": "status"})).expect("status");
+    assert_eq!(status["recording"], true, "a refused stop must not stop: {status}");
+    assert_eq!(status["capacity"], 5, "a refused start must not replace the buffer: {status}");
+    assert_eq!(status["buffered"], 2, "{status}");
+}
+
 /// A float component: `f32` fields serialize as JSON floats (`9.0`, `0.10000000149011612`), and a
 /// trigger an agent writes is `9` or `0.1`.
 #[derive(Component, Reflect, Default)]

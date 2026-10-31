@@ -89,7 +89,7 @@ pub(crate) fn register(app: &mut App) {
         app,
         DebugCommandInfo::new(
             "bevy_fairy/ring",
-            "Keep the newest N frames of a world.query result, one sample per frame, recorded inside the game. Actions: start (query, optional frames and trigger), dump (optional last), stop, status. Every sample carries its frame number and elapsed seconds; the reply says whether it is still recording, how many samples were evicted, and the trigger frame if one fired. Samples are state, not pixels.",
+            "Keep the newest N frames of a world.query result, one sample per frame, recorded inside the game. Actions: start (query, optional frames and trigger), dump (optional last), stop, status. Every sample carries its frame number and elapsed seconds; the reply says whether it is still recording, how many samples were evicted, and the trigger frame if one fired. A start over an earlier buffer discards it and the reply's replaced says what it held. A field an action does not read is refused by name. Samples are state, not pixels.",
         )
         .params(
             "action: start | dump | stop | status; start needs query (world.query params) and takes frames (1-600, default 120) and trigger {pointer: JSON pointer into one sample's result, equals: value} which stops recording on the first frame it matches (a number matches as a number: 9 matches 9.0, and 0.1 matches the f32 field that holds it); dump takes last (newest N samples)",
@@ -199,8 +199,51 @@ fn describe(ring: &Ring, now: u32) -> Value {
     })
 }
 
+/// Refuse a field the action does not read, naming it and what the action does read. A call that is
+/// refused changes nothing, so this runs before any action is applied: a `stop` that carried a stray
+/// `last` must not stop a recording it was refused for.
+fn refuse_unread_fields(params: &RingParams) -> Result<(), String> {
+    let (action, read): (&str, &[&str]) = match params.action {
+        Action::Start => ("start", &["query", "frames", "trigger"]),
+        Action::Dump => ("dump", &["last"]),
+        Action::Stop => ("stop", &[]),
+        Action::Status => ("status", &[]),
+    };
+    let sent = [
+        ("query", params.query.is_some()),
+        ("frames", params.frames.is_some()),
+        ("trigger", params.trigger.is_some()),
+        ("last", params.last.is_some()),
+    ];
+    let Some((field, _)) = sent.iter().find(|(field, set)| *set && !read.contains(field)) else {
+        return Ok(());
+    };
+    let reads = if read.is_empty() {
+        "no fields".to_string()
+    } else {
+        read.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(", ")
+    };
+    Err(format!("`{field}` is not read by action `{action}`, so it would change nothing; `{action}` reads {reads}"))
+}
+
+/// What a `start` threw away, so an agent that starts over knows whether it lost frames it meant to
+/// keep. `None` when no buffer had been started.
+fn replaced(old: &Ring) -> Option<Value> {
+    old.query.as_ref()?;
+    Some(json!({
+        "buffered": old.samples.len(),
+        "oldest_frame": old.samples.front().map(|s| s.frame),
+        "newest_frame": old.samples.back().map(|s| s.frame),
+        "was_recording": old.recording,
+        "triggered_at_frame": old.triggered_at,
+        "stopped": old.stopped,
+    }))
+}
+
 fn handle_ring(In(params): In<RingParams>, world: &mut World) -> Result<Value, String> {
+    refuse_unread_fields(&params)?;
     let now = world.resource::<FrameTicks>().0;
+    let mut replaced_buffer = None;
     match params.action {
         Action::Start => {
             let mut query = params.query.ok_or("start needs `query`: world.query params, e.g. {\"data\": {\"components\": [\"my_game::Health\"]}}")?;
@@ -227,13 +270,11 @@ fn handle_ring(In(params): In<RingParams>, world: &mut World) -> Result<Value, S
             }
             // Refuse a query the game rejects now, with the game's own message, rather than record errors.
             process_remote_query_request(In(Some(query.clone())), world).map_err(|e| format!("query refused by the game: {}", e.message))?;
-            *world.resource_mut::<Ring>() = Ring {
-                query: Some(query),
-                trigger: params.trigger,
-                capacity: frames,
-                recording: true,
-                ..default()
-            };
+            let old = std::mem::replace(
+                &mut *world.resource_mut::<Ring>(),
+                Ring { query: Some(query), trigger: params.trigger, capacity: frames, recording: true, ..default() },
+            );
+            replaced_buffer = replaced(&old);
         }
         Action::Stop => {
             let mut ring = world.resource_mut::<Ring>();
@@ -259,5 +300,9 @@ fn handle_ring(In(params): In<RingParams>, world: &mut World) -> Result<Value, S
             return Ok(reply);
         }
     }
-    Ok(describe(world.resource::<Ring>(), now))
+    let mut reply = describe(world.resource::<Ring>(), now);
+    if let Some(replaced_buffer) = replaced_buffer {
+        reply["replaced"] = replaced_buffer;
+    }
+    Ok(reply)
 }
