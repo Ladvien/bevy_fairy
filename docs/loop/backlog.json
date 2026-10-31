@@ -193,22 +193,6 @@
       "first_seen": "2026-10-30"
     },
     {
-      "id": "B-109",
-      "kind": "bug",
-      "area": "experiment",
-      "title": "experiment's undo/redo history is process-wide and kept by the server, so after the game restarts `undo` deletes or overwrites whatever now has the recorded entity id (a fresh process allocates the same ids in the same order)",
-      "must_fix": {
-        "misleads": true,
-        "blocks": false,
-        "common_no_workaround": false,
-        "evidence": "experiment.rs EXPERIMENT_STATE, experiment_system.rs; read, not run"
-      },
-      "status": "unconfirmed",
-      "evidence": "The tool description now says to call clear_history after a restart. Fix: stamp each entry with a game-instance token (a bevy_fairy/status start marker) and refuse on mismatch; a game without the plugin has no token. Needs a failing test that restarts a fixture.",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
       "id": "B-114",
       "kind": "bug",
       "area": "experiment",
@@ -241,22 +225,6 @@
       "first_seen": "2026-10-31"
     },
     {
-      "id": "B-116",
-      "kind": "bug",
-      "area": "hypothesis",
-      "title": "quick_test overrides the caller's iterations and timeout with 10 and 10 s without saying so in the reply (the action's description says it)",
-      "must_fix": {
-        "misleads": false,
-        "blocks": false,
-        "common_no_workaround": true,
-        "evidence": "tools/hypothesis.rs handle_quick_test; the timeout argument now says quick_test always uses 10"
-      },
-      "status": "open",
-      "evidence": "Fix: refuse iterations/timeout with quick_test, or echo the values used in the reply.",
-      "last_failure": "",
-      "first_seen": "2026-10-31"
-    },
-    {
       "id": "B-117",
       "kind": "change",
       "area": "evals",
@@ -269,6 +237,22 @@
       },
       "status": "open",
       "evidence": "Candidate: make the watch tool's description say a freeze frame is read off constant_since_frame. The task is dev, so tuning to it is allowed; the held-out suite must not be tuned.",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-120",
+      "kind": "bug",
+      "area": "experiment",
+      "title": "a history recorded against a game that could not name itself (no plugin, or a plugin older than this server) stays 'unverified' after the game is restarted with a plugin that names itself, though a process cannot gain a plugin: the same game was certainly not the one that ran the actions",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "independent review of e35dd4b (P2): experiment.rs standing_of arm (_, Recorded::Unverifiable(why), _); observe.rs and anomaly.rs have the same arm. The reply carries game_instance_unverified, so an agent is told; it is not silent"
+      },
+      "status": "open",
+      "evidence": "Fix: BrpClient::game_instance returns which kind of failure it was (the game answered and names no instance, versus could not be asked); an unnamed record followed by a named game is stale/AnotherGame/Dropped. Needs a fake endpoint that changes from no instance to an instance (tests/anomaly_restart.rs has one).",
       "last_failure": "",
       "first_seen": "2026-10-31"
     }
