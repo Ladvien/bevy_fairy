@@ -241,18 +241,162 @@
       "first_seen": "2026-10-31"
     },
     {
-      "id": "B-120",
+      "id": "B-126",
       "kind": "bug",
-      "area": "experiment",
-      "title": "a history recorded against a game that could not name itself (no plugin, or a plugin older than this server) stays 'unverified' after the game is restarted with a plugin that names itself, though a process cannot gain a plugin: the same game was certainly not the one that ran the actions",
+      "area": "restart",
+      "title": "certainly_another_game is one-directional: a game that named itself followed by one that answers without a name stays unverified (observe diffs flagged, detect_anomaly scores flagged, experiment refuses), though a process does not lose its plugin either",
       "must_fix": {
         "misleads": false,
         "blocks": false,
         "common_no_workaround": true,
-        "evidence": "independent review of e35dd4b (P2): experiment.rs standing_of arm (_, Recorded::Unverifiable(why), _); observe.rs and anomaly.rs have the same arm. The reply carries game_instance_unverified, so an agent is told; it is not silent"
+        "evidence": "independent review of 0fabe1c..4ff1e19 (P3, confidence 0.5); nothing is silent. tests/anomaly_restart.rs pins the current reply on purpose"
       },
       "status": "open",
-      "evidence": "Fix: BrpClient::game_instance returns which kind of failure it was (the game answered and names no instance, versus could not be asked); an unnamed record followed by a named game is stale/AnotherGame/Dropped. Needs a fake endpoint that changes from no instance to an instance (tests/anomaly_restart.rs has one).",
+      "evidence": "Fix: (Ok(_), Err(now)) => now.answered_without_a_name in certainly_another_game, and change the anomaly_restart assertion for the game-b -> no-plugin step (it asserts game_instance_unverified today)",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-127",
+      "kind": "bug",
+      "area": "guide",
+      "title": "no checkpoint is ever evaluated through the MCP guide tool: only bevy_fairy/guide+watch runs one, and neither brp nor watch can open a +watch stream, so a step with a checkpoint never advances while the description says the app advances itself when the named condition arrives",
+      "must_fix": {
+        "misleads": true,
+        "blocks": true,
+        "common_no_workaround": false,
+        "evidence": "AuditCapture scout, 2026-10-31, code read not run: src/server/tools/guide.rs sends only bevy_fairy/guide; Guide::report sets waiting_on_a_person from checkpoint.is_none(); tick_guide never runs checkpoints"
+      },
+      "status": "open",
+      "evidence": "Repro: tests/plugin_guide_steps.rs, post a checkpointed step whose registered system returns true, run app.update() many times, read: at stays 1. Design fork: evaluate checkpoints in a plugin system (and let +watch only report), or make the server hold the stream",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-128",
+      "kind": "bug",
+      "area": "guide",
+      "title": "guide honesty: a step naming an unregistered checkpoint is accepted at post time (the description says it is refused; only the unreachable watch refuses, and a_checkpoint_nobody_registered_is_refused_by_name pins that), steps+read/clear/skip in one call drop all but one verb with success true, skip with no current step reports success, and re-posting a script while step 1 shows leaves the old card (the render key (at, finished) does not change)",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditCapture scout, code read: guide.rs handle_guide if-chain, Guide::advance returns None, the render key in paint_guide"
+      },
+      "status": "open",
+      "evidence": "Fixing the first means the existing watch-refusal test posts through Guide::post directly; list that as a test change",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-129",
+      "kind": "bug",
+      "area": "time",
+      "title": "bevy_fairy/time reports held: true for an unpause or speed 1.0 the clock did not obey (time.rs:171-175: pause_held = !request.pause || ..., speed_held = request.pause || request.speed == 1.0 || ...) while paused / speed in the same reply say otherwise",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read: a host system that pauses Time<Virtual> in Update; call {pause:false}, run 3 frames, held true, paused true"
+      },
+      "status": "open",
+      "evidence": "Repro with the tests/plugin_clock.rs helpers",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-130",
+      "kind": "bug",
+      "area": "status",
+      "title": "status reports replay: null when the BEVY_FAIRY_SCENE file was rejected (scene.rs logs and inserts no ScenePlayback), the same as no scene requested",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl and AuditCapture scouts, code read: ready.rs None => Null"
+      },
+      "status": "open",
+      "evidence": "Repro: tests/plugin_commands.rs new_app with a bad scene file, call bevy_fairy/status, replay is Null",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-131",
+      "kind": "bug",
+      "area": "input",
+      "title": "on the image route (DebugCaptureTarget) a Back, Forward or Other mouse button is dropped by pointer.rs (_ => return) with success: true, and an unaimed click lands at the image origin while the note says where the pointer last was",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read, not run"
+      },
+      "status": "open",
+      "evidence": "Repro with the plugin_pointer.rs drive-through",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-132",
+      "kind": "bug",
+      "area": "burst",
+      "title": "burst contact-sheet labels (F{frame} +{ms}MS) are clipped silently by contact_sheet.rs when a cell is narrow (a 100 px capture): the rightmost label reads +12 for +1234MS and the others spill into the next cell",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditCapture scout, code read: a compose unit test with 100x100 cells would show it"
+      },
+      "status": "open",
+      "evidence": "The text reply carries the true values; the image does not",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-133",
+      "kind": "bug",
+      "area": "run",
+      "title": "the run description says every command that runs is recorded; commands registered read_only (bevy_fairy/ring, bevy_fairy/ui_text) and failed ones are not, and commands does not say which, so scene save can silently lack steps",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read: commands.rs records only when info.records; handle_commands does not return it"
+      },
+      "status": "open",
+      "evidence": "Repro: call bevy_fairy/ui_text, then bevy_fairy/scene get: steps is empty",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-134",
+      "kind": "bug",
+      "area": "ring",
+      "title": "ring start replaces a running buffer without saying (no replaced field) and dump / stop / status silently ignore query, frames and trigger; start ignores last",
+      "must_fix": {
+        "misleads": true,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditControl scout, code read, not run"
+      },
+      "status": "unconfirmed",
+      "evidence": "Needs a failing test: start, record, start again, dump",
+      "last_failure": "",
+      "first_seen": "2026-10-31"
+    },
+    {
+      "id": "B-135",
+      "kind": "bug",
+      "area": "audit",
+      "title": "read-only audit suspicions not yet reproduced: quit may answer 'no game answering' for a quit that worked (the process exits before the reply flushes); status.ready is true from plugin build, not measured; input text has no length cap; a restart mid-burst could put two games on one sheet; burst at_ms is when the server noticed the delivery (up to 100 ms late); scene path is ignored for show / clear; a screenshot region clamp is not reported; ScreenshotParams lacks deny_unknown_fields; ui_text does not check z-order occlusion",
+      "must_fix": {
+        "misleads": false,
+        "blocks": false,
+        "common_no_workaround": true,
+        "evidence": "AuditCapture and AuditControl scouts, 2026-10-31, code read not run"
+      },
+      "status": "unconfirmed",
+      "evidence": "Each needs its own failing test before it is a bug",
       "last_failure": "",
       "first_seen": "2026-10-31"
     }
