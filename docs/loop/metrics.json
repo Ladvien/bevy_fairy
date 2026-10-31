@@ -1,12 +1,12 @@
 {
   "measured_at": "2026-10-30",
-  "sha": "525ee7e",
+  "sha": "ff29519",
   "server": {
-    "loc": 20106,
+    "loc": 20524,
     "direct_dependencies": 52,
     "public_modules": 26,
     "mcp_tools": 14,
-    "release_binary_bytes": 104850880,
+    "release_binary_bytes": 104895024,
     "note": "The server half of the one crate, in src/server/. Its dependencies are all optional and behind the `server` feature."
   },
   "plugin": {
@@ -16,18 +16,18 @@
     "note": "The plugin half, in src/plugin/, behind the `plugin` feature. A game that takes it compiles 319 packages, none of which can synthesise an operating-system event; tests/plugin_leaf.rs checks the resolved graph."
   },
   "quality": {
-    "clippy_warnings_default": 1451,
+    "clippy_warnings_default": 74,
     "clippy_warnings_all_features_errors": 42,
     "all_features_build": "fails: src/observability/ (42 errors); 'full-debugging' includes observability, so it fails too",
-    "server_tests_passed": 531,
+    "server_tests_passed": 427,
     "server_tests_failed": 0,
-    "server_tests_ignored": 4,
+    "server_tests_ignored": 1,
     "plugin_tests_passed": 59,
     "plugin_tests_failed": 0,
-    "plugin_tests_ignored": 1,
+    "plugin_tests_ignored": 0,
     "clippy_warnings_note": "Counted by the ratchet: lint occurrences across the workspace and all targets. An earlier grep counted distinct warning lines and undercounted (707 vs 1462). The ratchet number is what the gate uses.",
-    "server_tests_note": "531 is the whole workspace, server and plugin together (default features), counted from the gate log at adcbdf0: 523 before plus 3 CLI tests and 5 fixture ground-truth tests.",
-    "ignored_tests_note": "5 ignored, and the set of names is identical to known_red: test_profiling_history and four doctests. The baseline's count of 4 was a miscount; known_red always listed five.",
+    "server_tests_note": "427 is every test the whole workspace lists (default features, `cargo test --workspace -- --list`, server and plugin together; the plugin's 59 are inside it) at ff29519, with 1 ignored. The earlier 531 predates the deletions of the replay, stress and dead-module tests. This pass added 15 unit tests (server::watch_fields) and 4 fixture ground-truth tests.",
+    "ignored_tests_note": "1 ignored at ff29519 (`cargo test --workspace -- --list --ignored`), the one name in known_red: the BrpCommandHandler doctest. The earlier notes of 4 and 5 predate the removal of test_profiling_history and the other doctests with their code.",
     "direct_dependencies_note": "The baseline said 50; the manifest at e93da67 actually had 51. The count is the number of entries in [dependencies], by name. The one added since is `schemars`, which `rmcp` already depended on and which resolves to 0.8.22 in the lockfile, so there is one copy, not two."
   },
   "evals": {
@@ -35,7 +35,7 @@
     "dev_success_rate": 1.0,
     "heldout_success_rate": 1.0,
     "heldout_clean_success_rate": 0.667,
-    "mean_tool_calls_per_solved_task": 5.2,
+    "mean_tool_calls_per_solved_task": 5.5,
     "dev_is_error_results_per_run": [
       5,
       7,
@@ -44,19 +44,19 @@
     "runs": "three dev runs on each of a497577 (before) and dcd9805 (after); one held-out run on each; 42 records in docs/loop/evals.jsonl",
     "note": "First measurement. Before: dev 6/6 x3, mean calls 13.7/12.5/9.2, isError 0/0/1 with 2/3/2 refusals hidden in success bodies. After: dev 6/6 x3, mean calls 12.2/12.0/11.3, isError 5/7/3 (refusals now visible; 6 brp game refusals of agent guesses and 1 B-041). Held-out 3/3 on both, but entities_with_game_components passed on a hedge and its truth is disputed (B-049), so 2/3 clean. 2026-10-23 (7b898a1): dev 6/6 at 13.2 calls (v0.2.0 baseline 6/6 at 14.5); held-out 2/3 on the first run, the failed stuck_angle passed 2/2 reruns.",
     "last_dev_run": {
-      "sha": "420019e",
+      "sha": "ff29519",
       "success": "6/6",
-      "mean_tool_calls": 5.2,
+      "mean_tool_calls": 5.5,
       "invalid_calls": 0,
-      "note": "Two runs this pass. 63ed83d: 5 of 6 passed first time (2, 5, 3, 6, 6 calls), `spinner_stops` was an infrastructure failure (the omp session never reached a model, 241 s), and its rerun passed in 18 calls with 3 repeated calls. 420019e (after the review fixes): 6/6, 5.2 calls, 0 invalid (2, 5, 4, 6, 6, 8). The 18-call run is the known spinner_stops spread (4-21 across earlier runs)."
+      "note": "The release build (v0.10.0, installed). Calls 2, 5, 3, 3, 6, 14. spinner_stops is the known spread (4-21): 9/10 calls on the first pair of runs that were discarded because the 'after' binary was a mutant build, then 13 (old server, 7d2e7a1) and 12 (587587e), 14 here. The same-session old server (7d2e7a1) scored 6/6 at 5.7 calls with 1 invalid; the watch change moved no eval, since the agent could already read the freeze off the raw samples."
     },
     "last_heldout_run": {
-      "sha": "917874c",
+      "sha": "ff29519",
       "success": "3/3",
       "tool_calls": [
         4,
         4,
-        5
+        6
       ],
       "invalid_calls": 0,
       "note": "entities_with_game_components passed; its truth is still disputed (B-049)."
@@ -153,7 +153,7 @@
   "fixture": {
     "path": "examples/fixture_game.rs",
     "loc": 162,
-    "ground_truth_tests": 24,
+    "ground_truth_tests": 30,
     "note": "Headless fixture whose state is pub consts. tests/fixture_ground_truth.rs checks the brp and status tools against it; mutants of the brp handler and of the plugin's status handler are each caught."
   }
 }
