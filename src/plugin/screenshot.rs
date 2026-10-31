@@ -59,6 +59,7 @@ pub struct DebugCaptureTarget {
 
 /// Parameters for the `bevy_fairy/screenshot` BRP method.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotParams {
     /// Path to also write the PNG to, on the game's machine. Optional: the PNG is always returned
     /// through `bevy_fairy/capture`, and a file is written only when this is given.
@@ -80,6 +81,7 @@ fn one() -> f32 {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Region {
     pub x: u32,
     pub y: u32,
@@ -461,6 +463,28 @@ mod tests {
         for (width, height, zoom) in [(1000, 1000, 4.5), (7680, 4320, 1.5), (4, 4, 1e9), (1, 1, f32::MAX)] {
             let refusal = zoomed_size(width, height, zoom).expect_err("larger than 4096 x 4096");
             assert!(refusal.contains("region"), "{refusal}");
+        }
+    }
+
+    /// The params struct took any object, so `{"regoin": {..}}` or `{"zom": 8}` captured the whole
+    /// frame at 1x and answered with an id, as if the crop or the zoom had been honoured. A game's
+    /// own agent reaches this method through `brp`, which sends the params as they were typed.
+    #[test]
+    fn a_field_the_method_does_not_have_is_refused_not_ignored() {
+        let mut world = World::new();
+        world.init_resource::<Captures>();
+        world.init_resource::<FrameTicks>();
+        let region = json!({"x": 0, "y": 0, "width": 2, "height": 2});
+        for bad in [
+            json!({"regoin": region}),
+            json!({"zom": 8.0}),
+            json!({"region": {"x": 0, "y": 0, "width": 2, "height": 2, "depth": 1}}),
+        ] {
+            let error = world
+                .run_system_once_with(handle_screenshot, Some(bad.clone()))
+                .expect("system runs")
+                .expect_err(&format!("accepted {bad}"));
+            assert!(error.message.contains("unknown field"), "{bad} is refused for what it is: {}", error.message);
         }
     }
 }

@@ -74,6 +74,15 @@ fn draw_label(sheet: &mut RgbaImage, x0: u32, y0: u32, label: &str) {
     }
 }
 
+/// Pixels a label needs: its glyphs, `PAD` on both sides.
+fn label_width(label: &str) -> u32 {
+    let glyphs = label.chars().count() as u32;
+    if glyphs == 0 {
+        return 0;
+    }
+    PAD + (glyphs - 1) * (GLYPH_W + 1) * SCALE + GLYPH_W * SCALE + PAD
+}
+
 /// Height of one cell's picture once scaled to `CELL_WIDTH` (or left as it is when narrower).
 fn scaled_size(width: u32, height: u32) -> (u32, u32) {
     if width <= CELL_WIDTH {
@@ -83,6 +92,11 @@ fn scaled_size(width: u32, height: u32) -> (u32, u32) {
 }
 
 /// Lay `cells` out left to right, top to bottom, `COLUMNS` to a row, each under its label.
+///
+/// A cell is as wide as its picture, or as its widest label when that is wider (a 100 px capture is
+/// narrower than `F123456 +1234MS`): a label is never clipped at the sheet's edge or drawn into the
+/// next cell, because the sheet then reads a different time than the one the reply states. The
+/// picture sits at the cell's left and the rest of a wider cell is background.
 ///
 /// Refuses an empty list, more than `MAX_CELLS`, cells of unequal size (a sheet of differently
 /// shaped frames would misalign), and a label with a character outside the font.
@@ -101,7 +115,8 @@ pub fn compose(cells: &[Cell]) -> Result<RgbaImage, String> {
     let (cw, ch) = scaled_size(w, h);
     let columns = (cells.len() as u32).min(COLUMNS);
     let rows = (cells.len() as u32).div_ceil(COLUMNS);
-    let (stride_x, stride_y) = (cw, LABEL_H + ch);
+    let widest_label = cells.iter().map(|c| label_width(&c.label)).max().unwrap_or(0);
+    let (stride_x, stride_y) = (cw.max(widest_label), LABEL_H + ch);
     let mut sheet = RgbaImage::from_pixel(columns * stride_x, rows * stride_y, BACKGROUND);
     for (i, cell) in cells.iter().enumerate() {
         let (x0, y0) = ((i as u32 % COLUMNS) * stride_x, (i as u32 / COLUMNS) * stride_y);
@@ -147,6 +162,29 @@ mod tests {
         let ink = |s: &RgbaImage| (0..LABEL_H).flat_map(|y| (0..40).map(move |x| (x, y))).filter(|&(x, y)| *s.get_pixel(x, y) == INK).count();
         assert!(ink(&one) > 0, "the label strip has white pixels");
         assert_ne!(one.as_raw(), two.as_raw(), "F1 and F2 are drawn differently");
+    }
+
+    /// B-132: a cell is as wide as its frame, and a 100 px capture is narrower than
+    /// `F123456 +1234MS`, so the label was clipped at the sheet's right edge in the last cell and
+    /// spilled into the next cell's strip in every other one -- the sheet then read `+12` for
+    /// `+1234MS`. The reference is the label drawn on a canvas with room to spare.
+    #[test]
+    fn a_label_wider_than_its_frame_is_drawn_whole_and_stays_in_its_own_cell() {
+        let label = "F123456 +1234MS";
+        let cells = [cell([0, 0, 90], label), cell([0, 0, 90], label), cell([0, 0, 90], label)];
+        let sheet = compose(&cells).expect("composes");
+        let mut want = RgbaImage::from_pixel(400, LABEL_H, BACKGROUND);
+        draw_label(&mut want, 0, 0, label);
+        let needed = (0..want.width()).rev().find(|&x| (0..LABEL_H).any(|y| *want.get_pixel(x, y) == INK)).expect("the label draws") + 1;
+        let stride = sheet.width() / cells.len() as u32;
+        assert!(stride >= needed, "a cell is {stride} px wide and its label needs {needed}");
+        for i in 0..cells.len() as u32 {
+            for y in 0..LABEL_H {
+                for x in 0..needed {
+                    assert_eq!(sheet.get_pixel(i * stride + x, y), want.get_pixel(x, y), "cell {i}, label pixel ({x},{y})");
+                }
+            }
+        }
     }
 
     #[test]
