@@ -53,7 +53,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 /// Parameters for the `bevy_fairy/input` BRP method.
+///
+/// A field this does not name is refused by `deny_unknown_fields`, and a field it names that the
+/// chosen `kind` does not read is refused by [`refuse_unread_fields`]: a modifier or a position that
+/// changes nothing must not come back as `success: true`.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputCommand {
     /// What kind of input to inject.
     pub kind: InputKind,
@@ -124,6 +129,38 @@ pub enum InputAction {
 
 fn invalid_params(message: String) -> BrpError {
     BrpError { code: error_codes::INVALID_PARAMS, message, data: None }
+}
+
+/// The fields each kind of input reads. `Cursor` reads no `action`, but ignores one by design (a
+/// position has no press, see [`InputCommand::action`]); `Scroll` has no press either, so an
+/// `action` sent to it is the same wrong belief `text` refuses.
+fn fields_read_by(kind: &InputKind) -> &'static [&'static str] {
+    match kind {
+        InputKind::Keyboard => &["kind", "action", "key", "text"],
+        InputKind::Mouse => &["kind", "action", "button"],
+        InputKind::Scroll => &["kind", "x", "y", "unit"],
+        InputKind::Cursor => &["kind", "action", "x", "y", "clear"],
+    }
+}
+
+/// Refuse a field the call sent that its `kind` does not read, naming the field and what the kind
+/// reads. `params` is the caller's own JSON, because a field that was left out and one that was
+/// sent with its default value cannot be told apart once parsed.
+fn refuse_unread_fields(kind: &InputKind, params: &Value) -> Result<(), BrpError> {
+    let read = fields_read_by(kind);
+    let Some(field) = params.as_object().and_then(|o| o.keys().find(|k| !read.contains(&k.as_str()))) else {
+        return Ok(());
+    };
+    let mut message = format!(
+        "`{field}` is not read by `kind: {kind:?}`, so it would change nothing; that kind reads {}",
+        read.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(", ")
+    );
+    if matches!(kind, InputKind::Mouse) && (field == "x" || field == "y") {
+        message.push_str(
+            ". A click lands where the pointer is: send `kind: \"Cursor\"` with `x` and `y` first, then the click",
+        );
+    }
+    Err(invalid_params(message))
 }
 
 /// One validated injection, waiting for the frame that can apply it.
@@ -551,8 +588,12 @@ pub fn handle_input(
     // `serde_json::Error` has no `From` into `BrpError`, so `?` cannot carry it — a malformed payload
     // is reported as INVALID_PARAMS with the parser's own message, which is the part a caller can act on.
     let cmd: InputCommand = match params.as_ref() {
-        Some(p) => serde_json::from_value(p.clone())
-            .map_err(|e| invalid_params(format!("invalid input params: {e}")))?,
+        Some(p) => {
+            let cmd: InputCommand = serde_json::from_value(p.clone())
+                .map_err(|e| invalid_params(format!("invalid input params: {e}")))?;
+            refuse_unread_fields(&cmd.kind, p)?;
+            cmd
+        }
         None => return Err(invalid_params("Missing input parameters".to_string())),
     };
 
@@ -667,6 +708,13 @@ pub fn handle_input(
                     )))
                 }
             };
+            if cmd.x.is_none() && cmd.y.is_none() {
+                return Err(invalid_params(
+                    "a scroll needs an amount: send `x` (sideways) and/or `y` (up is positive); with neither it \
+                     would scroll by nothing"
+                        .to_string(),
+                ));
+            }
             let (x, y) = (cmd.x.unwrap_or(0.0), cmd.y.unwrap_or(0.0));
             if !x.is_finite() || !y.is_finite() {
                 return Err(invalid_params(format!(

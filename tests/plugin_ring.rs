@@ -122,3 +122,72 @@ fn refuses_instead_of_recording_something_else() {
     let status = ring(&mut app, json!({"action": "dump"}));
     assert!(status.is_err(), "a refused start must not leave a buffer behind");
 }
+
+/// A float component: `f32` fields serialize as JSON floats (`9.0`, `0.10000000149011612`), and a
+/// trigger an agent writes is `9` or `0.1`.
+#[derive(Component, Reflect, Default)]
+#[reflect(Component)]
+struct Gauge(f32);
+
+const GAUGE: &str = "plugin_ring::Gauge";
+
+fn rise(mut gauges: Query<&mut Gauge>) {
+    for mut g in &mut gauges {
+        g.0 += 1.0;
+    }
+}
+
+/// A gauge holding `start`, which rises by 1.0 a frame when `rising`.
+fn gauge_app(start: f32, rising: bool) -> App {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, DebuggerPlugin::default()));
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+    app.register_type::<Gauge>();
+    app.world_mut().spawn(Gauge(start));
+    if rising {
+        app.add_systems(Update, rise);
+    }
+    app.update();
+    app
+}
+
+/// Start recording the gauge with a trigger, run 30 frames, and return the dump.
+fn gauge_dump(app: &mut App, equals: Value) -> Value {
+    let params = json!({"action": "start", "frames": 50, "query": {"data": {"components": [GAUGE]}},
+        "trigger": {"pointer": format!("/0/components/{GAUGE}"), "equals": equals}});
+    ring(app, params).expect("start");
+    for _ in 0..30 {
+        app.update();
+    }
+    ring(app, json!({"action": "dump", "last": 1})).expect("dump")
+}
+
+/// `9` and `9.0` are the same number to anyone who wrote the trigger. `serde_json` calls them
+/// different, so the ring recorded the whole run and said `triggered_at_frame: null`, which reads as
+/// "it never happened".
+#[test]
+fn a_trigger_written_as_an_integer_matches_a_float_field_holding_that_number() {
+    let mut app = gauge_app(0.0, true);
+    let dump = gauge_dump(&mut app, json!(9));
+    assert_eq!(dump["recording"], false, "{dump}");
+    let last = &dump["samples"][0];
+    assert_eq!(last["result"][0]["components"][GAUGE].as_f64(), Some(9.0), "{dump}");
+    assert_eq!(dump["triggered_at_frame"], last["frame"], "{dump}");
+}
+
+/// An `f32` field reads back as the f64 nearest to it: 0.1 is `0.10000000149011612`.
+#[test]
+fn a_trigger_written_as_a_decimal_matches_the_f32_field_that_holds_it() {
+    let mut app = gauge_app(0.1, false);
+    let dump = gauge_dump(&mut app, json!(0.1));
+    assert_eq!(dump["recording"], false, "the trigger never fired: {dump}");
+    assert!(dump["triggered_at_frame"].is_u64(), "{dump}");
+}
+
+#[test]
+fn a_trigger_that_is_not_the_value_does_not_fire() {
+    let mut app = gauge_app(0.0, true);
+    let dump = gauge_dump(&mut app, json!(9.5));
+    assert_eq!(dump["recording"], true, "{dump}");
+    assert_eq!(dump["triggered_at_frame"], Value::Null, "{dump}");
+}

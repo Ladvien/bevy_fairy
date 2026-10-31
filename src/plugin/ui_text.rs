@@ -177,9 +177,11 @@ fn handle_ui_text(
     if params.region.as_ref().is_some_and(|r| r.width == 0 || r.height == 0) {
         return Err("region width and height must both be non-zero".to_string());
     }
+    // Summed as f32, not u32: `x + width` past `u32::MAX` panicked a debug build and wrapped to a
+    // tiny region in a release build, where an empty answer reads as "no text on screen".
     let region = params.region.as_ref().map(|r| Rect {
         min: Vec2::new(r.x as f32, r.y as f32),
-        max: Vec2::new((r.x + r.width) as f32, (r.y + r.height) as f32),
+        max: Vec2::new(r.x as f32 + r.width as f32, r.y as f32 + r.height as f32),
     });
 
     let mut rows: Vec<Row> = Vec::new();

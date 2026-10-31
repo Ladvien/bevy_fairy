@@ -66,7 +66,8 @@ pub struct ScreenshotParams {
     /// Region to crop, in physical pixels: `{ x, y, width, height }`. Clamped to the captured image;
     /// a region entirely outside it is an error rather than an empty file.
     pub region: Option<Region>,
-    /// Scale factor applied after cropping. `1.0` leaves the image alone.
+    /// Scale factor applied after cropping. `1.0` leaves the image alone. The scaled image is at
+    /// most [`MAX_ZOOMED_PIXELS`] pixels; a `zoom` that would make it larger is refused.
     #[serde(default = "one")]
     pub zoom: f32,
     /// `"offscreen"` or `"window"`. Defaults to offscreen when a [`DebugCaptureTarget`] exists,
@@ -284,6 +285,9 @@ pub(crate) fn handle_capture(In(params): In<Option<Value>>, captures: Res<Captur
     }
 }
 
+/// The most pixels `zoom` may make of a capture: 4096 x 4096, twice a 4K frame.
+const MAX_ZOOMED_PIXELS: f64 = 16_777_216.0;
+
 /// Convert, crop, scale and encode to PNG. Returns the PNG bytes and the final size. Split out so
 /// every failure has one place to be reported from, and so the observer closure stays readable.
 fn encode_capture(
@@ -316,11 +320,22 @@ fn encode_capture(
     }
 
     if zoom != 1.0 {
-        let width = ((rgb.width() as f32) * zoom).round().max(1.0) as u32;
-        let height = ((rgb.height() as f32) * zoom).round().max(1.0) as u32;
+        let width = (f64::from(rgb.width()) * f64::from(zoom)).round().max(1.0);
+        let height = (f64::from(rgb.height()) * f64::from(zoom)).round().max(1.0);
+        // Refused, not attempted: the resize allocates the whole image inside the game's own
+        // observer, and `{"zoom": 1e9}` used to abort the game on a 256 GB allocation.
+        if width * height > MAX_ZOOMED_PIXELS {
+            return Err(format!(
+                "zoom {zoom} would make the {}x{} capture a {width:.0}x{height:.0} image; `zoom` makes at \
+                 most {MAX_ZOOMED_PIXELS:.0} pixels (4096 x 4096). Pass a smaller `zoom`, or a `region` to \
+                 zoom into",
+                rgb.width(),
+                rgb.height()
+            ));
+        }
         // Lanczos3 for downscales, which is what a zoom < 1 mostly is; it is also acceptable
         // magnifying, and one filter beats a branch nobody tuned.
-        rgb = image::imageops::resize(&rgb, width, height, FilterType::Lanczos3);
+        rgb = image::imageops::resize(&rgb, width as u32, height as u32, FilterType::Lanczos3);
     }
 
     let (width, height) = (rgb.width(), rgb.height());
@@ -400,5 +415,33 @@ mod tests {
         assert_eq!(captures.get(ids[2]), Some(&CaptureState::Pending));
         captures.finish(ids[9], CaptureState::Failed("boom".into()));
         assert_eq!(captures.get(ids[9]), Some(&CaptureState::Failed("boom".into())));
+    }
+
+    fn black(width: u32, height: u32) -> Image {
+        Image::new_target_texture(width, height, bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb, None)
+    }
+
+    /// `zoom` had no upper bound: `{"zoom": 1e9}` asked `image::imageops::resize` for a 4e9 x 4e9
+    /// image inside the game's observer, which panics or aborts the whole game on the allocation.
+    /// A request this server cannot honour is a failed capture that says why, never an attempt.
+    #[test]
+    fn a_zoom_that_would_make_a_huge_image_is_refused_before_it_is_allocated() {
+        // Absurd values reach the refusal and not an overflow or an allocation.
+        encode_capture(&black(4, 4), None, 1e9).expect_err("1e9 is refused");
+        encode_capture(&black(4, 4), None, f32::MAX).expect_err("f32::MAX is refused");
+        let refusal = encode_capture(&black(4, 4), None, 2500.0).expect_err("a 10000 x 10000 image is refused");
+        assert!(refusal.contains("zoom") && refusal.contains("10000x10000"), "{refusal}");
+        assert!(refusal.contains("region"), "it says how to get the detail another way: {refusal}");
+    }
+
+    #[test]
+    fn a_zoom_that_fits_still_scales_the_cropped_region() {
+        let (_, width, height) = encode_capture(&black(4, 4), None, 8.0).expect("8x of 4x4");
+        assert_eq!((width, height), (32, 32));
+        let (_, width, height) = encode_capture(&black(4, 4), None, 0.5).expect("0.5x of 4x4");
+        assert_eq!((width, height), (2, 2));
+        let region = Region { x: 0, y: 0, width: 2, height: 1 };
+        let (_, width, height) = encode_capture(&black(4, 4), Some(&region), 16.0).expect("16x of a 2x1 crop");
+        assert_eq!((width, height), (32, 16));
     }
 }
