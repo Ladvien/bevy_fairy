@@ -127,12 +127,15 @@ pub struct HypothesisRequest {
     pub actions: Vec<Action>,
     /// How to vary the test between iterations. Default `none`. A variation changes the numbers,
     /// strings and booleans inside `actions`, at any depth of a component's value, and never
-    /// which entity an action targets; with no actions, or none it can change, the call is
-    /// refused. `random` varies within `numeric_min`..`numeric_max`, `string_pool` and
-    /// `bool_probability`; `grid` walks `numeric_values`, `string_values` and `bool_values`, for
-    /// the kinds of value the actions write; `boundary` tries edge values chosen by the
-    /// `include_*` flags; `fuzz` mutates the actions up to `max_mutations` times, each with
-    /// probability `mutation_probability`. A number written over an integer field is rounded.
+    /// which entity an action targets; with no actions, none it can change, or no values to try
+    /// the call is refused. `random` varies within `numeric_min`..`numeric_max`, `string_pool`
+    /// and `bool_probability`; `grid` walks `numeric_values`, `string_values` and `bool_values`,
+    /// for the kinds of value the actions write that it was given values for; `boundary` tries
+    /// edge values chosen by the `include_*` flags; `fuzz` mutates the actions up to
+    /// `max_mutations` times, each with probability `mutation_probability`. A number the
+    /// `actions` write as an integer (5, not 5.0) is rounded by `random` and `fuzz`; `grid` and
+    /// `boundary` write their values as given, a whole number as an integer and any other as a
+    /// float, which an integer field refuses.
     #[serde(default)]
     pub variation_type: Option<VariationType>,
     /// For `random`: the low end of the numeric range to vary over. Default 0.
@@ -150,7 +153,7 @@ pub struct HypothesisRequest {
     /// For `grid`: the numbers to try. Default 0, 50, 100.
     #[serde(default)]
     pub numeric_values: Option<Vec<f64>>,
-    /// For `grid`: the strings to try. Default `default`.
+    /// For `grid`: the strings to try. Default none: strings are left as they are.
     #[serde(default)]
     pub string_values: Option<Vec<String>>,
     /// For `grid`: the booleans to try. Default true and false.
@@ -178,9 +181,10 @@ pub struct HypothesisRequest {
     /// `boundary` run at most as many times as they have values to try.
     #[serde(default)]
     pub iterations: Option<u64>,
-    /// How long the whole run may take, in seconds. Default 60. When it passes, the run stops
-    /// between iterations (one already started finishes) and the reply's stopped_early says so;
-    /// iterations that never ran count against CONFIRMED. Other tools are answered between iterations.
+    /// How long the whole run may take, in seconds. Default 60; `quick_test` always uses 10. When
+    /// it passes, the run stops between iterations (one already started finishes) and the
+    /// reply's stopped_early says so; iterations that never ran count against CONFIRMED. Other
+    /// tools are answered between iterations.
     #[serde(default)]
     pub timeout: Option<u64>,
     /// The seed for `random` and `fuzz` variation: the same seed draws the same values.
@@ -812,7 +816,7 @@ impl BevyDebuggerTools {
     }
 
     /// Run controlled experiments on game state
-    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. A modify's result carries read_back, the written components read from the game after the write; its matches is false, and the message says so, when the game does not hold what was written (a system sets the value every frame). `undo` and `redo` step through the recorded actions and answer with action_type undo or redo and of_action, the kind of action they stepped over: a delete cannot be reversed, and a modify only when its components existed before. A redo of a spawn makes a different entity, and the redo entries behind it follow it. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
+    #[tool(description = "Change the running game and undo it: spawn, modify, delete or batch entities. `action` picks the operation; `execute` carries the `actions` to run, each a spawn, modify, delete or batch, with component types written as full paths (game::Crate), not short names. The reply lists what each action did, taken from the game's own answer: a spawn names its entity, an action the game or this server refuses is a failed result and the rest still run, and a batch lists its own actions. A batch cannot contain a batch. An atomic batch stops at its first failure and reverses what it ran, saying which results were rolled back. A modify's result carries read_back, the written components read from the game once, a frame or so after the write; its matches is false, and the message says so, when the game does not hold what was written (a system sets the value every frame). A system that changes it later is not seen. `undo` and `redo` step through the recorded actions and answer with action_type undo or redo and of_action, the kind of action they stepped over: a delete cannot be reversed, and a modify only when its components existed before. A redo of a spawn makes a different entity, and the redo entries behind it follow it. The history is kept by this server, not the game: restart the game and call `clear_history`, because an entity id may now name a different entity.")]
     pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
         debug!("Running experiment action: {}", req.action);
 

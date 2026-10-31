@@ -266,6 +266,9 @@ pub struct ActionExecutor {
     max_history_size: usize,
     enable_rollback: bool,
     transaction_stack: Vec<Transaction>,
+    /// Successful actions of failed atomic batches that the rollback could not reverse. They never
+    /// reached the history, so `restore_all` could not see them; it reports them from here.
+    unreversed: usize,
 }
 
 impl ActionExecutor {
@@ -277,6 +280,7 @@ impl ActionExecutor {
             max_history_size: 100,
             enable_rollback: true,
             transaction_stack: Vec::new(),
+            unreversed: 0,
         }
     }
 
@@ -288,6 +292,7 @@ impl ActionExecutor {
             max_history_size,
             enable_rollback,
             transaction_stack: Vec::new(),
+            unreversed: 0,
         }
     }
 
@@ -588,6 +593,7 @@ impl ActionExecutor {
             if transaction.should_rollback() {
                 warn!("Transaction failed, rolling back {} actions", actions.len());
                 let not_reversed = self.rollback_transaction(&mut transaction, brp_client).await?;
+                self.unreversed += not_reversed;
 
                 self.transaction_stack.pop();
                 let reason = transaction
@@ -806,6 +812,7 @@ impl ActionExecutor {
                 restoration.left_applied += 1;
             }
         }
+        restoration.left_applied += std::mem::take(&mut self.unreversed);
         restoration
     }
 
@@ -818,6 +825,7 @@ impl ActionExecutor {
     pub fn clear_history(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
+        self.unreversed = 0;
     }
 
     /// Validate component type
