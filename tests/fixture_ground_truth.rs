@@ -1940,6 +1940,38 @@ async fn hypothesis_refuses_an_empty_plan_and_names_the_argument() {
     assert!(reply.to_string().contains("iterations"), "the refusal names the argument: {reply}");
 }
 
+/// Reversal runs newest first. Two writes to one crate leave it at the second one's value; putting
+/// them back oldest first would end on the value the second write replaced (98), not on the weight
+/// the crate had.
+#[tokio::test(flavor = "multi_thread")]
+async fn hypothesis_reverses_an_iterations_changes_newest_first() {
+    let tools = tools_for(start_fixture());
+    wait_until_ready(&tools).await;
+    let before = crate_weights(&tools).await;
+    let entity = *before.keys().next().expect("the fixture spawns crates");
+    let write = |weight: f64| {
+        json!({"type": "modify", "entity_id": entity,
+            "components": [{"type_id": "fixture_game::Crate", "value": {"weight": weight}}]})
+    };
+
+    let (reply, failed) = hypothesis(
+        &tools,
+        json!({
+            "action": "test",
+            "description": "the crate can be written twice",
+            "success_condition": {"type": "component_equals", "entity_id": entity,
+                "component_type": "fixture_game::Crate", "expected_value": {"weight": 99.0}},
+            "actions": [write(98.0), write(99.0)]
+        }),
+    )
+    .await;
+
+    assert!(!failed, "{reply}");
+    assert_eq!(reply["verdict"], json!("CONFIRMED"), "{reply}");
+    assert_eq!(reply["game_state"]["actions_reversed"], json!(2), "{reply}");
+    assert_eq!(crate_weights(&tools).await, before, "the crate is back to the weight it had: {reply}");
+}
+
 /// The real `bevy-fairy` binary over stdio, pointed at a fixture: a tool is reached by name, the
 /// way an agent's client reaches it, so a tool the server does not offer is answered as such.
 struct StdioServer {
