@@ -65,8 +65,8 @@ Round 1 (reviewer agent, diff + plan only): four gaps. (1) the uncommitted `stat
 - No eval task or protected check changed.
 
 ## Release and install
-Version 0.11.0 → 0.12.0 (minor-breaking pre-1.0) · semver-checks (default features plus plugin-guide, plugin-screenshot, plugin-ui-text): 1 major, `handle_guide` takes 3 parameters instead of 2 · Channel: local `cargo publish` at the 6 h mark (v0.11.0's commit is dated 02:06 CDT, so 08:06) after the pre-publish gate: ratchet OK on the release commit, `cargo doc` with `-D warnings`, `cargo package --list` (103 files, 1.8 MiB), `cargo publish --dry-run`, held-out evals · Tag: v0.12.0 on b0b238a (the first commit whose packaged files are the published ones; the release commit 6cc4282 predates the doc fix).
-crates.io: https://crates.io/crates/bevy_fairy/0.12.0 · docs.rs: https://docs.rs/bevy_fairy/0.12.0 (checked next iteration) · Installed binary: `bevy-fairy 0.12.0` from the release tree (`cargo install --path . --locked --force`), `tools/list` over stdio answers the 14 tools
+Version 0.11.0 → 0.12.0 (minor-breaking pre-1.0) · semver-checks (default features plus plugin-guide, plugin-screenshot, plugin-ui-text): 1 major, `handle_guide` takes 3 parameters instead of 2 · Channel: local `cargo publish` at 08:07 CDT (v0.11.0's commit is dated 02:06, so the 6 h mark was 08:06) after the pre-publish gate: ratchet OK on the release commit, `cargo doc` with `-D warnings`, `cargo package --list` (103 files, 1.8 MiB), `cargo publish --dry-run`, held-out evals · Tag: v0.12.0 on b0b238a (the first commit whose packaged files are the published ones; the release commit 6cc4282 predates the doc fix).
+crates.io: https://crates.io/crates/bevy_fairy/0.12.0 · docs.rs: https://docs.rs/bevy_fairy/0.12.0 (build succeeded: status.json `doc_status: true`, checked 08:18 CDT) · Installed binary: `bevy-fairy 0.12.0` from the release tree (`cargo install --path . --locked --force`), `tools/list` over stdio answers the 14 tools
 
 ## Deferred / open
 - B-136 (new): `guide` `skip` has no way to say which step it means, so it can land on the next step if a checkpoint passes between `read` and `skip`. A `step` guard on `skip` would close it (`GuideRequest.skip` schema line says "Move past the current step").
@@ -75,3 +75,14 @@ crates.io: https://crates.io/crates/bevy_fairy/0.12.0 · docs.rs: https://docs.r
 
 ## Next focus
 B-136 (skip guard) is the last guide gap; then B-132 (labels on a contact sheet that cannot be read are the evidence an agent leans on) and B-126.
+
+## Verified after publishing
+- `cargo publish` from a clean tree with HEAD == origin/main (32c21c8): `Published bevy_fairy v0.12.0`; tag `v0.12.0` (annotated) pushed, peels to b0b238a.
+- crates.io `max_version` 0.12.0; `cargo info bevy_fairy@0.12.0` resolves.
+- `cargo install bevy_fairy --version 0.12.0 --locked` in a scratch `CARGO_HOME` (shared target dir, under the memory cap): installed in 9 m 58 s; its `tools/list` over stdio answers 14 tools.
+- Downstream copies of this crate: bevy_emerge depends on this repo by git and picks up the change when it moves its pin; a host using `guide` through `DebuggerPlugin` needs nothing, a host that adds `Guide` and `GuideOverlayPlugin` by hand adds `evaluate_checkpoint` to `Last`.
+
+## Clean-up
+Removed (all created this pass): `examples/tmp_guide_game.rs` (never committed), `tests/tmp_guide_probe.rs` (never committed), their binaries, deps and incremental artifacts under `/home/ladvien/target/fairy-loop/debug/{examples,deps,incremental}` (`tmp_guide_game*`, `tmp_guide_probe*`), `/home/ladvien/target/fairy-loop/tmp/{live_guide.py,report.md,ratchet-this-pass.log,publish.sh,verify-home}` (485 MB scratch `CARGO_HOME` and install root). No worktree was created, nothing under `/tmp` (96% full from other loops). `evals/transcripts/2026-10-31-{94f03e2,0a1fc0a}` are git-ignored and left.
+Left by others, listed not removed (sizes under `/home/ladvien/target`): emerge-w3 118G, emerge-w5 116G, gooey-loop 65G, bevy_flora-loop 25G, bevy_orca-loop 12G, stigmergy-loop 9.9G, sway 3.9G, plus be_i69, sanctuary-beacon_base, sanctuary-before, sanctuary-final, sanctuary-pinw, sanctuary-torch-pools, swaybefore. `/home` is 96% full (215G free at the start of the pass, 184G at the end; other loops share the disk, so the drop is not attributed to this pass).
+
